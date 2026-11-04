@@ -1,0 +1,21 @@
+{
+  "sections": [
+    {"code": "interface", "name": "settings.sections.interface"},
+    {"code": "resources", "name": "settings.sections.resources"}
+  ],
+  "settings": [
+    {
+      "section_code": "interface", "code": "general", "name": "settings.groups.general",
+      "items": [
+        {"code": "language", "name": "settings.items.language", "title": "settings.hints.language", "type": "language", "default": "ru"},
+        {"code": "window_size", "name": "settings.items.window_size", "title": "settings.hints.window_size", "type": "size", "default": [1240, 760], "storage_keys": ["window_width", "window_height"], "minimum": 540, "maximum": 16384}
+      ]
+    },
+    {
+      "section_code": "resources", "code": "gothic", "name": "settings.groups.gothic",
+      "items": [
+        {"code": "game_path", "name": "settings.items.game_path", "title": "settings.hints.game_path", "type": "directory", "default": "", "scope": "project"}
+      ]
+    }
+  ]
+}

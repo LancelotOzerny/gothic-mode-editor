@@ -1,6 +1,7 @@
 """Collapsible hierarchy with category '+' buttons and item interactions."""
 from __future__ import annotations
 import tkinter as tk
+from ..core.localization import tr
 from .widgets import BG,PANEL,INPUT,TXT,MUTED,ACCENT,BORDER,label,make_entry
 from ..core.categories import CATEGORIES,classify
 
@@ -13,8 +14,8 @@ class HierarchyPanel(tk.Frame):
         self.expanded={'potions':True,'weapons':True,'swords':True,'onehand':True}
         self.search=tk.StringVar()
         top=tk.Frame(self,bg=PANEL);top.pack(fill='x',padx=12,pady=(12,8))
-        label(top,'ИЕРАРХИЯ',font=('Arial',10,'bold')).pack(side='left')
-        label(top,'Предметы',fg=MUTED,font=('Arial',9)).pack(side='right')
+        label(top,tr('hierarchy.title'),font=('Arial',10,'bold')).pack(side='left')
+        label(top,tr('hierarchy.items'),fg=MUTED,font=('Arial',9)).pack(side='right')
         search=make_entry(self,textvariable=self.search)
         search.pack(fill='x',padx=10,pady=(0,10),ipady=6)
         search.insert(0,'')
@@ -72,7 +73,7 @@ class HierarchyPanel(tk.Frame):
             toggle=tk.Label(row,text=chevron,font=('Arial',15),fg=MUTED,bg=PANEL,width=2,cursor='hand2')
             toggle.pack(side='left');toggle.bind('<Button-1>',lambda _,k=cat.key:self.toggle(k))
             ico=label(row,cat.icon,fg=ACCENT,font=('Segoe UI Symbol',13));ico.pack(side='left',padx=(0,5))
-            name=label(row,cat.name,font=('Arial',10,'bold'),anchor='w');name.pack(side='left',fill='x',expand=True)
+            name=label(row,tr('categories.'+cat.key),font=('Arial',10,'bold'),anchor='w');name.pack(side='left',fill='x',expand=True)
             name.bind('<Button-1>',lambda _,k=cat.key:self.toggle(k))
             plus=tk.Label(row,text='+',bg=INPUT,fg=ACCENT,font=('Arial',14,'bold'),width=2,cursor='hand2')
             plus.pack(side='right',padx=5)
@@ -126,9 +127,9 @@ class HierarchyPanel(tk.Frame):
     def context(self,event,item):
         menu=tk.Menu(self,tearoff=False,bg=INPUT,fg=TXT)
         if item.origin=='project':
-            menu.add_command(label='Дублировать',command=lambda:self.on_duplicate(item))
-            menu.add_command(label='Удалить',command=lambda:self.on_delete(item))
+            menu.add_command(label=tr('hierarchy.duplicate'),command=lambda:self.on_duplicate(item))
+            menu.add_command(label=tr('hierarchy.delete'),command=lambda:self.on_delete(item))
         else:
-            menu.add_command(label='Дублировать в проект',command=lambda:self.on_duplicate(item))
-            menu.add_command(label='Удалить (недоступно для оригинала)',state='disabled')
+            menu.add_command(label=tr('hierarchy.duplicate_to_project'),command=lambda:self.on_duplicate(item))
+            menu.add_command(label=tr('hierarchy.delete_disabled'),state='disabled')
         menu.tk_popup(event.x_root,event.y_root)

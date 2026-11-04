@@ -1,5 +1,6 @@
 """A conservative Daedalus item reader/writer. Source files are never overwritten by scanner."""
 from __future__ import annotations
+from .localization import tr
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -96,7 +97,7 @@ def replace_field(block: str, key: str, value: str) -> str:
         eq=raw.index('=')
         return block[:m.start()]+raw[:eq+1]+' '+value+';'+block[m.end():]
     closing=block.rfind('}')
-    if closing<0:raise ValueError('Неполный скрипт предмета')
+    if closing<0:raise ValueError(tr('scripts.incomplete'))
     return block[:closing]+'    '+key+' = '+value+';\n'+block[closing:]
 
 def replace_instance(block: str, old: str, new: str) -> str:
@@ -107,7 +108,7 @@ def write_modified_item(item:Item, destination:Path, updates:dict[str,str]):
     source,codec=load_text(destination if destination.exists() else item.path)
     items=parse_items(destination if destination.exists() else item.path,'project')
     target=next((x for x in items if x.instance.lower()==item.instance.lower()),None)
-    if not target:raise ValueError('Предмет не найден в файле назначения')
+    if not target:raise ValueError(tr('scripts.item_missing'))
     part=source[target.begin:target.end]
     for k,v in updates.items():part=replace_field(part,k,v)
     source=source[:target.begin]+part+source[target.end:]
