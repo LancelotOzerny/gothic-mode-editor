@@ -48,18 +48,22 @@ class SettingsFormRenderer:
             entry.pack(side='left', fill='x', expand=True, ipady=4)
             if not enabled:
                 entry.config(state='disabled')
-            if kind in (FieldType.DIRECTORY, FieldType.COLOR):
+            if kind in (FieldType.DIRECTORY, FieldType.FILE, FieldType.COLOR):
                 def choose():
                     if kind is FieldType.DIRECTORY:
                         value = filedialog.askdirectory(parent=parent.winfo_toplevel(), title=tr(field.label_key),
                                                         initialdir=variables[0].get() or None)
+                    elif kind is FieldType.FILE:
+                        value = filedialog.askopenfilename(parent=parent.winfo_toplevel(), title=tr(field.label_key),
+                                                           filetypes=[(tr('settings.executables'), '*.exe *.dll'),
+                                                                      (tr('settings.all_files'), '*.*')])
                     else:
                         value = colorchooser.askcolor(parent=parent.winfo_toplevel(), color=variables[0].get())[1]
                     if value:
                         variables[0].set(value)
                 ttk.Button(controls, text=tr('settings.choose'), command=choose,
                            state='normal' if enabled else 'disabled').pack(side='left', padx=(8, 0))
-            if kind is FieldType.DIRECTORY:
+            if kind in (FieldType.DIRECTORY, FieldType.FILE):
                 ttk.Button(row, text=tr('settings.clear'), command=lambda: variables[0].set(''),
                            state='normal' if enabled else 'disabled').pack(anchor='e')
         label(row, tr(field.title_key), fg=MUTED, wraplength=430, justify='left').pack(anchor='w', pady=(4, 8))
@@ -111,6 +115,11 @@ class SettingsWindow(tk.Toplevel):
             self.navigation.selection_set(0)
             self.show_category()
         self.bind('<Escape>', lambda _: self.destroy())
+        self.update_idletasks()
+        parent.update_idletasks()
+        x=parent.winfo_rootx()+(parent.winfo_width()-self.winfo_width())//2
+        y=parent.winfo_rooty()+(parent.winfo_height()-self.winfo_height())//2
+        self.geometry(f'+{max(0,x)}+{max(0,y)}')
         self.grab_set()
 
     def scroll(self, event):

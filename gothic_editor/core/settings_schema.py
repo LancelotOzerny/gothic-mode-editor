@@ -16,6 +16,7 @@ class FieldType(str, Enum):
     SIZE = "size"
     COLOR = "color"
     DIRECTORY = "directory"
+    FILE = "file"
     LANGUAGE = "language"
 
 

@@ -1,0 +1,163 @@
+"""JSON-backed potion components. Never modify original Daedalus scripts.
+
+A component owns one INSTANCE only; existing scripts provide all shared helpers.
+Custom helper code can be placed in functions.d; variables in params.json.
+"""
+from __future__ import annotations
+import json
+import os
+import re
+from pathlib import Path
+from .scripts import Item, INST, FIELD, block_end, mask_comments, replace_field, replace_instance, load_text
+
+class PotionComponents:
+    def __init__(self, root: Path):
+        self.root = root / 'Items'
+
+    @staticmethod
+    def _safe_id(value):
+        if not re.fullmatch(r'[A-Za-z_]\w*',value,flags=re.ASCII):
+            raise ValueError('Неверный идентификатор Daedalus: '+value)
+        return value
+
+    def folder(self, instance):
+        return self.root / self._safe_id(instance)
+
+    def _atomic_json(self, target, data):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temp=target.with_name(target.name+'.tmp')
+        temp.write_text(json.dumps(data, ensure_ascii=False, indent=2)+'\n',encoding='utf-8')
+        temp.replace(target)
+
+    def _read(self, path):
+        data=json.loads(path.read_text(encoding='utf-8'))
+        if not isinstance(data,dict) or data.get('format') != 'gothic-potion-v1':
+            raise ValueError('Неизвестный формат зелья: '+str(path))
+        self._safe_id(data['instance'])
+        return data
+
+    def list_items(self):
+        result=[]
+        if not self.root.exists():return result
+        for file in sorted(self.root.glob('*/item.json')):
+            data=self._read(file)
+            block=self.render_instance(data)
+            masked=mask_comments(block)
+            match=INST.search(masked)
+            if match is None:raise ValueError('Не удалось распознать '+str(file))
+            end=block_end(masked,match.end()-1)
+            if end<0:raise ValueError('Незавершённый INSTANCE: '+str(file))
+            fields={re.sub(r'\s+','',m.group(1)).lower():m.group(2).strip() for m in FIELD.finditer(masked[match.end():end-1])}
+            result.append(Item(data['instance'],file,'project',block,fields,0,len(block),'utf-8'))
+        return result
+
+    def import_item(self, item:Item, instance=None):
+        target=self._safe_id(instance or item.instance)
+        folder=self.folder(target)
+        if folder.exists():raise ValueError('Предмет уже существует: '+target)
+        source=replace_instance(item.text,item.instance,target) if target!=item.instance else item.text
+        fields=dict(item.fields)
+        data={'format':'gothic-potion-v1','instance':target,'source_instance':item.instance if target==item.instance and item.origin=='game' else None,
+              'source_file':self._relative_game_file(item) if target==item.instance and item.origin=='game' else None,
+              'fields':fields,'template':source}
+        folder.mkdir(parents=True,exist_ok=False)
+        try:
+            self._atomic_json(folder/'item.json',data)
+            self._atomic_json(folder/'params.json',{'variables':[], 'source_constants':self._related_constants(item)})
+            self._atomic_json(folder/'functions.json', {'source_functions':self._related_functions(item)})
+            (folder/'functions.d').write_text('// Дополнительные функции именно этого зелья.\n// Не копируйте сюда уже определённые в Gothic функции.\n',encoding='utf-8')
+        except Exception:
+            import shutil
+            shutil.rmtree(folder)
+            raise
+        return folder
+
+    @staticmethod
+    def _related_functions(item):
+        """Save original functions as references, not duplicate emitted declarations."""
+        if not item.path.is_file():return []
+        source,_=load_text(item.path)
+        masked=mask_comments(source)
+        functions=[]
+        for key,value in item.fields.items():
+            if not key.startswith('on_state') or not re.fullmatch(r'[A-Za-z_]\w*', value):continue
+            pattern=re.compile(r'\bfunc\s+(?:void|int|float|string)\s+'+re.escape(value)+r'\s*\([^)]*\)\s*\{',re.I)
+            m=pattern.search(masked)
+            if not m:continue
+            end=block_end(masked,m.end()-1)
+            if end<0:continue
+            functions.append({'code':value,'source':source[m.start():end], 'override':False})
+        return functions
+
+    @staticmethod
+    def _related_constants(item):
+        """Informational snapshots of constants used by the potion and its callback."""
+        if not item.path.is_file():return []
+        source,_=load_text(item.path)
+        functions=PotionComponents._related_functions(item)
+        referenced=item.text+'\n'+'\n'.join(f['source'] for f in functions)
+        result=[]
+        declaration=re.compile(r'\bconst\s+(int|float|string)\s+([A-Za-z_]\w*)\s*=\s*([^;]+);',re.I)
+        for match in declaration.finditer(mask_comments(source)):
+            name=match.group(2)
+            if re.search(r'\b'+re.escape(name)+r'\b',referenced):
+                result.append({'type':match.group(1),'code':name,'expression':source[match.start(3):match.end(3)].strip(), 'override':False})
+        return result
+
+    @staticmethod
+    def _relative_game_file(item):
+        path=item.path.as_posix()
+        marker='/Content/'
+        if marker.lower() in path.lower():return path[path.lower().rfind(marker.lower())+len(marker):]
+        return 'Items/'+item.path.name
+
+    def edit(self,item,updates):
+        data=self._read(item.path)
+        for key,value in updates.items():
+            data['fields'][key.lower()]=value
+        # Validate encoding to avoid broken Russian strings when building CP1251 Gothic data.
+        self.render_instance(data).encode('cp1251')
+        self._atomic_json(item.path,data)
+
+    def delete(self,item):
+        import shutil
+        if item.path.name!='item.json' or item.path.parent.parent!=self.root:
+            raise ValueError('Это не компонент проекта')
+        shutil.rmtree(item.path.parent)
+
+    @staticmethod
+    def render_instance(data):
+        code=data['template']
+        for key,value in data['fields'].items():
+            code=replace_field(code,key,value)
+        return code
+
+    def generated(self):
+        """Return original replacements and NEW instances, plus user-authored helpers."""
+        replacements={}; additions=[]; helpers=[]
+        identifiers={}
+        for file in sorted(self.root.glob('*/item.json')):
+            data=self._read(file)
+            identifier=data['instance'].casefold()
+            if identifier in identifiers:
+                raise ValueError(f'Неоднозначный INSTANCE {data["instance"]}: {identifiers[identifier]} / {file}')
+            identifiers[identifier]=file
+            block=self.render_instance(data)
+            if data.get('source_instance'):
+                replacements[data['instance'].casefold()]=block
+            else:
+                additions.append(block)
+            folder=file.parent
+            params=folder/'params.json'
+            if params.exists():
+                params_data=json.loads(params.read_text('utf-8'))
+                for variable in params_data.get('variables',[]):
+                    identifier=self._safe_id(variable['code'])
+                    if variable['type'] not in ('int','float','string'):
+                        raise ValueError('Неизвестный тип переменной: '+str(variable['type']))
+                    helpers.append(f"var {variable['type']} {identifier};")
+            func=folder/'functions.d'
+            if func.exists():
+                source=func.read_text('utf-8').strip()
+                if mask_comments(source).strip():helpers.append(source)
+        return replacements,additions,helpers

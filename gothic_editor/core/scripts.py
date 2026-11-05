@@ -8,6 +8,9 @@ import re
 INST = re.compile(r'\bINSTANCE\s+([A-Za-z_]\w*)\s*\(\s*C_Item\s*\)\s*\{', re.I)
 FIELD = re.compile(r'\b([A-Za-z_]\w*(?:\s*\[\s*\d+\s*\])?)\s*=\s*("(?:\\.|[^"\\])*"|[^;]+)\s*;', re.I)
 
+ITEM_OVERRIDES_HEADER = '// Gothic Editor: item overrides'
+
+
 def load_text(path: Path):
     raw = path.read_bytes()
     for codec in ('utf-8-sig', 'cp1251', 'cp1252'):
@@ -65,9 +68,15 @@ class Item:
 
     @property
     def title(self):
-        value=self.fields.get('name') or self.fields.get('description') or self.instance
-        if value.strip().lower()=='name':value=self.fields.get('name',self.instance)
-        return unquote(value)
+        description=self.fields.get('description','').strip()
+        name=self.fields.get('name','').strip()
+        # Gothic often uses name=NAME_Trank (generic item type), while
+        # description contains the actual potion name.
+        if description and description.casefold()!='name' and not description.upper().startswith('NAME_'):
+            return unquote(description)
+        if name and not name.upper().startswith('NAME_'):
+            return unquote(name)
+        return unquote(description or name or self.instance)
     @property
     def visual(self):return unquote(self.fields.get('visual',''))
 
@@ -116,6 +125,24 @@ def write_modified_item(item:Item, destination:Path, updates:dict[str,str]):
     # Source scripts from Gothic are commonly ANSI/CP1251; retain the encoding.
     # Avoid writing corrupt strings to a code page that cannot represent them.
     destination.write_bytes(source.encode(codec))
+
+def merge_item_overrides(destination:Path, overrides:Path):
+    """Replace selected INSTANCE blocks while retaining other items and helpers."""
+    source,codec=load_text(destination)
+    originals={item.instance.casefold():item for item in parse_items(destination,'game')}
+    replacements=[]
+    additions=[]
+    for item in parse_items(overrides,'project'):
+        original=originals.get(item.instance.casefold())
+        if original is None:
+            additions.append(item.text+';\n')
+        else:
+            replacements.append((original.begin,original.end,item.text))
+    for start,end,text in sorted(replacements,reverse=True):
+        source=source[:start]+text+source[end:]
+    if additions:source=source.rstrip()+'\n\n'+'\n'.join(additions)
+    destination.write_bytes(source.encode(codec))
+
 
 def clean_id(label: str) -> str:
     name=re.sub('[^A-Za-z0-9_]','_',label).strip('_')

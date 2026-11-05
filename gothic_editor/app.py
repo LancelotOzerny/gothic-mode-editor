@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tkinter import filedialog,messagebox,ttk,simpledialog
 from .core.project import ProjectRepository
-from .ui.widgets import BG,PANEL,TXT,MUTED,label
+from .ui.widgets import BG,PANEL,TXT,MUTED,label,Tooltip
 from .ui.hierarchy import HierarchyPanel
 from .ui.properties import PropertiesPanel
 from .ui.viewer import ModelViewer,read_3ds,MeshFormatError
@@ -14,14 +14,34 @@ from .core.settings import EditorSettings,SettingsStore,field_key
 from .core.settings_schema import all_fields
 from .ui.settings import SettingsWindow
 from .core.archive_models import load_archive_model
+from .core.project_tools import ProjectTools
+from .ui.terminal import TerminalPanel,ToolRunner
+from .ui.icons import IconImages
+from .ui.bottom_dock import BottomDock
+from .ui.resources import ResourcesPanel
+from .core.recent_projects import RecentProjects
+from .ui.welcome import WelcomeScreen
 
 class EditorApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.settings_store=SettingsStore()
         self.settings=self.settings_store.load()
+        self.recent_projects=RecentProjects(self.settings_store.path.with_name('recent_projects.json'))
+        self.welcome=None
         localization.set_language(self.settings.get_value('interface.general.language'))
         self.settings_window=None
+        self._dock_resize_after=None
+        self._bottom_tab_specs={}
+        self._bottom_tab_variables={}
+        self.register_bottom_tab('terminal','terminal.title',lambda parent:TerminalPanel(parent,self.hide_terminal))
+        self.register_bottom_tab('resources','resources.title',lambda parent:ResourcesPanel(
+            parent,lambda:self.repo.resource_editor_path,lambda:self.hide_bottom_tab('resources')))
+        self.terminal_visible=self._bottom_tab_variables['terminal']
+        self.resources_visible=self._bottom_tab_variables['resources']
+        self.terminal_height=self.settings.get_value('interface.terminal.height')
+        self.icons=IconImages(self)
+        self._tool_runner=ToolRunner(self,lambda message:self.terminal.append(message),self._tool_completed)
         self.title('Gothic Editor — 0.2')
         width,height=self.settings.get_value('interface.general.window_size')
         self.geometry(f'{max(870,width)}x{max(540,height)}');self.minsize(870,540)
@@ -32,6 +52,7 @@ class EditorApp(tk.Tk):
         self._model_future=None
         self._model_poll=None
         self._build_menu();self._build_layout()
+        self.show_welcome()
         self.bind('<Control-o>',lambda e:self.open_project())
         self.bind('<Control-s>',lambda e:self.properties.save())
 
@@ -41,26 +62,55 @@ class EditorApp(tk.Tk):
         file=tk.Menu(menu,tearoff=False)
         file.add_command(label=tr('app.create_project'),command=self.create_project)
         file.add_command(label=tr('app.open_project'),command=self.open_project,accelerator='Ctrl+O')
+        self.recent_menu=tk.Menu(file,tearoff=False)
+        file.add_cascade(label=tr('welcome.menu_recent'),menu=self.recent_menu)
+        self._update_recent_menu()
         file.add_separator();file.add_command(label=tr('app.refresh'),command=self.refresh)
         file.add_separator();file.add_command(label=tr('app.exit'),command=self.destroy)
         menu.add_cascade(label=tr('app.file'),menu=file)
         project=tk.Menu(menu,tearoff=False)
         project.add_command(label=tr('menu.settings'),command=self.show_settings)
         menu.add_cascade(label=tr('app.project'),menu=project)
+        view=tk.Menu(menu,tearoff=False)
+        windows=tk.Menu(view,tearoff=False)
+        for key,(title_key,_) in self._bottom_tab_specs.items():
+            windows.add_checkbutton(label=tr(title_key),variable=self._bottom_tab_variables[key],
+                                    command=lambda current=key:self.toggle_bottom_tab(current))
+        view.add_cascade(label=tr('menu.windows'),menu=windows)
+        menu.add_cascade(label=tr('menu.view'),menu=view)
         self.config(menu=menu)
         self.main_menu=menu
         if previous is not None:previous.destroy()
 
     def _build_layout(self):
-        header=tk.Frame(self,bg=BG);header.pack(fill='x',padx=14,pady=12)
-        label(header,tr('app.mode'),bg=BG,font=('Arial',11)).pack(side='left',padx=(0,10))
-        self.mode=ttk.Combobox(header,values=[tr('app.items')],state='readonly',width=19)
+        self.editor_frame=tk.Frame(self,bg=BG)
+        self.editor_frame.pack(fill='both',expand=True)
+        header=tk.Frame(self.editor_frame,bg=BG);header.pack(fill='x',padx=14,pady=12)
+        header.columnconfigure(0,weight=1,uniform='header_side')
+        header.columnconfigure(2,weight=1,uniform='header_side')
+        mode_frame=tk.Frame(header,bg=BG);mode_frame.grid(row=0,column=0,sticky='w')
+        label(mode_frame,tr('app.mode'),bg=BG,font=('Arial',11)).pack(side='left',padx=(0,10))
+        self.mode=ttk.Combobox(mode_frame,values=[tr('app.items')],state='readonly',width=19)
         self.mode.current(0);self.mode.pack(side='left')
-        self.project_label=label(header,tr('app.no_project'),bg=BG,fg=MUTED,anchor='e')
-        self.project_label.pack(side='right',fill='x',expand=True)
-        panes=tk.PanedWindow(self,orient='horizontal',bg=BG,bd=0,sashwidth=7)
-        panes.pack(fill='both',expand=True,padx=9,pady=(0,8))
-        self.hierarchy=HierarchyPanel(panes,self.select,self.create_item,self.duplicate,self.delete,self.rename)
+        actions=tk.Frame(header,bg=BG);actions.grid(row=0,column=1,padx=16)
+        self.play_button=tk.Button(actions,image=self.icons.frames('build.png',26,'#62d785',BG)[0],bg=BG,
+                                   activebackground=PANEL,activeforeground='#89eda5',relief='flat',
+                                   cursor='hand2',command=lambda:self.run_project_tool('compile'))
+        self.play_button.pack(side='left',padx=(0,8))
+        self.sync_button=tk.Button(actions,image=self.icons.frames('sync.png',26,'#80b4f9',BG)[0],bg=BG,
+                                   activebackground=PANEL,relief='flat',cursor='hand2',
+                                   command=lambda:self.run_project_tool('sync'))
+        self.sync_button.pack(side='left')
+        Tooltip(self.play_button,tr('tools.build'))
+        Tooltip(self.sync_button,tr('tools.sync'))
+        self.project_label=label(header,tr('app.no_project'),bg=BG,fg=MUTED,anchor='e',width=1)
+        self.project_label.grid(row=0,column=2,sticky='ew')
+        self._update_tool_buttons()
+        self.workspace=tk.PanedWindow(self.editor_frame,orient='vertical',bg=BG,bd=0,sashwidth=7,opaqueresize=True)
+        self.workspace.pack(fill='both',expand=True,padx=9,pady=(0,8))
+        panes=tk.PanedWindow(self.workspace,orient='horizontal',bg=BG,bd=0,sashwidth=7)
+        self.workspace.add(panes,minsize=160,stretch='always')
+        self.hierarchy=HierarchyPanel(panes,self.select,self.create_item,self.duplicate,self.delete,self.rename,on_copy=self.copy_to_project)
         panes.add(self.hierarchy,width=300,minsize=225)
         middle=tk.Frame(panes,bg='#191e29')
         panes.add(middle,width=550,minsize=250)
@@ -68,8 +118,42 @@ class EditorApp(tk.Tk):
         self.viewer.pack(fill='both',expand=True)
         self.properties=PropertiesPanel(panes,self.save_fields)
         panes.add(self.properties,width=350,minsize=240)
+        self.bottom_dock=BottomDock(self.workspace)
+        for key,(title_key,factory) in self._bottom_tab_specs.items():
+            self.bottom_dock.register(key,tr(title_key),factory(self.bottom_dock))
+        self.terminal=self.bottom_dock.panels['terminal']
+        self.resources=self.bottom_dock.panels['resources']
+        for key,variable in self._bottom_tab_variables.items():
+            if variable.get():self.toggle_bottom_tab(key)
+        self.workspace.bind('<ButtonRelease-1>',lambda _:self.after_idle(self._remember_terminal_height))
+        self.workspace.bind('<Configure>',lambda _:self._schedule_dock_resize() if self.bottom_dock.visible_keys() else None)
         self.status=tk.StringVar(value=tr('messages.start'))
-        label(self,textvariable=self.status,bg=BG,fg=MUTED,anchor='w').pack(fill='x',padx=14,pady=(0,8))
+        label(self.editor_frame,textvariable=self.status,bg=BG,fg=MUTED,anchor='w').pack(fill='x',padx=14,pady=(0,8))
+
+    def _update_recent_menu(self):
+        self.recent_menu.delete(0,'end')
+        for entry in self.recent_projects.entries[:5]:
+            self.recent_menu.add_command(label=f'{entry.name} — {entry.path}',
+                                         command=lambda path=entry.path:self.open_project_path(path))
+        if not self.recent_projects.entries:
+            self.recent_menu.add_command(label=tr('welcome.empty'),state='disabled')
+
+    def _remember_project(self):
+        try:self.recent_projects.remember(self.repo.root,self.repo.name)
+        except OSError as exc:self.terminal.append(tr('welcome.save_error',error=str(exc)))
+        self._update_recent_menu()
+
+    def show_welcome(self):
+        self.editor_frame.pack_forget()
+        if self.welcome is not None and self.welcome.winfo_exists():self.welcome.destroy()
+        self.welcome=WelcomeScreen(self,self.recent_projects,lambda:self.create_project(beside_recent=True),
+                                   self.open_project,self.open_project_path)
+        self.welcome.pack(fill='both',expand=True)
+
+    def _show_editor(self):
+        if self.welcome is not None and self.welcome.winfo_exists():self.welcome.destroy()
+        self.welcome=None
+        self.editor_frame.pack(fill='both',expand=True)
 
     def need_project(self):
         if self.repo.root is None:
@@ -77,34 +161,158 @@ class EditorApp(tk.Tk):
             return False
         return True
 
-    def create_project(self):
-        base=filedialog.askdirectory(title=tr('app.choose_project_folder'))
-        if not base:return
-        name=simpledialog.askstring(tr('app.new_project'),tr('app.project_name'),initialvalue=Path(base).name,parent=self)
-        if not name:return
-        try:self.repo.create(Path(base),name);self.show_project()
+    def create_project(self,beside_recent=False):
+        parent=self.recent_projects.parent_directory()
+        if beside_recent and parent is not None:
+            name=simpledialog.askstring(tr('app.new_project'),tr('app.project_name'),
+                                       initialvalue=tr('welcome.default_name'),parent=self)
+            if not name:return
+            name=name.strip()
+            if not name or name in ('.','..') or any(char in name for char in '<>:"/\\|?*'):
+                messagebox.showerror(tr('app.create_error'),tr('welcome.invalid_name'),parent=self)
+                return
+            base=parent/name
+            if base.exists():
+                messagebox.showerror(tr('app.create_error'),tr('welcome.folder_exists',path=str(base)),parent=self)
+                return
+        else:
+            options={'initialdir':str(parent)} if parent is not None else {}
+            base=filedialog.askdirectory(title=tr('app.choose_project_folder'),**options)
+            if not base:return
+            name=simpledialog.askstring(tr('app.new_project'),tr('app.project_name'),initialvalue=Path(base).name,parent=self)
+            if not name:return
+        try:
+            self.repo.create(Path(base),name)
+            self._remember_project()
+            self.show_project(reset_hierarchy=True)
         except Exception as exc:messagebox.showerror(tr('app.create_error'),str(exc))
 
     def open_project(self):
-        base=filedialog.askdirectory(title=tr('app.choose_existing_project'))
+        parent=self.recent_projects.parent_directory()
+        options={'initialdir':str(parent)} if parent is not None else {}
+        base=filedialog.askdirectory(title=tr('app.choose_existing_project'),**options)
         if not base:return
-        try:self.repo.open(Path(base));self.show_project()
+        self.open_project_path(Path(base))
+
+    def open_project_path(self,path):
+        try:
+            self.repo.open(Path(path))
+            self._remember_project()
+            self.show_project(reset_hierarchy=True)
         except Exception as exc:messagebox.showerror(tr('app.open_error'),str(exc))
 
-    def show_project(self):
+    def show_project(self,reset_hierarchy=False):
+        self._show_editor()
         self._cancel_model_load()
         self.current=None
         self.project_label.config(text=f'{self.repo.name}   |   {self.repo.root}')
+        if reset_hierarchy:self.hierarchy.collapse_all()
         self.update_hierarchy()
         self.viewer.set_mesh(caption=tr('app.select_item'))
         self.properties.show(None)
+        self.resources.set_item(self.repo.root,None)
+        self._update_tool_buttons()
+
+    def _update_tool_buttons(self):
+        running=self._tool_runner.running
+        state='normal' if self.repo.root is not None and not running else 'disabled'
+        self.play_button.config(state=state)
+        self.sync_button.config(state=state)
+
+    def run_project_tool(self,action):
+        self.show_terminal()
+        if self._tool_runner.running:return
+        if self.repo.root is None:
+            self.terminal.append(tr('app.need_project'))
+            return
+        try:
+            tools=ProjectTools(self.repo.root,self.repo.game,self.repo.compiler_path)
+            if action=='compile':tools.compiler_command()
+        except (OSError,ValueError) as exc:
+            self.terminal.append(str(exc))
+            self.status.set(tr('tools.failure'))
+            return
+        operation=tools.compile if action=='compile' else tools.synchronize
+        title=tr('tools.build') if action=='compile' else tr('tools.sync')
+        self.status.set(tr('tools.running', action=title))
+        self._tool_runner.start(title+' — '+self.repo.name,operation,
+                                tools.build_dir/'compile.log' if action=='compile' else None)
+        self._update_tool_buttons()
+
+    def _tool_completed(self,success,result):
+        self._update_tool_buttons()
+        self.status.set(tr('tools.success') if success else tr('tools.failure'))
+
+    def register_bottom_tab(self,key,title_key,factory):
+        """Register another dock panel; its factory receives the notebook parent."""
+        if key in self._bottom_tab_specs:raise ValueError(f'Duplicate dock tab: {key}')
+        self._bottom_tab_specs[key]=(title_key,factory)
+        self._bottom_tab_variables[key]=tk.BooleanVar(self,value=False)
+        if hasattr(self,'bottom_dock'):
+            self.bottom_dock.register(key,tr(title_key),factory(self.bottom_dock))
+            self._build_menu()
+
+    def show_bottom_tab(self,key):
+        self._bottom_tab_variables[key].set(True)
+        self.toggle_bottom_tab(key)
+
+    def hide_bottom_tab(self,key):
+        self._bottom_tab_variables[key].set(False)
+        self.toggle_bottom_tab(key)
+
+    def show_terminal(self):
+        self.show_bottom_tab('terminal')
+
+    def hide_terminal(self):
+        self.hide_bottom_tab('terminal')
+
+    def toggle_terminal(self):
+        self.toggle_bottom_tab('terminal')
+
+    def toggle_bottom_tab(self,key):
+        if self._bottom_tab_variables[key].get():self._show_editor()
+        self.bottom_dock.set_visible(key,self._bottom_tab_variables[key].get())
+        visible=str(self.bottom_dock) in tuple(map(str,self.workspace.panes()))
+        if self.bottom_dock.visible_keys() and not visible:
+            self.workspace.add(self.bottom_dock,height=self.terminal_height,minsize=80,stretch='never')
+            self._schedule_dock_resize()
+        elif not self.bottom_dock.visible_keys() and visible:
+            self.workspace.forget(self.bottom_dock)
+        if key=='resources' and self.resources_visible.get():self.resources.refresh()
+
+    def _resize_terminal(self):
+        if (self.bottom_dock.visible_keys() and len(self.workspace.panes())>1
+                and str(self.bottom_dock) in tuple(map(str,self.workspace.panes()))):
+            height=min(self.terminal_height,max(80,self.workspace.winfo_height()-167))
+            self.workspace.sash_place(0,0,max(160,self.workspace.winfo_height()-height-7))
+
+    def _cancel_dock_resize(self):
+        if self._dock_resize_after is not None:
+            self.after_cancel(self._dock_resize_after)
+            self._dock_resize_after=None
+
+    def _schedule_dock_resize(self):
+        self._cancel_dock_resize()
+        def resize():
+            self._dock_resize_after=None
+            self._resize_terminal()
+        self._dock_resize_after=self.after_idle(resize)
+
+    def _remember_terminal_height(self):
+        if self.bottom_dock.visible_keys():
+            self.terminal_height=max(80,min(2000,self.bottom_dock.winfo_height()))
+            self.settings.values['interface.terminal.height']=self.terminal_height
+            try:self.settings_store.save(self.settings)
+            except OSError as exc:self.terminal.append(str(exc))
 
     def show_settings(self):
         if self.settings_window is not None and self.settings_window.winfo_exists():
             self.settings_window.lift()
             return
         localization.reload()
-        project_values={'resources.gothic.game_path':str(self.repo.game) if self.repo.game else ''}
+        project_values={'resources.gothic.game_path':str(self.repo.game) if self.repo.game else '',
+                        'build.compiler.path':self.repo.compiler_path,
+                        'resources.editor.path':self.repo.resource_editor_path}
         self.settings_window=SettingsWindow(self,self.settings,project_values,self.apply_settings)
 
     def apply_settings(self,values):
@@ -120,35 +328,49 @@ class EditorApp(tk.Tk):
         old_language=localization.language_code
         self.settings_store.save(settings)
         resources_changed=self.repo.root is not None and self.repo.game!=game
+        compiler_path=values['build.compiler.path'].strip()
+        editor_path=values['resources.editor.path'].strip()
         try:
-            if resources_changed:self.repo.set_game_path(game_path)
-        except OSError:
+            if self.repo.root is not None and (resources_changed or self.repo.compiler_path!=compiler_path
+                                              or self.repo.resource_editor_path!=editor_path):
+                self.repo.set_configuration(game_path,compiler_path,editor_path)
+        except (OSError,ValueError):
             self.settings_store.save(self.settings)
             raise
         self.settings=settings
+        self.terminal_height=settings.get_value('interface.terminal.height')
         localization.set_language(settings.get_value('interface.general.language'))
         self.geometry(f'{max(870,width)}x{max(540,height)}')
         if old_language!=localization.language_code:
             self._rebuild_translated_ui()
         elif resources_changed:
             self.show_project()
+        if self.bottom_dock.visible_keys():self._schedule_dock_resize()
 
     def _rebuild_translated_ui(self):
+        self._cancel_dock_resize()
+        showing_welcome=self.welcome is not None and self.welcome.winfo_exists()
         # Keep the current selection, filters, unsaved fields and camera on language change.
         current=self.current
         drafts={key:entry.get() for key,entry in self.properties.inputs.items()}
         expanded=dict(self.hierarchy.expanded)
         query=self.hierarchy.search.get()
         camera=(self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom)
+        terminal_text=self.terminal.log.get('1.0','end-1c')
+        selected_tab=self.bottom_dock.selected_key()
         for child in self.winfo_children():
             if not isinstance(child,(tk.Menu,tk.Toplevel)):child.destroy()
         self._build_menu();self._build_layout()
+        if terminal_text:self.terminal.append(terminal_text.rstrip('\n'))
+        if selected_tab in self.bottom_dock.visible_keys():
+            self.bottom_dock.select(self.bottom_dock.panels[selected_tab])
         self.hierarchy.expanded=expanded
         self.hierarchy.search.set(query)
         if self.repo.root is not None:
             self.show_project()
             if current is not None:
-                current=next((item for item in self.repo.items if item.instance==current.instance),None)
+                current=next((item for item in self.repo.project_items+self.repo.game_items
+                              if item.instance==current.instance and item.origin==current.origin),None)
                 if current is not None:
                     self.hierarchy.choose(current);self.select(current,camera=camera)
                     for key,value in drafts.items():
@@ -157,6 +379,7 @@ class EditorApp(tk.Tk):
                             entry.delete(0,'end');entry.insert(0,value)
                     self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom=camera
                     self.viewer.draw()
+        elif showing_welcome:self.show_welcome()
 
     def refresh(self):
         if not self.need_project():return
@@ -167,7 +390,7 @@ class EditorApp(tk.Tk):
         except Exception as exc:messagebox.showerror(tr('app.refresh_error'),str(exc))
 
     def update_hierarchy(self):
-        self.hierarchy.set_items(self.repo.items)
+        self.hierarchy.set_items(self.repo.project_items+self.repo.game_items)
         project_count=sum(x.origin=='project' for x in self.repo.items)
         self.status.set(tr('messages.stats',total=len(self.repo.items),project=project_count,models=len(self.repo.mesh_index),archived=len(self.repo.archive_models.entries),errors=len(self.repo.errors)))
 
@@ -175,6 +398,7 @@ class EditorApp(tk.Tk):
         self._cancel_model_load()
         self.current=item
         self.properties.show(item)
+        self.resources.set_item(self.repo.root,item)
         visual=item.visual
         name=Path(visual.replace('\\','/')).name.lower() if visual else ''
         source_name=str(Path(name).with_suffix('.3ds')) if Path(name).suffix=='.mrm' else name
@@ -224,6 +448,11 @@ class EditorApp(tk.Tk):
             self._model_future=None
 
     def destroy(self):
+        if self._tool_runner.running:
+            self.show_terminal()
+            return
+        self._tool_runner.close()
+        self._cancel_dock_resize()
         if hasattr(self,'_model_executor'):
             self._cancel_model_load()
             self._model_executor.shutdown(wait=False,cancel_futures=True)
@@ -242,6 +471,7 @@ class EditorApp(tk.Tk):
 
     def create_item(self,key):self._action(self.repo.create_item,key)
     def duplicate(self,item):self._action(self.repo.duplicate,item)
+    def copy_to_project(self,item):self._action(self.repo.copy_to_project,item)
 
     def delete(self,item):
         if item.origin!='project':return
@@ -250,6 +480,7 @@ class EditorApp(tk.Tk):
         self._action(self.repo.delete,item)
         self._cancel_model_load()
         self.current=None;self.properties.show(None);self.viewer.set_mesh(caption=tr('app.select_item'))
+        self.resources.set_item(self.repo.root,None)
 
     def rename(self,item,new_name):
         # The Daedalus name attribute is the in-game name, not INSTANCE.

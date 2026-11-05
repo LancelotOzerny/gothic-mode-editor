@@ -3,15 +3,21 @@ from __future__ import annotations
 import json,re,os
 from .localization import tr
 from pathlib import Path
-from .scripts import Item,parse_items,replace_field,replace_instance,write_modified_item,clean_id
+from .scripts import Item,parse_items,replace_field,replace_instance,write_modified_item,clean_id,ITEM_OVERRIDES_HEADER
 from .categories import classify,get_category,leaf_for
 from .archive_models import ArchiveModels
+from .potion_components import PotionComponents
 
 class ProjectRepository:
     def __init__(self):
         self.root:Path|None=None
         self.game:Path|None=None
+        self.compiler_path=''
+        self.resource_editor_path=''
         self.items:list[Item]=[]
+        self.components=None
+        self.project_items=[]
+        self.game_items=[]
         self.errors=[]
         self.mesh_index={}
         self.archive_models=ArchiveModels()
@@ -34,7 +40,10 @@ class ProjectRepository:
         game=Path(raw).resolve() if raw else None
         self._validate_roots(root,game)
         self.root=root
+        self.components=PotionComponents(root)
         self.game=game
+        self.compiler_path=data.get('compiler_path','')
+        self.resource_editor_path=data.get('resource_editor_path','')
         self.refresh()
 
     @staticmethod
@@ -52,12 +61,32 @@ class ProjectRepository:
         return target
 
     def set_game_path(self,path:str):
+        self.set_configuration(path,self.compiler_path)
+
+    def set_configuration(self,path:str,compiler_path:str,resource_editor_path=None):
         target=self.validate_game_path(path)
+        compiler_path=compiler_path.strip()
+        if compiler_path:
+            compiler=Path(compiler_path).expanduser()
+            if not compiler.is_absolute():compiler=self.root/compiler
+            if not compiler.is_file() or compiler.suffix.lower() not in ('.dll','.exe'):
+                raise ValueError(tr('tools.compiler_missing'))
+        editor_path=self.resource_editor_path if resource_editor_path is None else resource_editor_path.strip()
+        if editor_path:
+            editor=Path(editor_path).expanduser()
+            if not editor.is_absolute():editor=self.root/editor
+            if not editor.is_file():raise ValueError(tr('resources.editor_missing',path=str(editor)))
+        config=json.loads((self.root/'project.json').read_text('utf-8'))
+        config.update(name=self.name,game_path=str(target) if target else '',compiler_path=compiler_path,
+                      resource_editor_path=editor_path)
         temporary=self.root/'project.json.tmp'
-        temporary.write_text(json.dumps({'name':self.name,'game_path':str(target) if target else ''},ensure_ascii=False,indent=2),encoding='utf-8')
+        temporary.write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding='utf-8')
         temporary.replace(self.root/'project.json')
+        changed=self.game!=target
         self.game=target
-        self.refresh()
+        self.compiler_path=compiler_path
+        self.resource_editor_path=editor_path
+        if changed:self.refresh()
 
     def _game_content(self):
         if not self.game:return None
@@ -71,19 +100,31 @@ class ProjectRepository:
         if not self.root:return
         self.errors=[]
         merged={}
+        by_origin={'project':{},'game':{}}
         def scan(root,origin):
             if not root or not root.exists():return
             for path in root.rglob('*'):
                 if not path.is_file() or path.suffix.lower()!='.d':continue
                 try:
-                    for item in parse_items(path,origin):merged[item.instance.casefold()]=item
+                    for item in parse_items(path,origin):
+                        merged[item.instance.casefold()]=item
+                        by_origin[origin][item.instance.casefold()]=item
                 except (OSError,UnicodeError,ValueError) as e:
                     if len(self.errors)<12:self.errors.append(f'{path.name}: {e}')
         game_content=self._game_content()
         if game_content and self.root not in game_content.parents and game_content!=self.root:
             scan(game_content,'game')
         scan(self._project_content(),'project')
+        # JSON components take precedence over the game and legacy project scripts.
+        try:
+            for item in self.components.list_items():
+                merged[item.instance.casefold()]=item
+                by_origin['project'][item.instance.casefold()]=item
+        except (OSError,UnicodeError,ValueError,KeyError) as exc:
+            self.errors.append(str(exc))
         self.items=sorted(merged.values(),key=lambda i:(i.title.casefold(),i.instance.casefold()))
+        self.project_items=sorted(by_origin['project'].values(),key=lambda i:(i.title.casefold(),i.instance.casefold()))
+        self.game_items=sorted(by_origin['game'].values(),key=lambda i:(i.title.casefold(),i.instance.casefold()))
         self.mesh_index={}
         for base in (self.root/'Assets',self.root/'Scripts',self.game/'_work'/'data'/'Meshes' if self.game else None):
             if base and base.exists():
@@ -112,6 +153,18 @@ class ProjectRepository:
         return next(x for x in self.items if x.instance==instance)
 
     def create_item(self,category_key):
+        if category_key=='potions':
+            instance=self.new_id('GE_ItPo_New')
+            code=(f'INSTANCE {instance} (C_Item)\n{{\n'
+                  f'    name = NAME_Trank;\n    mainflag = ITEM_KAT_POTIONS;\n'
+                  f'    flags = ITEM_MULTI;\n    value = 0;\n'
+                  f'    visual = "ItPo_Perm_Health.3ds";\n'
+                  f'    material = MAT_GLAS;\n    scemeName = "POTIONFAST";\n'
+                  f'    description = "Новое зелье";\n}};')
+            item=Item(instance,self.root/'__new__','project',code,{},0,len(code))
+            self.components.import_item(item)
+            self.refresh()
+            return next(x for x in self.project_items if x.instance==instance)
         cat=leaf_for(get_category(category_key))
         instance=self.new_id('GE_'+cat.key+'_Item')
         code=(f'INSTANCE {instance} (C_Item)\n{{\n'
@@ -124,7 +177,30 @@ class ProjectRepository:
         """Duplicate a single item definition; original game files untouched."""
         instance=self.new_id(item.instance+'_Copy')
         code=replace_instance(item.text,item.instance,instance)
+        if classify(item)=='potions':
+            self.components.import_item(item,instance)
+            self.refresh()
+            return next(x for x in self.project_items if x.instance==instance)
         return self._write_new(instance,code)
+
+    def copy_to_project(self,item:Item):
+        """Copy an original definition without renaming its INSTANCE or replacing a project edit."""
+        existing=next((current for current in self.project_items if current.instance.casefold()==item.instance.casefold()),None)
+        if existing is not None:return existing
+        if classify(item)=='potions':
+            self.components.import_item(item)
+            self.refresh()
+            return next(x for x in self.project_items if x.instance.casefold()==item.instance.casefold())
+        destination=self._destination_for(item)
+        destination.parent.mkdir(parents=True,exist_ok=True)
+        if destination.exists():
+            from .scripts import load_text
+            text,codec=load_text(destination)
+            destination.write_bytes((text.rstrip()+'\n\n'+item.text+';\n').encode(codec))
+        else:
+            destination.write_bytes((ITEM_OVERRIDES_HEADER+'\n\n'+item.text+';\n').encode(item.encoding))
+        self.refresh()
+        return next(current for current in self.project_items if current.instance.casefold()==item.instance.casefold())
 
     def _destination_for(self,item:Item):
         if item.origin=='project':return item.path
@@ -135,16 +211,22 @@ class ProjectRepository:
 
     def edit(self,item:Item,values:dict[str,str]):
         if not values:return item
+        if item.path.name=='item.json' and item.path.parent.parent==self.components.root:
+            self.components.edit(item,values)
+            self.refresh()
+            return next(x for x in self.project_items if x.instance.casefold()==item.instance.casefold())
+        if item.origin=='game':item=self.copy_to_project(item)
         dest=self._destination_for(item)
-        if item.origin=='game' and dest.exists():
-            # A previous copy is the new authority; writing keeps all its definitions.
-            pass
         write_modified_item(item,dest,values)
         self.refresh()
         return next(x for x in self.items if x.instance.casefold()==item.instance.casefold())
 
     def delete(self,item:Item):
         if item.origin!='project':raise ValueError(tr('project.cannot_delete_original'))
+        if item.path.name=='item.json' and item.path.parent.parent==self.components.root:
+            self.components.delete(item)
+            self.refresh()
+            return
         from .scripts import load_text
         source,codec=load_text(item.path)
         parsed=parse_items(item.path,'project')
@@ -152,7 +234,8 @@ class ProjectRepository:
         if target is None:raise ValueError(tr('project.item_missing'))
         new=source[:target.begin]+source[target.end:]
         # A generated standalone file can be removed completely.
-        if not any(x.instance.lower()!=item.instance.lower() for x in parsed) and 'GE_Generated' in item.path.parts:
+        if not any(x.instance.lower()!=item.instance.lower() for x in parsed) and (
+                'GE_Generated' in item.path.parts or source.startswith(ITEM_OVERRIDES_HEADER)):
             item.path.unlink()
         else:
             item.path.write_bytes(new.encode(codec))

@@ -1,7 +1,8 @@
 {
   "sections": [
     {"code": "interface", "name": "settings.sections.interface"},
-    {"code": "resources", "name": "settings.sections.resources"}
+    {"code": "resources", "name": "settings.sections.resources"},
+    {"code": "build", "name": "settings.sections.build"}
   ],
   "settings": [
     {
@@ -12,9 +13,27 @@
       ]
     },
     {
+      "section_code": "interface", "code": "terminal", "name": "settings.groups.terminal",
+      "items": [
+        {"code": "height", "name": "settings.items.terminal_height", "title": "settings.hints.terminal_height", "type": "number", "default": 200, "minimum": 80, "maximum": 2000}
+      ]
+    },
+    {
       "section_code": "resources", "code": "gothic", "name": "settings.groups.gothic",
       "items": [
         {"code": "game_path", "name": "settings.items.game_path", "title": "settings.hints.game_path", "type": "directory", "default": "", "scope": "project"}
+      ]
+    },
+    {
+      "section_code": "resources", "code": "editor", "name": "settings.groups.resource_settings",
+      "items": [
+        {"code": "path", "name": "settings.items.resource_editor", "title": "settings.hints.resource_editor", "type": "file", "default": "", "scope": "project"}
+      ]
+    },
+    {
+      "section_code": "build", "code": "compiler", "name": "settings.groups.compiler",
+      "items": [
+        {"code": "path", "name": "settings.items.compiler", "title": "settings.hints.compiler", "type": "file", "default": "", "scope": "project"}
       ]
     }
   ]
