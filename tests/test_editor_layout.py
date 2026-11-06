@@ -75,6 +75,10 @@ class EditorLayoutTests(unittest.TestCase):
         self.app.show_project(reset_hierarchy=True)
 
     def test_terminal_menu_full_width_default_height_and_resize_persistence(self):
+        self.assertEqual(len(self.app.workspace.panes()), 2)
+        self.assertEqual(self.app.bottom_dock.selected_key(),'resources')
+        self.app.hide_terminal()
+        self.app.hide_bottom_tab('resources')
         self.assertEqual(len(self.app.workspace.panes()), 1)
         view = self.app.nametowidget(self.app.main_menu.entrycget(3, 'menu'))
         windows = self.app.nametowidget(view.entrycget(0, 'menu'))
@@ -102,7 +106,7 @@ class EditorLayoutTests(unittest.TestCase):
         self.assertEqual(panel.expanded, {})
         self.assertFalse(row.opened)
         self.assertIn('[1]', project.heading.cget('text'))
-        self.assertIn('[0]', panel.sections['game'].heading.cget('text'))
+        self.assertEqual(set(panel.sections),{'project'})
         row.toggle()
         self.wait(.07)
         self.assertGreater(row.angle, 0)

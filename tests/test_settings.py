@@ -34,13 +34,13 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(language.tr('missing'), 'missing')
         self.assertEqual(language.set_language('unknown'), 'ru')
 
-    def test_settings_round_trip_excludes_project_resources(self):
+    def test_settings_round_trip_includes_shared_resources(self):
         store = SettingsStore(self.root / 'settings.json')
         settings = EditorSettings({'interface.general.window_size': [1400, 900],
                                    'resources.gothic.game_path': 'private/game/path'})
         store.save(settings)
         self.assertEqual(store.load().get_value('interface.general.window_size'), [1400, 900])
-        self.assertNotIn('resources.gothic.game_path', json.loads(store.path.read_text('utf-8')))
+        self.assertEqual(store.load().get_value('resources.gothic.game_path'), 'private/game/path')
         self.assertFalse(store.path.with_suffix('.tmp').exists())
 
     def test_invalid_saved_value_falls_back_without_losing_valid_values(self):
@@ -154,7 +154,8 @@ class SettingsWindowTests(unittest.TestCase):
         window.save()
         self.assertEqual(self.app.repo.game, game.resolve())
         config = self.root / 'mod' / 'project.json'
-        self.assertEqual(json.loads(config.read_text('utf-8'))['game_path'], str(game.resolve()))
+        self.assertEqual(self.store.load().get_value('resources.gothic.game_path'), str(game.resolve()))
+        self.assertEqual(json.loads(config.read_text('utf-8'))['game_path'], '')
         window = self.open_dialog(resources=True)
         with patch.object(self.app.repo, 'refresh') as refresh:
             window.save()
@@ -174,6 +175,51 @@ class SettingsWindowTests(unittest.TestCase):
         error.assert_called_once()
         self.assertIsNone(self.app.repo.game)
         self.assertFalse(self.store.path.exists())
+
+    def test_shared_paths_can_be_set_before_opening_and_apply_to_every_project(self):
+        game, compiler, editor = self.root/'game', self.root/'compiler.dll', self.root/'editor.exe'
+        game.mkdir()
+        compiler.write_bytes(b'compiler')
+        editor.write_bytes(b'editor')
+        window = self.open_dialog(resources=True)
+        for key,value in [('resources.gothic.game_path',game),('build.compiler.path',compiler),
+                          ('resources.editor.path',editor)]:
+            window.values[key][0].set(str(value))
+        window.save()
+        self.assertFalse(window.winfo_exists())
+        for name in ('First', 'Second'):
+            path = self.root/name
+            self.app.repo.create(path,name)
+            self.assertEqual(self.app.repo.game,game)
+            self.assertEqual(self.app.repo.compiler_path,str(compiler))
+            self.assertEqual(self.app.repo.resource_editor_path,str(editor))
+            data = json.loads((path/'project.json').read_text('utf-8'))
+            self.assertNotIn('compiler_path',data)
+        # A legacy project cannot override configured global paths.
+        legacy = self.root/'Legacy'
+        legacy.mkdir()
+        config = {'name':'Legacy','game_path':str(self.root/'other-game'),'compiler_path':'old.dll'}
+        (legacy/'project.json').write_text(json.dumps(config),encoding='utf-8')
+        self.app.open_project_path(legacy)
+        self.assertEqual(self.app.repo.game,game)
+        self.assertEqual(self.app.repo.compiler_path,str(compiler))
+        self.assertEqual(json.loads((legacy/'project.json').read_text('utf-8')),config)
+
+    def test_legacy_paths_are_adopted_once_and_can_be_cleared_globally(self):
+        game = self.root/'legacy-game'
+        game.mkdir()
+        legacy = self.root/'Legacy'
+        legacy.mkdir()
+        config = {'name':'Legacy','game_path':str(game)}
+        (legacy/'project.json').write_text(json.dumps(config),encoding='utf-8')
+        self.app.open_project_path(legacy)
+        self.assertEqual(self.store.load().get_value('resources.gothic.game_path'),str(game))
+        window = self.open_dialog(resources=True)
+        window.values['resources.gothic.game_path'][0].set('')
+        window.save()
+        self.app.open_project_path(legacy)
+        self.assertIsNone(self.app.repo.game)
+        self.assertEqual(json.loads((legacy/'project.json').read_text('utf-8')),config)
 
     def test_language_change_keeps_selection_drafts_and_search(self):
         self.app.repo.create(self.root / 'mod', 'Test')

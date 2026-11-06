@@ -3,7 +3,7 @@ from __future__ import annotations
 import os,tkinter as tk
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from tkinter import filedialog,messagebox,ttk,simpledialog
+from tkinter import filedialog,messagebox,ttk
 from .core.project import ProjectRepository
 from .ui.widgets import BG,PANEL,TXT,MUTED,label,Tooltip
 from .ui.hierarchy import HierarchyPanel
@@ -21,10 +21,16 @@ from .ui.bottom_dock import BottomDock
 from .ui.resources import ResourcesPanel
 from .core.recent_projects import RecentProjects
 from .ui.welcome import WelcomeScreen
+from .ui.project_dialog import NewProjectDialog
+from .ui.item_dialog import AddItemDialog
+
+RESOURCE_KEYS={'game_path':'resources.gothic.game_path','compiler_path':'build.compiler.path',
+               'resource_editor_path':'resources.editor.path'}
 
 class EditorApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.withdraw()
         self.settings_store=SettingsStore()
         self.settings=self.settings_store.load()
         self.recent_projects=RecentProjects(self.settings_store.path.with_name('recent_projects.json'))
@@ -39,14 +45,24 @@ class EditorApp(tk.Tk):
             parent,lambda:self.repo.resource_editor_path,lambda:self.hide_bottom_tab('resources')))
         self.terminal_visible=self._bottom_tab_variables['terminal']
         self.resources_visible=self._bottom_tab_variables['resources']
+        self.terminal_visible.set(True)
+        self.resources_visible.set(True)
         self.terminal_height=self.settings.get_value('interface.terminal.height')
         self.icons=IconImages(self)
         self._tool_runner=ToolRunner(self,lambda message:self.terminal.append(message),self._tool_completed)
         self.title('Gothic Editor — 0.2')
         width,height=self.settings.get_value('interface.general.window_size')
-        self.geometry(f'{max(870,width)}x{max(540,height)}');self.minsize(870,540)
+        width,height=max(870,width),max(540,height)
+        x=max(0,(self.winfo_screenwidth()-width)//2)
+        y=max(0,(self.winfo_screenheight()-height)//2)
+        self.geometry(f'{width}x{height}+{x}+{y}');self.minsize(870,540)
         self.configure(bg=BG)
-        self.repo=ProjectRepository()
+        self.repo=ProjectRepository({key:self.settings.values[value] for key,value in RESOURCE_KEYS.items()
+                                     if value in self.settings.values})
+        game_path=self.settings.get_value(RESOURCE_KEYS['game_path'])
+        self.repo.game=Path(game_path).resolve() if game_path else None
+        self.repo.compiler_path=self.settings.get_value(RESOURCE_KEYS['compiler_path'])
+        self.repo.resource_editor_path=self.settings.get_value(RESOURCE_KEYS['resource_editor_path'])
         self.current=None
         self._model_executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix='model-loader')
         self._model_future=None
@@ -55,6 +71,11 @@ class EditorApp(tk.Tk):
         self.show_welcome()
         self.bind('<Control-o>',lambda e:self.open_project())
         self.bind('<Control-s>',lambda e:self.properties.save())
+        self.deiconify()
+        if os.name=='nt':self.state('zoomed')
+        else:
+            try:self.attributes('-zoomed',True)
+            except tk.TclError:pass
 
     def _build_menu(self):
         previous=getattr(self,'main_menu',None)
@@ -139,6 +160,19 @@ class EditorApp(tk.Tk):
             self.recent_menu.add_command(label=tr('welcome.empty'),state='disabled')
 
     def _remember_project(self):
+        # Adopt legacy per-project resources once; subsequent projects use the
+        # application values, including explicitly cleared paths.
+        resources={'game_path':str(self.repo.game) if self.repo.game else '',
+                   'compiler_path':self.repo.compiler_path,'resource_editor_path':self.repo.resource_editor_path}
+        for key in ('compiler_path','resource_editor_path'):
+            if resources[key]:resources[key]=str((self.repo.root/Path(resources[key])).resolve())
+        try:
+            for key,value in resources.items():self.settings.values[RESOURCE_KEYS[key]]=value
+            self.settings_store.save(self.settings)
+            self.repo.shared_resources.update(resources)
+            self.repo.compiler_path=resources['compiler_path']
+            self.repo.resource_editor_path=resources['resource_editor_path']
+        except OSError as exc:self.terminal.append(str(exc))
         try:self.recent_projects.remember(self.repo.root,self.repo.name)
         except OSError as exc:self.terminal.append(tr('welcome.save_error',error=str(exc)))
         self._update_recent_menu()
@@ -146,7 +180,7 @@ class EditorApp(tk.Tk):
     def show_welcome(self):
         self.editor_frame.pack_forget()
         if self.welcome is not None and self.welcome.winfo_exists():self.welcome.destroy()
-        self.welcome=WelcomeScreen(self,self.recent_projects,lambda:self.create_project(beside_recent=True),
+        self.welcome=WelcomeScreen(self,self.recent_projects,self.create_project,
                                    self.open_project,self.open_project_path)
         self.welcome.pack(fill='both',expand=True)
 
@@ -163,24 +197,10 @@ class EditorApp(tk.Tk):
 
     def create_project(self,beside_recent=False):
         parent=self.recent_projects.parent_directory()
-        if beside_recent and parent is not None:
-            name=simpledialog.askstring(tr('app.new_project'),tr('app.project_name'),
-                                       initialvalue=tr('welcome.default_name'),parent=self)
-            if not name:return
-            name=name.strip()
-            if not name or name in ('.','..') or any(char in name for char in '<>:"/\\|?*'):
-                messagebox.showerror(tr('app.create_error'),tr('welcome.invalid_name'),parent=self)
-                return
-            base=parent/name
-            if base.exists():
-                messagebox.showerror(tr('app.create_error'),tr('welcome.folder_exists',path=str(base)),parent=self)
-                return
-        else:
-            options={'initialdir':str(parent)} if parent is not None else {}
-            base=filedialog.askdirectory(title=tr('app.choose_project_folder'),**options)
-            if not base:return
-            name=simpledialog.askstring(tr('app.new_project'),tr('app.project_name'),initialvalue=Path(base).name,parent=self)
-            if not name:return
+        dialog=NewProjectDialog(self,parent)
+        self.wait_window(dialog)
+        if dialog.result is None:return
+        base,name=dialog.result
         try:
             self.repo.create(Path(base),name)
             self._remember_project()
@@ -322,18 +342,15 @@ class EditorApp(tk.Tk):
         if width<870 or height<540:
             raise ValueError(tr('settings.invalid',name=tr('settings.items.window_size')))
         game_path=values['resources.gothic.game_path'].strip()
-        game=Path(game_path).resolve() if game_path else None
-        if self.repo.root is not None:
-            game=self.repo.validate_game_path(game_path)
+        game,compiler_path,editor_path=self.repo.validate_configuration(
+            game_path,values['build.compiler.path'],values['resources.editor.path'])
+        settings.values.update({'resources.gothic.game_path':str(game) if game else '',
+                                'build.compiler.path':compiler_path,'resources.editor.path':editor_path})
         old_language=localization.language_code
         self.settings_store.save(settings)
         resources_changed=self.repo.root is not None and self.repo.game!=game
-        compiler_path=values['build.compiler.path'].strip()
-        editor_path=values['resources.editor.path'].strip()
         try:
-            if self.repo.root is not None and (resources_changed or self.repo.compiler_path!=compiler_path
-                                              or self.repo.resource_editor_path!=editor_path):
-                self.repo.set_configuration(game_path,compiler_path,editor_path)
+            self.repo.set_configuration(game_path,compiler_path,editor_path)
         except (OSError,ValueError):
             self.settings_store.save(self.settings)
             raise
@@ -390,7 +407,7 @@ class EditorApp(tk.Tk):
         except Exception as exc:messagebox.showerror(tr('app.refresh_error'),str(exc))
 
     def update_hierarchy(self):
-        self.hierarchy.set_items(self.repo.project_items+self.repo.game_items)
+        self.hierarchy.set_items(self.repo.project_items)
         project_count=sum(x.origin=='project' for x in self.repo.items)
         self.status.set(tr('messages.stats',total=len(self.repo.items),project=project_count,models=len(self.repo.mesh_index),archived=len(self.repo.archive_models.entries),errors=len(self.repo.errors)))
 
@@ -469,7 +486,14 @@ class EditorApp(tk.Tk):
         except Exception as exc:
             messagebox.showerror(tr('app.error'),str(exc))
 
-    def create_item(self,key):self._action(self.repo.create_item,key)
+    def create_item(self,key):
+        if not self.need_project():return
+        dialog=AddItemDialog(self,key,self.repo.game_items)
+        self.wait_window(dialog)
+        if dialog.result is None:return
+        action,value=dialog.result
+        if action=='copy':self.copy_to_project(value)
+        else:self._action(self.repo.create_item,key,value)
     def duplicate(self,item):self._action(self.repo.duplicate,item)
     def copy_to_project(self,item):self._action(self.repo.copy_to_project,item)
 

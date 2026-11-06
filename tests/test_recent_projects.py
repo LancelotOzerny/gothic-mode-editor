@@ -8,6 +8,7 @@ from unittest.mock import patch
 from gothic_editor.app import EditorApp
 from gothic_editor.core.recent_projects import RecentProjects
 from gothic_editor.core.settings import EditorSettings, SettingsStore
+from gothic_editor.ui.project_dialog import NewProjectDialog
 
 
 class RecentProjectsTests(unittest.TestCase):
@@ -85,12 +86,15 @@ class WelcomeTests(unittest.TestCase):
         self.assertEqual(self.app.repo.root,chosen)
         self.assertIsNone(self.app.welcome)
 
-    def test_new_project_is_created_beside_last_project(self):
-        with patch('gothic_editor.app.simpledialog.askstring',return_value='FreshProject'), \
-                patch('gothic_editor.app.filedialog.askdirectory') as picker:
-            self.app.create_project(beside_recent=True)
-        picker.assert_not_called()
-        expected=self.root/'Mods/FreshProject'
+    def test_new_project_uses_explicit_location_and_project_name(self):
+        expected=self.root/'Chosen Location/FreshProject'
+        expected.parent.mkdir()
+        def complete(dialog):
+            dialog.name.set('FreshProject')
+            dialog.directory.set(str(expected.parent))
+            dialog.submit()
+        with patch.object(self.app,'wait_window',side_effect=complete):
+            self.app.create_project()
         self.assertEqual(self.app.repo.root,expected)
         self.assertTrue((expected/'project.json').is_file())
         self.assertEqual(self.app.recent_projects.entries[0].path,expected)
@@ -99,10 +103,13 @@ class WelcomeTests(unittest.TestCase):
     def test_existing_folder_and_invalid_names_are_not_used(self):
         before=list(self.app.recent_projects.entries)
         for name in ('../Outside','Project11'):
-            with patch('gothic_editor.app.simpledialog.askstring',return_value=name), \
-                    patch('gothic_editor.app.messagebox.showerror') as error:
-                self.app.create_project(beside_recent=True)
+            dialog=NewProjectDialog(self.app,self.root/'Mods')
+            dialog.name.set(name)
+            with patch('gothic_editor.ui.project_dialog.messagebox.showerror') as error:
+                dialog.submit()
             error.assert_called_once()
+            self.assertIsNone(dialog.result)
+            dialog.destroy()
         self.assertIsNone(self.app.repo.root)
         self.assertEqual(self.app.recent_projects.entries,before)
 
@@ -116,15 +123,25 @@ class WelcomeTests(unittest.TestCase):
         self.assertTrue(self.app.welcome.winfo_exists())
         self.assertEqual(self.app.recent_projects.entries,before)
 
-    def test_startup_with_no_history_uses_folder_picker(self):
+    def test_startup_with_no_history_can_browse_and_cancel_creation(self):
         self.app.recent_projects.entries=[]
         self.app._update_recent_menu()
         self.app.show_welcome()
         self.assertEqual(len(self.app.welcome.projects.get_children()),0)
         self.assertEqual(self.app.recent_menu.entrycget(0,'state'),'disabled')
         with patch('gothic_editor.app.filedialog.askdirectory',return_value='') as picker:
-            self.app.create_project(beside_recent=True)
+            self.app.welcome.open_selected()
         picker.assert_called_once()
+        with patch.object(self.app,'wait_window',side_effect=lambda dialog:dialog.destroy()):
+            self.app.create_project()
+        self.assertIsNone(self.app.repo.root)
+
+    def test_welcome_has_single_column_without_headings(self):
+        tree=self.app.welcome.projects
+        self.assertEqual(tuple(tree['columns']),('project',))
+        self.assertFalse(tree['show'])
+        entry=self.app.welcome.entries[0]
+        self.assertEqual(tree.item('0','values'),(f'{entry.name} ({entry.path})',))
 
     def test_language_rebuild_keeps_startup_and_history(self):
         self.app._rebuild_translated_ui()

@@ -227,7 +227,8 @@ class ToolbarTests(unittest.TestCase):
         self.assertFalse(window.winfo_exists())
         self.assertEqual(self.app.repo.compiler_path, str(compiler))
         config = json.loads((self.app.repo.root / 'project.json').read_text('utf-8'))
-        self.assertEqual(config['compiler_path'], str(compiler))
+        self.assertNotIn('compiler_path', config)
+        self.assertEqual(self.app.settings_store.load().get_value('build.compiler.path'), str(compiler))
 
     def test_buttons_are_centered_disabled_without_project_and_job_log_is_responsive(self):
         self.assertEqual(self.app.play_button.cget('state'), 'disabled')

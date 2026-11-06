@@ -77,6 +77,9 @@ class ResourceDockTests(unittest.TestCase):
         self.app.update_idletasks()
 
     def test_tabs_enable_independently_keep_order_and_allow_extensions(self):
+        self.assertEqual(self.app.bottom_dock.visible_keys(),['terminal','resources'])
+        self.assertEqual(self.app.bottom_dock.selected_key(),'resources')
+        self.app.hide_terminal()
         self.app.show_bottom_tab('resources')
         self.assertEqual(self.app.bottom_dock.visible_keys(),['resources'])
         self.assertEqual(len(self.app.workspace.panes()),2)
@@ -125,7 +128,7 @@ class ResourceDockTests(unittest.TestCase):
         launch.assert_called_once()
         reveal.assert_called_once_with(self.item.path)
 
-    def test_editor_setting_is_saved_per_project_and_preserved_when_game_changes(self):
+    def test_editor_setting_is_shared_and_preserved_when_game_changes(self):
         editor = self.root/'editor.exe'
         editor.write_bytes(b'editor')
         self.app.show_settings()
@@ -136,7 +139,8 @@ class ResourceDockTests(unittest.TestCase):
         self.assertEqual(self.app.repo.resource_editor_path,str(editor))
         self.app.repo.set_game_path('')
         data = json.loads((self.app.repo.root/'project.json').read_text('utf-8'))
-        self.assertEqual(data['resource_editor_path'],str(editor))
+        self.assertNotIn('resource_editor_path',data)
+        self.assertEqual(self.app.settings_store.load().get_value('resources.editor.path'),str(editor))
 
     def test_language_rebuild_keeps_selected_tab_terminal_and_resource_files(self):
         self.app.show_terminal()

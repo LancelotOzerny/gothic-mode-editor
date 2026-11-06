@@ -1,4 +1,4 @@
-"""Separate project/game trees with lazy category rows and animated disclosure icons."""
+"""Project hierarchy with lazy category rows and animated disclosure icons."""
 from __future__ import annotations
 
 import tkinter as tk
@@ -175,7 +175,7 @@ class HierarchyPanel(tk.Frame):
         self.panes = tk.PanedWindow(self, orient='vertical', bg=BG, bd=0, sashwidth=6)
         self.panes.pack(fill='both', expand=True)
         self.sections = {}
-        for origin in ('project', 'game'):
+        for origin in ('project',):
             section = HierarchySection(self, self.panes, origin)
             self.sections[origin] = section
             self.panes.add(section, minsize=90, stretch='always')

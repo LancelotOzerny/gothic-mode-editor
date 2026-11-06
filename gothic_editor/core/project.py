@@ -9,7 +9,8 @@ from .archive_models import ArchiveModels
 from .potion_components import PotionComponents
 
 class ProjectRepository:
-    def __init__(self):
+    def __init__(self,shared_resources=None):
+        self.shared_resources=shared_resources
         self.root:Path|None=None
         self.game:Path|None=None
         self.compiler_path=''
@@ -36,14 +37,15 @@ class ProjectRepository:
         if not cfg.is_file():raise ValueError(tr('project.not_project'))
         data=json.loads(cfg.read_text('utf-8'))
         self.name=data.get('name',root.name)
-        raw=data.get('game_path','')
+        resources=data if self.shared_resources is None else {**data,**self.shared_resources}
+        raw=resources.get('game_path','')
         game=Path(raw).resolve() if raw else None
         self._validate_roots(root,game)
         self.root=root
         self.components=PotionComponents(root)
         self.game=game
-        self.compiler_path=data.get('compiler_path','')
-        self.resource_editor_path=data.get('resource_editor_path','')
+        self.compiler_path=resources.get('compiler_path','')
+        self.resource_editor_path=resources.get('resource_editor_path','')
         self.refresh()
 
     @staticmethod
@@ -53,40 +55,50 @@ class ProjectRepository:
             raise ValueError(tr('project.overlapping_roots'))
 
     def validate_game_path(self,path:str):
-        if not self.root:raise ValueError(tr('project.not_open'))
         path=path.strip()
         if path and not Path(path).is_dir():raise ValueError(tr('project.game_missing'))
         target=Path(path).resolve() if path else None
-        self._validate_roots(self.root,target)
+        if self.root:self._validate_roots(self.root,target)
         return target
 
     def set_game_path(self,path:str):
         self.set_configuration(path,self.compiler_path)
 
     def set_configuration(self,path:str,compiler_path:str,resource_editor_path=None):
-        target=self.validate_game_path(path)
-        compiler_path=compiler_path.strip()
-        if compiler_path:
-            compiler=Path(compiler_path).expanduser()
-            if not compiler.is_absolute():compiler=self.root/compiler
-            if not compiler.is_file() or compiler.suffix.lower() not in ('.dll','.exe'):
-                raise ValueError(tr('tools.compiler_missing'))
-        editor_path=self.resource_editor_path if resource_editor_path is None else resource_editor_path.strip()
-        if editor_path:
-            editor=Path(editor_path).expanduser()
-            if not editor.is_absolute():editor=self.root/editor
-            if not editor.is_file():raise ValueError(tr('resources.editor_missing',path=str(editor)))
-        config=json.loads((self.root/'project.json').read_text('utf-8'))
-        config.update(name=self.name,game_path=str(target) if target else '',compiler_path=compiler_path,
-                      resource_editor_path=editor_path)
-        temporary=self.root/'project.json.tmp'
-        temporary.write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding='utf-8')
-        temporary.replace(self.root/'project.json')
+        target,compiler_path,editor_path=self.validate_configuration(path,compiler_path,resource_editor_path)
+        resources=dict(game_path=str(target) if target else '',compiler_path=compiler_path,
+                       resource_editor_path=editor_path)
+        if self.shared_resources is None:
+            if not self.root:raise ValueError(tr('project.not_open'))
+            config=json.loads((self.root/'project.json').read_text('utf-8'))
+            config.update(name=self.name,**resources)
+            temporary=self.root/'project.json.tmp'
+            temporary.write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding='utf-8')
+            temporary.replace(self.root/'project.json')
+        else:
+            self.shared_resources.update(resources)
         changed=self.game!=target
         self.game=target
         self.compiler_path=compiler_path
         self.resource_editor_path=editor_path
         if changed:self.refresh()
+
+    def validate_configuration(self,path,compiler_path,resource_editor_path=None):
+        target=self.validate_game_path(path)
+        compiler_path=compiler_path.strip()
+        if compiler_path:
+            compiler=Path(compiler_path).expanduser()
+            if not compiler.is_absolute():compiler=(self.root or Path.cwd())/compiler
+            if not compiler.is_file() or compiler.suffix.lower() not in ('.dll','.exe'):
+                raise ValueError(tr('tools.compiler_missing'))
+            if self.shared_resources is not None:compiler_path=str(compiler.resolve())
+        editor_path=self.resource_editor_path if resource_editor_path is None else resource_editor_path.strip()
+        if editor_path:
+            editor=Path(editor_path).expanduser()
+            if not editor.is_absolute():editor=(self.root or Path.cwd())/editor
+            if not editor.is_file():raise ValueError(tr('resources.editor_missing',path=str(editor)))
+            if self.shared_resources is not None:editor_path=str(editor.resolve())
+        return target,compiler_path,editor_path
 
     def _game_content(self):
         if not self.game:return None
@@ -152,7 +164,8 @@ class ProjectRepository:
         self.refresh()
         return next(x for x in self.items if x.instance==instance)
 
-    def create_item(self,category_key):
+    def create_item(self,category_key,name=None):
+        title=(name or tr('items.default_name')).replace('\\','\\\\').replace('"','\\"')
         if category_key=='potions':
             instance=self.new_id('GE_ItPo_New')
             code=(f'INSTANCE {instance} (C_Item)\n{{\n'
@@ -160,7 +173,7 @@ class ProjectRepository:
                   f'    flags = ITEM_MULTI;\n    value = 0;\n'
                   f'    visual = "ItPo_Perm_Health.3ds";\n'
                   f'    material = MAT_GLAS;\n    scemeName = "POTIONFAST";\n'
-                  f'    description = "Новое зелье";\n}};')
+                  f'    description = "{title if name else tr("items.default_potion")}";\n}};')
             item=Item(instance,self.root/'__new__','project',code,{},0,len(code))
             self.components.import_item(item)
             self.refresh()
@@ -168,7 +181,7 @@ class ProjectRepository:
         cat=leaf_for(get_category(category_key))
         instance=self.new_id('GE_'+cat.key+'_Item')
         code=(f'INSTANCE {instance} (C_Item)\n{{\n'
-              f'    name = "Новый предмет";\n    mainflag = {cat.mainflag};\n'
+              f'    name = "{title}";\n    mainflag = {cat.mainflag};\n'
               f'    flags = {cat.flags};\n    value = 0;\n'
               f'    description = name;\n}}')
         return self._write_new(instance,code)

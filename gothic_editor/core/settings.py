@@ -1,4 +1,4 @@
-"""Schema-driven settings values; project values stay in project.json."""
+"""Schema-driven application settings, including shared resource paths."""
 from __future__ import annotations
 
 import json

@@ -21,19 +21,19 @@
     {
       "section_code": "resources", "code": "gothic", "name": "settings.groups.gothic",
       "items": [
-        {"code": "game_path", "name": "settings.items.game_path", "title": "settings.hints.game_path", "type": "directory", "default": "", "scope": "project"}
+        {"code": "game_path", "name": "settings.items.game_path", "title": "settings.hints.game_path", "type": "directory", "default": ""}
       ]
     },
     {
       "section_code": "resources", "code": "editor", "name": "settings.groups.resource_settings",
       "items": [
-        {"code": "path", "name": "settings.items.resource_editor", "title": "settings.hints.resource_editor", "type": "file", "default": "", "scope": "project"}
+        {"code": "path", "name": "settings.items.resource_editor", "title": "settings.hints.resource_editor", "type": "file", "default": ""}
       ]
     },
     {
       "section_code": "build", "code": "compiler", "name": "settings.groups.compiler",
       "items": [
-        {"code": "path", "name": "settings.items.compiler", "title": "settings.hints.compiler", "type": "file", "default": "", "scope": "project"}
+        {"code": "path", "name": "settings.items.compiler", "title": "settings.hints.compiler", "type": "file", "default": ""}
       ]
     }
   ]
