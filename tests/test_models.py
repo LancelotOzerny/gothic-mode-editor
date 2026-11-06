@@ -11,6 +11,7 @@ from unittest.mock import patch
 from gothic_editor.app import EditorApp
 from gothic_editor.core.archive_models import ArchiveModels, load_archive_model, _load_archive_model
 from gothic_editor.core.mesh import MeshFormatError, read_mrm, read_3ds_bytes
+from gothic_editor.core.model_export import export_model_3ds
 from gothic_editor.core.project import ProjectRepository
 from gothic_editor.core.settings import SettingsStore
 from gothic_editor.core.vdf import VdfArchive, VdfFormatError
@@ -65,6 +66,34 @@ class ModelFormatTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         _load_archive_model.cache_clear()
+
+    def test_export_copies_source_3ds_and_converts_archived_mrm(self):
+        archives=ArchiveModels()
+        write_vdf(self.root/'game/Data/Meshes.vdf',{'POTION.MRM':mrm_bytes(second_submesh=True)})
+        archives.refresh(self.root/'project',self.root/'game')
+        output=self.root/'export.3ds'
+        self.assertTrue(export_model_3ds('POTION.3DS',{},archives,output))
+        self.assertEqual(read_3ds_bytes(output.read_bytes()),(VERTICES,[(2,0,1),(3,2,1)]))
+        source=self.root/'POTION.3DS'
+        source.write_bytes(source_3ds_bytes())
+        self.assertFalse(export_model_3ds('POTION.3DS',{'potion.3ds':source},archives,output))
+        self.assertEqual(output.read_bytes(),source.read_bytes())
+        write_vdf(self.root/'game/Data/Meshes.vdf',{'POTION.3DS':source_3ds_bytes()})
+        archives.refresh(self.root/'project',self.root/'game')
+        self.assertFalse(export_model_3ds('POTION.3DS',{},archives,output))
+        self.assertEqual(output.read_bytes(),source.read_bytes())
+
+    def test_export_missing_or_broken_model_preserves_existing_destination(self):
+        archives=ArchiveModels()
+        output=self.root/'export.3ds'
+        output.write_bytes(b'previous model')
+        with self.assertRaises(ValueError):
+            export_model_3ds('MISSING.3DS',{},archives,output)
+        write_vdf(self.root/'game/Data/Meshes.vdf',{'POTION.MRM':b'broken'})
+        archives.refresh(self.root/'project',self.root/'game')
+        with self.assertRaises(MeshFormatError):
+            export_model_3ds('POTION.3DS',{},archives,output)
+        self.assertEqual(output.read_bytes(),b'previous model')
 
     def test_mrm_wedges_multiple_submeshes_and_versions(self):
         for version in (0x305, 0x805, 0x905):
@@ -175,6 +204,22 @@ class ModelViewerIntegrationTests(unittest.TestCase):
         while self.app._model_future is not None and monotonic() < deadline:
             self.app.update()
         self.assertIsNone(self.app._model_future)
+
+    def test_context_menu_exports_clicked_item_and_cancel_does_not_write(self):
+        from types import SimpleNamespace
+        output=self.root/'downloaded.3ds'
+        with patch('tkinter.Menu.tk_popup'):
+            self.app.hierarchy.context(SimpleNamespace(x_root=0,y_root=0),self.item)
+        menu=self.app.hierarchy._context_menu
+        self.assertEqual(menu.entrycget(2,'label'),'Скачать модель → 3DS')
+        with patch('gothic_editor.app.filedialog.asksaveasfilename',return_value=str(output)):
+            menu.invoke(2)
+        self.assertEqual(read_3ds_bytes(output.read_bytes()),(VERTICES,[(2,0,1)]))
+        self.assertIn(str(output),self.app.status.get())
+        with patch('gothic_editor.app.filedialog.asksaveasfilename',return_value=''), \
+                patch('gothic_editor.app.export_model_3ds') as export:
+            self.app.export_model(self.item)
+        export.assert_not_called()
 
     def test_missing_source_loads_archive_and_existing_source_has_priority(self):
         self.app.select(self.item)

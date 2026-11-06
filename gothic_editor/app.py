@@ -14,6 +14,7 @@ from .core.settings import EditorSettings,SettingsStore,field_key
 from .core.settings_schema import all_fields
 from .ui.settings import SettingsWindow
 from .core.archive_models import load_archive_model
+from .core.model_export import export_model_3ds
 from .core.project_tools import ProjectTools
 from .ui.terminal import TerminalPanel,ToolRunner
 from .ui.icons import IconImages
@@ -132,7 +133,7 @@ class EditorApp(tk.Tk):
         self.workspace.pack(fill='both',expand=True,padx=9,pady=(0,8))
         panes=tk.PanedWindow(self.workspace,orient='horizontal',bg=BG,bd=0,sashwidth=7)
         self.workspace.add(panes,minsize=160,stretch='always')
-        self.hierarchy=HierarchyPanel(panes,self.select,self.create_item,self.duplicate,self.delete,self.rename,on_copy=self.copy_to_project)
+        self.hierarchy=HierarchyPanel(panes,self.select,self.create_item,self.duplicate,self.delete,self.rename,on_copy=self.copy_to_project,on_export_model=self.export_model)
         panes.add(self.hierarchy,width=300,minsize=225)
         middle=tk.Frame(panes,bg='#191e29')
         panes.add(middle,width=550,minsize=250)
@@ -415,6 +416,20 @@ class EditorApp(tk.Tk):
         self.hierarchy.set_items(self.repo.project_items)
         project_count=sum(x.origin=='project' for x in self.repo.items)
         self.status.set(tr('messages.stats',total=len(self.repo.items),project=project_count,models=len(self.repo.mesh_index),archived=len(self.repo.archive_models.entries),errors=len(self.repo.errors)))
+
+    def export_model(self,item):
+        visual=item.visual
+        name=Path(visual.replace('\\','/')).name if visual else item.instance
+        destination=filedialog.asksaveasfilename(parent=self,title=tr('hierarchy.download_model_3ds'),
+            initialfile=str(Path(name).with_suffix('.3ds')),defaultextension='.3ds',
+            filetypes=[('3D Studio (*.3ds)','*.3ds')])
+        if not destination:return
+        try:
+            converted=export_model_3ds(visual,self.repo.mesh_index,self.repo.archive_models,Path(destination))
+        except (OSError,ValueError) as exc:
+            messagebox.showerror(tr('app.error'),str(exc),parent=self)
+            return
+        self.status.set(tr('model_export.converted' if converted else 'model_export.saved',path=destination))
 
     def select(self,item,camera=None):
         self._cancel_model_load()

@@ -151,7 +151,7 @@ class HierarchySection(tk.Frame):
 
 
 class HierarchyPanel(tk.Frame):
-    def __init__(self, parent, on_select, on_create, on_duplicate, on_delete, on_rename, on_copy=None):
+    def __init__(self, parent, on_select, on_create, on_duplicate, on_delete, on_rename, on_copy=None, on_export_model=None):
         super().__init__(parent, bg=PANEL)
         self.on_select = on_select
         self.on_create = on_create
@@ -159,6 +159,7 @@ class HierarchyPanel(tk.Frame):
         self.on_delete = on_delete
         self.on_rename = on_rename
         self.on_copy = on_copy or on_duplicate
+        self.on_export_model = on_export_model
         self.items = []
         self.selected = None
         self._context_menu = None
@@ -273,6 +274,8 @@ class HierarchyPanel(tk.Frame):
             menu.add_command(label=tr('hierarchy.delete'), command=lambda: self.on_delete(item))
         else:
             menu.add_command(label=tr('hierarchy.copy_to_project'), command=lambda: self.on_copy(item))
+        if self.on_export_model is not None:
+            menu.add_command(label=tr('hierarchy.download_model_3ds'), command=lambda: self.on_export_model(item))
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
