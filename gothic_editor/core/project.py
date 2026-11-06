@@ -8,6 +8,8 @@ from .categories import classify,get_category,leaf_for
 from .archive_models import ArchiveModels
 from .potion_components import PotionComponents
 from .properties_schema import schema_for
+from .item_migration import ItemMigrationService
+from .model_resolver import ModelResolver
 
 class ProjectRepository:
     def __init__(self,shared_resources=None):
@@ -33,10 +35,14 @@ class ProjectRepository:
         config.write_text(json.dumps({'name':name,'game_path':''},ensure_ascii=False,indent=2),encoding='utf-8')
         self.open(root)
 
-    def open(self,root:Path):
+    def open(self,root:Path,confirm_migration=None):
         root=root.resolve();cfg=root/'project.json'
         if not cfg.is_file():raise ValueError(tr('project.not_project'))
         data=json.loads(cfg.read_text('utf-8'))
+        migration=ItemMigrationService(root)
+        pending=migration.pending()
+        if pending and confirm_migration is not None and confirm_migration(len(pending)):
+            migration.migrate()
         self.name=data.get('name',root.name)
         resources=data if self.shared_resources is None else {**data,**self.shared_resources}
         raw=resources.get('game_path','')
@@ -146,6 +152,7 @@ class ProjectRepository:
                         if name.lower().endswith('.3ds'):
                             self.mesh_index.setdefault(name.lower(),Path(directory)/name)
         self.errors.extend(self.archive_models.refresh(self.root,self.game))
+        self.mesh_index.update(ModelResolver.index(self.components))
 
     def exists(self,instance):return any(it.instance.casefold()==instance.casefold() for it in self.items)
 
@@ -240,11 +247,11 @@ class ProjectRepository:
             self.components._safe_id(instance)
             if instance.casefold()!=item.instance.casefold() and self.exists(instance):
                 raise ValueError(tr('project.file_exists'))
-        if classify(item)=='potions' and not (item.path.name=='item.json' and item.path.parent.parent==self.components.root):
+        if classify(item)=='potions' and not self.components.owns(item.path):
             self.components.import_item(item,as_override=item.origin=='project')
             self.refresh()
             item=next(x for x in self.project_items if x.instance.casefold()==item.instance.casefold())
-        if item.path.name=='item.json' and item.path.parent.parent==self.components.root:
+        if self.components.owns(item.path):
             self.components.edit(item,values,instance,metadata)
             self.refresh()
             return next(x for x in self.project_items if x.instance.casefold()==target.casefold())
@@ -256,7 +263,7 @@ class ProjectRepository:
 
     def delete(self,item:Item):
         if item.origin!='project':raise ValueError(tr('project.cannot_delete_original'))
-        if item.path.name=='item.json' and item.path.parent.parent==self.components.root:
+        if self.components.owns(item.path):
             self.components.delete(item)
             self.refresh()
             return

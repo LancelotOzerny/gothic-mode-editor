@@ -9,9 +9,10 @@ from .widgets import PANEL,MUTED,label,make_entry,Tooltip
 from .property_widgets import ExpressionCombobox,PropertySectionFrame,add_placeholder
 
 class PropertiesPanel(tk.Frame):
-    def __init__(self,parent,on_save):
+    def __init__(self,parent,on_save,on_appearance=None):
         super().__init__(parent,bg=PANEL)
         self.on_save=on_save;self.current=None;self.inputs={}
+        self.on_appearance=on_appearance
         self.fields={};self.initial={};self.editable=False
         self.collapsed={}
         self.sections={}
@@ -80,6 +81,8 @@ class PropertiesPanel(tk.Frame):
                     for key in sorted(item.fields):
                         if property_key(key) not in known:
                             self.render_field(frame.body,PropertyField(key,key),item.fields[key])
+        if self.on_appearance is not None and classify(item)=='potions':
+            self.on_appearance(self.inner,item)
         label(self.inner,tr('properties.hint'),fg=MUTED,wraplength=260,justify='left').pack(padx=12,pady=15)
         self.canvas.yview_moveto(0)
 

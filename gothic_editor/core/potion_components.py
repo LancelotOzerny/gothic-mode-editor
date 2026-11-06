@@ -9,10 +9,19 @@ import os
 import re
 from pathlib import Path
 from .scripts import Item, INST, FIELD, block_end, mask_comments, replace_field, replace_instance, load_text
+from .item_layout import ItemLayout
+from .model_resolver import ModelResolver
 
 class PotionComponents:
     def __init__(self, root: Path):
-        self.root = root / 'Items'
+        self.layout = ItemLayout(root)
+        self.root = self.layout.root
+
+    def files(self):
+        return self.layout.files()
+
+    def owns(self, path):
+        return self.layout.owns(path)
 
     @staticmethod
     def _safe_id(value):
@@ -21,7 +30,7 @@ class PotionComponents:
         return value
 
     def folder(self, instance):
-        return self.root / self._safe_id(instance)
+        return self.layout.folder(self._safe_id(instance))
 
     def _atomic_json(self, target, data):
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -38,10 +47,9 @@ class PotionComponents:
 
     def list_items(self):
         result=[]
-        if not self.root.exists():return result
-        for file in sorted(self.root.glob('*/item.json')):
+        for file in self.files():
             data=self._read(file)
-            block=self.render_instance(data)
+            block=self.render_instance(data,file.parent)
             masked=mask_comments(block)
             match=INST.search(masked)
             if match is None:raise ValueError('Не удалось распознать '+str(file))
@@ -55,9 +63,12 @@ class PotionComponents:
     def import_item(self, item:Item, instance=None, as_override=False):
         target=self._safe_id(instance or item.instance)
         folder=self.folder(target)
-        if folder.exists():raise ValueError('Предмет уже существует: '+target)
+        if folder.exists() or any(file.parent.name.casefold()==target.casefold() for file in self.files()):
+            raise ValueError('Предмет уже существует: '+target)
         source=replace_instance(item.text,item.instance,target) if target!=item.instance else item.text
-        fields=dict(item.fields)
+        original=self._read(item.path) if self.owns(item.path) else None
+        fields=dict(original['fields'] if original else item.fields)
+        if original:source=replace_instance(original['template'],item.instance,target)
         data={'format':'gothic-potion-v1','instance':target,'source_instance':item.instance if target==item.instance and (item.origin=='game' or as_override) else None,
               'source_file':self._relative_game_file(item) if target==item.instance and item.origin=='game' else None,
               'fields':fields,'template':source}
@@ -68,6 +79,13 @@ class PotionComponents:
             self._atomic_json(folder/'params.json',{'variables':[], 'source_constants':self._related_constants(item)})
             self._atomic_json(folder/'functions.json', {'source_functions':self._related_functions(item)})
             (folder/'functions.d').write_text('// Дополнительные функции именно этого зелья.\n// Не копируйте сюда уже определённые в Gothic функции.\n',encoding='utf-8')
+            if original:
+                import shutil
+                for path in item.path.parent.iterdir():
+                    self.layout.checked(path)
+                    if path.name=='item.json':continue
+                    if path.is_dir():shutil.copytree(path,folder/path.name)
+                    else:shutil.copy2(path,folder/path.name)
         except Exception:
             import shutil
             shutil.rmtree(folder)
@@ -116,7 +134,8 @@ class PotionComponents:
     def edit(self,item,updates,instance=None,metadata=None):
         data=self._read(item.path)
         target=self._safe_id(instance) if instance is not None else data['instance']
-        destination=self.folder(target)
+        destination=item.path.parent if target==data['instance'] else item.path.parent.with_name(target)
+        self.layout.checked(destination)
         if destination!=item.path.parent and destination.exists():
             raise ValueError('Предмет уже существует: '+target)
         if target!=data['instance']:
@@ -140,31 +159,33 @@ class PotionComponents:
 
     def delete(self,item):
         import shutil
-        if item.path.name!='item.json' or item.path.parent.parent!=self.root:
+        if not self.owns(item.path):
             raise ValueError('Это не компонент проекта')
         shutil.rmtree(item.path.parent)
 
     @staticmethod
-    def render_instance(data):
+    def render_instance(data,folder=None):
         code=data['template']
         original={re.sub(r'\s+','',m.group(1)).lower():m.group(2).strip()
                   for m in FIELD.finditer(mask_comments(code))}
         for key,value in data['fields'].items():
             if original.get(re.sub(r'\s+','',key).lower())==value:continue
             code=replace_field(code,key,value)
+        if folder is not None and ModelResolver.custom_model(folder).is_file():
+            code=replace_field(code,'visual',ModelResolver.visual(data,folder))
         return code
 
     def generated(self):
         """Return original replacements and NEW instances, plus user-authored helpers."""
         replacements={}; additions=[]; helpers=[]
         identifiers={}
-        for file in sorted(self.root.glob('*/item.json')):
+        for file in self.files():
             data=self._read(file)
             identifier=data['instance'].casefold()
             if identifier in identifiers:
                 raise ValueError(f'Неоднозначный INSTANCE {data["instance"]}: {identifiers[identifier]} / {file}')
             identifiers[identifier]=file
-            block=self.render_instance(data)
+            block=self.render_instance(data,file.parent)
             if data.get('source_instance'):
                 replacements[data['instance'].casefold()]=block
             else:

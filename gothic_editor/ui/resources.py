@@ -1,4 +1,4 @@
-"""Files belonging to the selected item's Items/<INSTANCE> project folder."""
+"""Files belonging to the selected item's category directory."""
 import tkinter as tk
 from tkinter import messagebox, ttk
 

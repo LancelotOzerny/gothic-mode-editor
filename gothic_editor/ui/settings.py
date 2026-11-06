@@ -26,10 +26,11 @@ class SettingsFormRenderer:
         kind = field.field_type
         if kind is FieldType.BOOLEAN:
             ttk.Checkbutton(controls, variable=variables[0], state='normal' if enabled else 'disabled').pack(anchor='w')
-        elif kind is FieldType.LANGUAGE:
-            languages = localization.available_languages()
-            codes = list(languages)
-            combo = ttk.Combobox(controls, values=list(languages.values()), state='readonly')
+        elif kind in (FieldType.LANGUAGE, FieldType.ENUM):
+            options = (localization.available_languages() if kind is FieldType.LANGUAGE
+                       else {code:tr(name) for code,name in field.options})
+            codes = list(options)
+            combo = ttk.Combobox(controls, values=list(options.values()), state='readonly' if enabled else 'disabled')
             if codes:
                 combo.current(codes.index(variables[0].get()) if variables[0].get() in codes else 0)
             else:

@@ -61,6 +61,15 @@ class SettingsTests(unittest.TestCase):
             store.save(EditorSettings({'interface.general.window_size': [0, 900]}))
         self.assertEqual(store.path.read_bytes(), previous)
 
+    def test_hierarchy_mode_persists_and_unknown_value_falls_back(self):
+        key='project.hierarchy.display_mode'
+        store=SettingsStore(self.root/'settings.json')
+        self.assertEqual(store.load().get_value(key),'project_over_original')
+        store.save(EditorSettings({key:'project_only'}))
+        self.assertEqual(store.load().get_value(key),'project_only')
+        store.path.write_text(json.dumps({key:'unknown'}),encoding='utf-8')
+        self.assertEqual(store.load().get_value(key),'project_over_original')
+
     def test_catalog_extension_and_invalid_type(self):
         path = self.root / 'catalog.json'
         data = {'sections': [{'code': 'extra', 'name': 'extra.title'}], 'settings': [
@@ -143,6 +152,55 @@ class SettingsWindowTests(unittest.TestCase):
         error.assert_called_once()
         self.assertTrue(window.winfo_exists())
         self.assertFalse(self.store.path.exists())
+
+    def test_hierarchy_mode_switches_visible_items_without_losing_project_drafts(self):
+        from tkinter import ttk
+        self.app.repo.create(self.root/'project','Test')
+        item=self.app.repo.create_item('potions')
+        content=self.root/'game/_work/Data/Scripts/Content/Items'
+        content.mkdir(parents=True)
+        (content/'IT_Test.d').write_text('INSTANCE ItPo_Original(C_Item) { name="Original"; };',encoding='utf-8')
+        self.app.repo.set_game_path(str(self.root/'game'))
+        self.app._remember_project()
+        self.app.show_project()
+        self.app.select(item)
+        self.app.properties.inputs['name'].delete(0,'end')
+        self.app.properties.inputs['name'].insert(0,'Draft')
+        self.assertEqual(len(self.app.hierarchy.items),2)
+        window=self.open_dialog()
+        index=next(i for i,category in enumerate(window.categories) if category.key=='project')
+        window.navigation.selection_clear(0,'end')
+        window.navigation.selection_set(index)
+        window.show_category()
+        frame=next(child for child in window.content.winfo_children() if isinstance(child,tk.LabelFrame))
+        self.assertEqual(frame.cget('text'),'Окно иерархии')
+        def descendants(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from descendants(child)
+        combo=next(child for child in descendants(frame) if isinstance(child,ttk.Combobox))
+        self.assertEqual(str(combo['state']),'readonly')
+        self.assertEqual(tuple(combo['values']),('Только проект','Проект поверх оригинала'))
+        combo.current(0)
+        combo.event_generate('<<ComboboxSelected>>')
+        window.save()
+        self.assertEqual(self.app.hierarchy.items,self.app.repo.project_items)
+        self.assertEqual(self.app.properties.inputs['name'].get(),'Draft')
+        self.assertEqual(self.store.load().get_value('project.hierarchy.display_mode'),'project_only')
+        self.app.repo.refresh()
+        self.app.update_hierarchy()
+        self.assertEqual(self.app.hierarchy.items,self.app.repo.project_items)
+        window=self.open_dialog()
+        window.values['project.hierarchy.display_mode'][0].set('project_over_original')
+        window.save()
+        self.assertEqual(len(self.app.hierarchy.items),2)
+        original=self.app.repo.game_items[0]
+        self.app.select(original)
+        window=self.open_dialog()
+        window.values['project.hierarchy.display_mode'][0].set('project_only')
+        window.save()
+        self.assertIsNone(self.app.current)
+        self.assertEqual(self.app.hierarchy.items,self.app.repo.project_items)
 
     def test_resource_connect_disconnect_and_unchanged_path_does_not_rescan(self):
         self.app.repo.create(self.root / 'mod', 'Test')

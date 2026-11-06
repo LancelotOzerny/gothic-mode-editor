@@ -25,6 +25,7 @@ from .core.categories import classify
 from .ui.welcome import WelcomeScreen
 from .ui.project_dialog import NewProjectDialog
 from .ui.item_dialog import AddItemDialog
+from .ui.item_appearance import ItemAppearanceController
 
 RESOURCE_KEYS={'game_path':'resources.gothic.game_path','compiler_path':'build.compiler.path',
                'resource_editor_path':'resources.editor.path'}
@@ -66,6 +67,7 @@ class EditorApp(tk.Tk):
         self.repo.compiler_path=self.settings.get_value(RESOURCE_KEYS['compiler_path'])
         self.repo.resource_editor_path=self.settings.get_value(RESOURCE_KEYS['resource_editor_path'])
         self.current=None
+        self.appearance=ItemAppearanceController(self)
         self._model_executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix='model-loader')
         self._model_future=None
         self._model_poll=None
@@ -139,7 +141,7 @@ class EditorApp(tk.Tk):
         panes.add(middle,width=550,minsize=250)
         self.viewer=ModelViewer(middle)
         self.viewer.pack(fill='both',expand=True)
-        self.properties=PropertiesPanel(panes,self.save_fields)
+        self.properties=PropertiesPanel(panes,self.save_fields,on_appearance=self.appearance.show)
         panes.add(self.properties,width=350,minsize=240)
         self.bottom_dock=BottomDock(self.workspace)
         for key,(title_key,factory) in self._bottom_tab_specs.items():
@@ -218,7 +220,8 @@ class EditorApp(tk.Tk):
 
     def open_project_path(self,path):
         try:
-            self.repo.open(Path(path))
+            self.repo.open(Path(path),confirm_migration=lambda count:messagebox.askyesno(
+                tr('item_assets.migration_title'),tr('item_assets.migration_confirm',count=count),parent=self))
             self._remember_project()
             self.show_project(reset_hierarchy=True)
         except Exception as exc:messagebox.showerror(tr('app.open_error'),str(exc))
@@ -349,6 +352,7 @@ class EditorApp(tk.Tk):
         settings.values.update({'resources.gothic.game_path':str(game) if game else '',
                                 'build.compiler.path':compiler_path,'resources.editor.path':editor_path})
         old_language=localization.language_code
+        hierarchy_changed=self.settings.get_value('project.hierarchy.display_mode')!=settings.get_value('project.hierarchy.display_mode')
         self.settings_store.save(settings)
         resources_changed=self.repo.root is not None and self.repo.game!=game
         try:
@@ -364,6 +368,8 @@ class EditorApp(tk.Tk):
             self._rebuild_translated_ui()
         elif resources_changed:
             self.show_project()
+        elif hierarchy_changed and self.repo.root is not None:
+            self.update_hierarchy()
         if self.bottom_dock.visible_keys():self._schedule_dock_resize()
 
     def _rebuild_translated_ui(self):
@@ -413,7 +419,15 @@ class EditorApp(tk.Tk):
         except Exception as exc:messagebox.showerror(tr('app.refresh_error'),str(exc))
 
     def update_hierarchy(self):
-        self.hierarchy.set_items(self.repo.project_items)
+        project_only=self.settings.get_value('project.hierarchy.display_mode')=='project_only'
+        if project_only and self.current is not None and self.current.origin=='game':
+            self.current=None
+            self.hierarchy.selected=None
+            self.properties.show(None)
+            self.resources.set_item(self.repo.root,None)
+            self._cancel_model_load()
+            self.viewer.set_mesh(caption=tr('app.select_item'))
+        self.hierarchy.set_items(self.repo.project_items if project_only else self.repo.items)
         project_count=sum(x.origin=='project' for x in self.repo.items)
         self.status.set(tr('messages.stats',total=len(self.repo.items),project=project_count,models=len(self.repo.mesh_index),archived=len(self.repo.archive_models.entries),errors=len(self.repo.errors)))
 

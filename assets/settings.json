@@ -2,9 +2,20 @@
   "sections": [
     {"code": "interface", "name": "settings.sections.interface"},
     {"code": "resources", "name": "settings.sections.resources"},
-    {"code": "build", "name": "settings.sections.build"}
+    {"code": "build", "name": "settings.sections.build"},
+    {"code": "project", "name": "settings.sections.project"}
   ],
   "settings": [
+    {
+      "section_code": "project", "code": "hierarchy", "name": "settings.groups.hierarchy",
+      "items": [
+        {"code": "display_mode", "name": "settings.items.hierarchy_mode", "title": "settings.hints.hierarchy_mode",
+         "type": "enum", "default": "project_over_original", "options": [
+           {"value": "project_only", "name": "settings.options.project_only"},
+           {"value": "project_over_original", "name": "settings.options.project_over_original"}
+         ]}
+      ]
+    },
     {
       "section_code": "interface", "code": "general", "name": "settings.groups.general",
       "items": [

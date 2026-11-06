@@ -110,7 +110,7 @@ class ProjectToolsTests(unittest.TestCase):
         self.assertEqual((self.source / 'Items/IT_Test.d').read_bytes(), b'const int TEST_VALUE = 2;')
         self.assertEqual(os.environ.get('DOTNET_ROLL_FORWARD'), environment)
         self.assertEqual(sorted(path.name for path in self.tools.build_dir.iterdir()),
-                         ['Gothic.dat', 'compile.log', 'diagnostics.json', 'stderr.log', 'stdout.log'])
+                         ['Gothic.dat', 'Gothic.mod', 'compile.log', 'diagnostics.json', 'stderr.log', 'stdout.log'])
 
     def test_failed_compilation_cannot_succeed_using_previous_output(self):
         self.tools.build_dir.mkdir()
@@ -122,6 +122,27 @@ class ProjectToolsTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.tools.compile()
             self.assertEqual(output.read_bytes(), b'last successful build')
+
+    def test_publishing_dat_failure_restores_previous_mod_and_dat(self):
+        self.tools.build_dir.mkdir()
+        previous_mod=self.tools.build_dir/'Gothic.mod'
+        previous_dat=self.tools.build_dir/'Gothic.dat'
+        previous_mod.write_bytes(b'old mod')
+        previous_dat.write_bytes(b'old dat')
+        staging=self.tools.build_dir/'staging'
+        staging.mkdir()
+        new_mod=staging/'Gothic.mod'
+        new_dat=staging/'Gothic.dat'
+        new_mod.write_bytes(b'new mod')
+        new_dat.write_bytes(b'new dat')
+        replace=Path.replace
+        def fail(path,destination):
+            if path==new_dat:raise OSError('DAT locked')
+            return replace(path,destination)
+        with patch.object(Path,'replace',fail),self.assertRaisesRegex(OSError,'DAT locked'):
+            self.tools._publish_artifacts(staging,[(new_mod,previous_mod),(new_dat,previous_dat)])
+        self.assertEqual(previous_mod.read_bytes(),b'old mod')
+        self.assertEqual(previous_dat.read_bytes(),b'old dat')
 
     def test_crash_retains_sources_and_separate_process_diagnostics(self):
         def crash(command, **kwargs):

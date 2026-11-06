@@ -5,17 +5,14 @@ import sys
 from pathlib import Path
 
 from .localization import tr
+from .item_layout import ItemLayout
 
 
 def item_resource_files(project: Path, instance: str):
     project = Path(project).resolve()
     if not instance or '/' in instance or '\\' in instance or instance in ('.', '..'):
         raise ValueError(tr('resources.invalid_folder'))
-    root = project / 'Items'
-    folder = root / instance
-    if root.is_dir():
-        folder = next((child for child in root.iterdir()
-                       if child.name.casefold() == instance.casefold() and child.is_dir()), folder)
+    folder = ItemLayout(project).find_folder(instance)
     if project not in folder.resolve().parents:
         raise ValueError(tr('resources.invalid_folder'))
     if not folder.is_dir():

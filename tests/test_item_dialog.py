@@ -65,7 +65,8 @@ class AddItemTests(unittest.TestCase):
         self.assertEqual([item.instance for item in self.app.repo.project_items], ['ITPO_14'])
         self.assertEqual(self.app.current.origin, 'project')
         self.assertEqual(set(self.app.hierarchy.sections), {'project'})
-        self.assertEqual(self.app.hierarchy.items, self.app.repo.project_items)
+        self.assertEqual(self.app.hierarchy.items, self.app.repo.items)
+        self.assertEqual(sum(item.instance=='ITPO_14' for item in self.app.hierarchy.items),1)
         self.assertEqual(self.source.read_bytes(), before)
 
     def test_modal_creates_named_item_and_cancel_changes_nothing(self):

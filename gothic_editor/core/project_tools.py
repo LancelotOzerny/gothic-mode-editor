@@ -16,6 +16,7 @@ from .daedalus_merge import merge_project_scripts,target_path
 from .potion_build import apply_potions
 from .compiler_sources import prepare_compiler_sources
 from .compiler_runner import run_compiler
+from .build_assets import BuildAssetService
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,7 @@ class ToolResult:
     files: int = 0
     backup: Path | None = None
     warnings: int = 0
+    archive: Path | None = None
 
 
 class ProjectTools:
@@ -151,14 +153,35 @@ class ProjectTools:
         manifest = self._include_project_scripts(content, project_files)
         return content, manifest, project_files
 
+    @staticmethod
+    def _publish_artifacts(staging, pairs):
+        previous = staging / 'previous-build'
+        previous.mkdir()
+        for _, destination in pairs:
+            if destination.exists():shutil.copy2(destination, previous / destination.name)
+        published = []
+        try:
+            for source, destination in pairs:
+                source.replace(destination)
+                published.append(destination)
+        except Exception:
+            for destination in reversed(published):
+                backup = previous / destination.name
+                if backup.exists():backup.replace(destination)
+                else:destination.unlink()
+            raise
+
     def compile(self, report=lambda _message: None):
         command = self.compiler_command()  # Validate dependencies before preparing a build.
         self.build_dir.mkdir(parents=True, exist_ok=True)
         log_path = self.build_dir / 'compile.log'
         output = self.build_dir / 'Gothic.dat'
+        archive = self.build_dir / 'Gothic.mod'
         log_path.write_text('', encoding='utf-8')
         staging = self._inside(Path(tempfile.mkdtemp(prefix='compile-', dir=self.build_dir)), self.build_dir.resolve())
         try:
+            asset_service = BuildAssetService(self.project)
+            assets = asset_service.collect()
             content, manifest, _ = self._prepare(staging, report)
             prepare_compiler_sources(content,report)
             temporary_output = staging / 'Gothic.dat'
@@ -167,7 +190,10 @@ class ProjectTools:
             result = run_compiler(command, staging, log_path)
             if result.returncode != 0 or not temporary_output.is_file() or not temporary_output.stat().st_size:
                 raise ValueError(tr('tools.compile_failed', code=result.returncode, log=str(log_path)))
-            temporary_output.replace(output)
+            temporary_archive = staging / 'Gothic.mod'
+            asset_service.package(temporary_archive, temporary_output, assets)
+            self._publish_artifacts(staging,[(temporary_archive,archive),(temporary_output,output)])
+            report(tr('item_assets.packaged', path=str(archive), count=len(assets)))
         except Exception:
             report(tr('tools.failed_sources', path=str(staging)))
             raise
@@ -178,7 +204,7 @@ class ProjectTools:
                 shutil.copy2(staging / name, self.build_dir / name)
             shutil.rmtree(staging)
         warnings=len(re.findall(r'\bwarning\s+W\d+\s*:',log_path.read_text('utf-8',errors='replace'),flags=re.IGNORECASE))
-        return ToolResult(output,warnings=warnings)
+        return ToolResult(output,warnings=warnings,archive=archive)
 
     def synchronize(self, report=lambda _message: None):
         self.build_dir.mkdir(parents=True, exist_ok=True)

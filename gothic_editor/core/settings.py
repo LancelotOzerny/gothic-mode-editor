@@ -33,6 +33,8 @@ def validate_value(field, value):
             valid = re.fullmatch(r'#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}', value) is not None
         if valid and kind is FieldType.LANGUAGE:
             valid = value in localization.available_languages()
+        if valid and kind is FieldType.ENUM:
+            valid = value in {code for code, _ in field.options}
     if not valid:
         raise ValueError(tr('settings.invalid', name=tr(field.label_key)))
     return value

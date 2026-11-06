@@ -94,6 +94,8 @@ class ToolRunner:
             except OSError as exc:
                 self.append(str(exc))
         if success:
+            if getattr(result,'archive',None) is not None:
+                self.append(tr('item_assets.archive_result',path=str(result.archive)))
             key='tools.compile_success' if self.log_path is not None else 'tools.sync_success'
             self.append(tr(key,path=str(result.output),count=result.files,warnings=result.warnings))
             if result.backup is not None:

@@ -47,7 +47,7 @@ def apply_potions(project: Path, content: Path):
         raise DaedalusMergeError('Не найдены оригинальные INSTANCE: ' + ', '.join(sorted(missing)))
 
     # Metadata overrides are opt-in; informational references never emit symbols.
-    for file in sorted(store.root.glob('*/item.json')):
+    for file in store.files():
         for metadata, array, kind in (
             ('functions.json', 'source_functions', 'func'),
             ('params.json', 'source_constants', 'const'),

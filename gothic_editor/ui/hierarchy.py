@@ -119,7 +119,7 @@ class HierarchySection(tk.Frame):
             if not query or query in item.instance.casefold() or query in item.title.casefold():
                 self.grouped.setdefault(classify(item), []).append(item)
         count = sum(len(items) for items in self.grouped.values())
-        self.heading.config(text=tr('hierarchy.project' if self.origin == 'project' else 'hierarchy.original') + f' [{count}]')
+        self.heading.config(text=tr('app.items') + f' [{count}]')
         for category in CATEGORIES:
             CategoryRow(self, self.inner, category, 0)
         self.canvas.yview_moveto(position[0] if position else 0)
@@ -207,7 +207,7 @@ class HierarchyPanel(tk.Frame):
     def set_items(self, items):
         self.items = items
         for origin, section in self.sections.items():
-            section.items = [item for item in items if item.origin == origin]
+            section.items = list(items)
         self.rebuild()
 
     def collapse_all(self):
@@ -222,7 +222,7 @@ class HierarchyPanel(tk.Frame):
             def reveal(nodes):
                 for node in nodes:
                     if node.key == category or reveal(node.children):
-                        self.expanded[(item.origin, node.key)] = True
+                        self.expanded[('project', node.key)] = True
                         return True
                 return False
             reveal(CATEGORIES)

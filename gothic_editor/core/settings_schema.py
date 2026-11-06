@@ -18,6 +18,7 @@ class FieldType(str, Enum):
     DIRECTORY = "directory"
     FILE = "file"
     LANGUAGE = "language"
+    ENUM = "enum"
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,7 @@ class SettingField:
     minimum: int | None = None
     maximum: int | None = None
     scope: str = "application"
+    options: tuple[tuple[str, str], ...] = ()
 
     @property
     def keys(self) -> tuple[str, ...]:
@@ -119,8 +121,18 @@ class SettingsCatalog:
         scope = data.get('scope', 'application')
         if scope not in ('application', 'project'):
             raise ValueError('Unknown settings scope.')
+        options = data.get('options', [])
+        if field_type is FieldType.ENUM:
+            if (not isinstance(options, list) or not options
+                    or any(not isinstance(option, dict) or not isinstance(option.get('value'), str)
+                           or not isinstance(option.get('name'), str) for option in options)
+                    or len({option['value'] for option in options}) != len(options)
+                    or data['default'] not in {option['value'] for option in options}):
+                raise ValueError('An enum field requires unique options and a matching default.')
         return SettingField(field_code, data['name'], data['title'], section_code, group_code,
-                            field_type, data['default'], storage_keys, minimum, maximum, scope)
+                            field_type, data['default'], storage_keys, minimum, maximum, scope,
+                            tuple((option['value'], option['name']) for option in options)
+                            if field_type is FieldType.ENUM else ())
 
     def categories(self) -> tuple[SettingCategory, ...]:
         return tuple(SettingCategory(code, name, tuple(group for group in self._groups if group.section_code == code))
