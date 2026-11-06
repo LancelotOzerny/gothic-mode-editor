@@ -1,16 +1,20 @@
 """Editable property form with explicit save (never changes source automatically)."""
 import tkinter as tk
+import re
 from tkinter import messagebox
 from ..core.categories import classify
 from ..core.localization import tr
 from ..core.properties_schema import PropertyField,property_key,schema_for
 from .widgets import PANEL,MUTED,label,make_entry,Tooltip
+from .property_widgets import ExpressionCombobox,PropertySectionFrame,add_placeholder
 
 class PropertiesPanel(tk.Frame):
     def __init__(self,parent,on_save):
         super().__init__(parent,bg=PANEL)
         self.on_save=on_save;self.current=None;self.inputs={}
         self.fields={};self.initial={};self.editable=False
+        self.collapsed={}
+        self.sections={}
         label(self,tr('properties.title'),font=('Arial',10,'bold')).pack(fill='x',padx=14,pady=(14,8))
         self.info=label(self,tr('properties.select_item'),fg=MUTED,anchor='w',wraplength=280,justify='left')
         self.info.pack(fill='x',padx=14,pady=(0,10))
@@ -33,6 +37,7 @@ class PropertiesPanel(tk.Frame):
         for child in self.inner.winfo_children():child.destroy()
         self.inputs={}
         self.fields={};self.initial={};self.editable=False
+        self.sections={}
         if item is None:
             self.info.config(text=tr('properties.select_in_hierarchy'))
             self.save_btn.config(state='disabled')
@@ -54,31 +59,46 @@ class PropertiesPanel(tk.Frame):
             known={property_key(field.key) for section in schema.sections for field in section.fields
                    if field.source=='property'}
             for section in schema.sections:
-                frame=tk.LabelFrame(self.inner,text=section.title,bg=PANEL,fg=MUTED,pady=6)
+                frame=PropertySectionFrame(self.inner,section.title,self.collapsed.get(section.key,False),
+                    lambda closed,key=section.key:self.collapsed.__setitem__(key,closed))
+                self.sections[section.key]=frame
                 frame.pack(fill='x',padx=10,pady=(8,4))
                 if section.description:
-                    label(frame,section.description,fg=MUTED,wraplength=250,justify='left').pack(fill='x',padx=8,pady=5)
+                    label(frame.body,section.description,fg=MUTED,wraplength=250,justify='left').pack(fill='x',padx=8,pady=5)
                 for field in section.fields:
-                    if field.source=='instance_id':value=item.instance
+                    if field.source=='instance_id':
+                        value=item.instance
+                        if field.prefix and value.casefold().startswith(field.prefix.casefold()):
+                            value=value[len(field.prefix):]
                     elif field.source=='editor_metadata':value=item.editor_metadata.get(field.key,'')
                     else:
                         key=property_key(field.key)
                         if not schema.show_missing and key not in item.fields:continue
                         value=item.fields.get(key,'')
-                    self.render_field(frame,field,value)
+                    self.render_field(frame.body,field,value)
                 if section.key==schema.unknown_section:
                     for key in sorted(item.fields):
                         if property_key(key) not in known:
-                            self.render_field(frame,PropertyField(key,key),item.fields[key])
+                            self.render_field(frame.body,PropertyField(key,key),item.fields[key])
         label(self.inner,tr('properties.hint'),fg=MUTED,wraplength=260,justify='left').pack(padx=12,pady=15)
         self.canvas.yview_moveto(0)
 
     def render_field(self,parent,field,value):
+        if field.field_type=='string' and re.fullmatch(r'"(?:\\.|[^"\\])*"',value):
+            value=re.sub(r'\\([\\"])',r'\1',value[1:-1])
         label(parent,field.label,fg=MUTED,anchor='w',font=('Arial',9)).pack(fill='x',padx=8,pady=(6,2))
-        entry=make_entry(parent)
-        entry.insert(0,value)
-        if not self.editable:entry.config(state='readonly')
+        variable=tk.StringVar(self)
+        if field.widget=='combobox':
+            entry=ExpressionCombobox(parent,field.options,textvariable=variable,state='readonly')
+            entry.set_expression(value)
+            if not self.editable:entry.config(state='disabled')
+        else:
+            entry=make_entry(parent,textvariable=variable)
+            entry.insert(0,value)
+            if not self.editable:entry.config(state='readonly')
         entry.pack(fill='x',padx=8,ipady=5)
+        entry.value_variable=variable
+        add_placeholder(entry,variable,field.placeholder)
         hint=field.description
         if field.placeholder:hint+=('\n' if hint else '')+tr('properties.example',value=field.placeholder)
         if hint:Tooltip(entry,hint)
@@ -91,14 +111,18 @@ class PropertiesPanel(tk.Frame):
         values,metadata,instance={}, {}, None
         for key,entry in self.inputs.items():
             field=self.fields[key]
-            value=entry.get() if field.source=='editor_metadata' else entry.get().strip()
+            value=entry.get() if field.source=='editor_metadata' or field.field_type=='string' else entry.get().strip()
+            if value==self.initial[key]:continue
             if field.required and not value:
                 messagebox.showerror(tr('app.error'),tr('properties.required',name=field.label),parent=self.winfo_toplevel())
                 return
-            if value==self.initial[key]:continue
-            if field.source=='instance_id':instance=value
+            if field.source=='instance_id':
+                instance=value if not field.prefix or value.casefold().startswith(field.prefix.casefold()) else field.prefix+value
             elif field.source=='editor_metadata':metadata[key]=value
-            elif field.export:values[property_key(key)]=value
+            elif field.export:
+                if field.field_type=='string' and value and not re.fullmatch(r'"(?:\\.|[^"\\])*"',value):
+                    value='"'+value.replace('\\','\\\\').replace('"','\\"')+'"'
+                values[property_key(key)]=value
         if values or metadata or instance is not None:
             options={}
             if instance is not None:options['instance']=instance

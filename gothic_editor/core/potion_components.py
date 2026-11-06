@@ -147,7 +147,10 @@ class PotionComponents:
     @staticmethod
     def render_instance(data):
         code=data['template']
+        original={re.sub(r'\s+','',m.group(1)).lower():m.group(2).strip()
+                  for m in FIELD.finditer(mask_comments(code))}
         for key,value in data['fields'].items():
+            if original.get(re.sub(r'\s+','',key).lower())==value:continue
             code=replace_field(code,key,value)
         return code
 

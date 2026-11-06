@@ -7,6 +7,7 @@ from .scripts import Item,parse_items,replace_field,replace_instance,write_modif
 from .categories import classify,get_category,leaf_for
 from .archive_models import ArchiveModels
 from .potion_components import PotionComponents
+from .properties_schema import schema_for
 
 class ProjectRepository:
     def __init__(self,shared_resources=None):
@@ -167,14 +168,24 @@ class ProjectRepository:
     def create_item(self,category_key,name=None):
         title=(name or tr('items.default_name')).replace('\\','\\\\').replace('"','\\"')
         if category_key=='potions':
-            instance=self.new_id('GE_ItPo_New')
-            code=(f'INSTANCE {instance} (C_Item)\n{{\n'
-                  f'    name = NAME_Trank;\n    mainflag = ITEM_KAT_POTIONS;\n'
-                  f'    flags = ITEM_MULTI;\n    value = 0;\n'
-                  f'    visual = "ItPo_Perm_Health.3ds";\n'
-                  f'    material = MAT_GLAS;\n    scemeName = "POTIONFAST";\n'
-                  f'    description = "{title if name else tr("items.default_potion")}";\n}};')
-            item=Item(instance,self.root/'__new__','project',code,{},0,len(code))
+            schema=schema_for(category_key)
+            number=schema.numbering_start
+            instance=schema.instance_prefix+schema.instance_pattern.replace('{n}',str(number))
+            while self.exists(instance):
+                number+=1
+                instance=schema.instance_prefix+schema.instance_pattern.replace('{n}',str(number))
+            fields={field.key:field.default for section in schema.sections for field in section.fields
+                    if field.source=='property' and field.export and field.default not in (None,'')}
+            if name:fields['name']='"'+title+'"'
+            else:fields.setdefault('name','"'+tr('items.default_potion')+'"')
+            if fields.get('description') in (None,'name'):fields['description']=fields['name']
+            fields.update(schema.generated_defaults)
+            code=f'INSTANCE {instance} (C_Item)\n{{\n'+''.join(
+                f'    {key} = {value};\n' for key,value in fields.items())+'};'
+            code.encode('cp1251')
+            metadata={field.key:field.default for section in schema.sections for field in section.fields
+                      if field.source=='editor_metadata' and field.default is not None}
+            item=Item(instance,self.root/'__new__','project',code,{},0,len(code),editor_metadata=metadata)
             self.components.import_item(item)
             self.refresh()
             return next(x for x in self.project_items if x.instance==instance)

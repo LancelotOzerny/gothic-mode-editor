@@ -107,11 +107,16 @@ class EditorLayoutTests(unittest.TestCase):
         self.assertFalse(row.opened)
         self.assertIn('[1]', project.heading.cget('text'))
         self.assertEqual(set(panel.sections),{'project'})
-        row.toggle()
-        self.wait(.07)
-        self.assertGreater(row.angle, 0)
-        self.assertLess(row.angle, len(row.frames) - 1)
-        self.wait(.15)
+        with patch('gothic_editor.ui.hierarchy.monotonic',return_value=100.) as clock:
+            row.toggle()
+            row.cancel_animation()
+            clock.return_value=100.07
+            row.tick()
+            row.cancel_animation()
+            self.assertGreater(row.angle, 0)
+            self.assertLess(row.angle, len(row.frames) - 1)
+            clock.return_value=100.17
+            row.tick()
         self.assertEqual(row.angle, len(row.frames) - 1)
         self.assertNotIn(('game', 'potions'), panel.expanded)
         for y in range(18):

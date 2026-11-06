@@ -371,6 +371,7 @@ class EditorApp(tk.Tk):
         # Keep the current selection, filters, unsaved fields and camera on language change.
         current=self.current
         drafts={key:entry.get() for key,entry in self.properties.inputs.items()}
+        collapsed=dict(self.properties.collapsed)
         expanded=dict(self.hierarchy.expanded)
         query=self.hierarchy.search.get()
         camera=(self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom)
@@ -379,6 +380,7 @@ class EditorApp(tk.Tk):
         for child in self.winfo_children():
             if not isinstance(child,(tk.Menu,tk.Toplevel)):child.destroy()
         self._build_menu();self._build_layout()
+        self.properties.collapsed=collapsed
         if terminal_text:self.terminal.append(terminal_text.rstrip('\n'))
         if selected_tab in self.bottom_dock.visible_keys():
             self.bottom_dock.select(self.bottom_dock.panels[selected_tab])
@@ -394,7 +396,9 @@ class EditorApp(tk.Tk):
                     for key,value in drafts.items():
                         if key in self.properties.inputs:
                             entry=self.properties.inputs[key]
-                            entry.delete(0,'end');entry.insert(0,value)
+                            if hasattr(entry,'set_expression'):entry.set_expression(value)
+                            else:
+                                entry.delete(0,'end');entry.insert(0,value)
                     self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom=camera
                     self.viewer.draw()
         elif showing_welcome:self.show_welcome()

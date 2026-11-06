@@ -1,0 +1,126 @@
+{
+  "schema_version": 3,
+  "id": "potions",
+  "title": "Зелья",
+  "description": "Минимальная схема свойств зелья Gothic 2. Пользователь задаёт код, name, description, flags и value; технические значения добавляются генератором при создании нового предмета.",
+  "rules": {
+    "default_applies_to": "new_items_only",
+    "preserve_unrecognized_properties": true,
+    "do_not_overwrite_missing_fields": true,
+    "editable_combobox": false,
+    "values_are_daedalus_expressions": true,
+    "instance_is_not_c_item_property": true,
+    "unique_instance_case_insensitive": true
+  },
+  "instance": {
+    "prefix": "ItPo_",
+    "suffix_default_pattern": "Potion{n}",
+    "numbering_start": 1,
+    "unique_case_insensitive": true
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_POTIONS",
+    "visual": "\"ItPo_Perm_Health.3ds\"",
+    "material": "MAT_GLAS",
+    "scemeName": "\"POTIONFAST\""
+  },
+  "option_lists": {
+    "itemFlagsList": [
+      {
+        "name": "Без дополнительных флагов",
+        "value": "0"
+      },
+      {
+        "name": "Складываемое",
+        "value": "ITEM_MULTI"
+      },
+      {
+        "name": "Квестовый предмет",
+        "value": "ITEM_MISSION"
+      },
+      {
+        "name": "Складываемый квестовый предмет",
+        "value": "ITEM_MULTI | ITEM_MISSION"
+      },
+      {
+        "name": "Не разделять стопку",
+        "value": "ITEM_NSPLIT"
+      }
+    ]
+  },
+  "sections": [
+    {
+      "id": "general",
+      "title": "Основное",
+      "fields": [
+        {
+          "key": "instance",
+          "label": "ID",
+          "type": "identifier",
+          "widget": "input",
+          "source": "instance_id",
+          "required": true,
+          "default": "Potion{n}",
+          "prefix": "ItPo_",
+          "placeholder": "Potion1",
+          "description": "Вводится суффикс; полный уникальный INSTANCE — ItPo_<суффикс>."
+        },
+        {
+          "key": "name",
+          "label": "Название",
+          "type": "string",
+          "widget": "input",
+          "source": "property",
+          "required": true,
+          "default": "\"Новое зелье\"",
+          "placeholder": "Новое зелье",
+          "description": "Имя, показываемое при наведении на предмет в игровом мире."
+        },
+        {
+          "key": "description",
+          "label": "Описание",
+          "type": "string",
+          "widget": "input",
+          "source": "property",
+          "default": "name",
+          "placeholder": "Новое зелье",
+          "description": "Название предмета в инвентаре; по умолчанию ссылается на name. Это не многострочное описание."
+        }
+      ]
+    },
+    {
+      "id": "parameters",
+      "title": "Параметры",
+      "fields": [
+        {
+          "key": "flags",
+          "label": "Флаги",
+          "type": "flags",
+          "widget": "combobox",
+          "source": "property",
+          "default": "ITEM_MULTI",
+          "options_ref": "itemFlagsList",
+          "description": "Дополнительные флаги. ITEM_MULTI означает складывание одинаковых предметов, а не возможность выпить."
+        },
+        {
+          "key": "value",
+          "label": "Стоимость",
+          "type": "expression",
+          "widget": "input",
+          "source": "property",
+          "default": "100",
+          "placeholder": "100",
+          "description": "Стоимость в золоте; можно указать число либо константу Daedalus."
+        }
+      ]
+    }
+  ],
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  }
+}

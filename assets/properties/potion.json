@@ -1,253 +1,123 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "id": "potions",
   "title": "Зелья",
-  "description": "Схема панели свойств зелий Gothic 2. Все значения редактируются как текст и хранятся как исходные выражения Daedalus.",
+  "description": "Минимальная схема свойств зелья Gothic 2. Пользователь задаёт код, name, description, flags и value; технические значения добавляются генератором при создании нового предмета.",
+  "rules": {
+    "default_applies_to": "new_items_only",
+    "preserve_unrecognized_properties": true,
+    "do_not_overwrite_missing_fields": true,
+    "editable_combobox": false,
+    "values_are_daedalus_expressions": true,
+    "instance_is_not_c_item_property": true,
+    "unique_instance_case_insensitive": true
+  },
+  "instance": {
+    "prefix": "ItPo_",
+    "suffix_default_pattern": "Potion{n}",
+    "numbering_start": 1,
+    "unique_case_insensitive": true
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_POTIONS",
+    "visual": "\"ItPo_Perm_Health.3ds\"",
+    "material": "MAT_GLAS",
+    "scemeName": "\"POTIONFAST\""
+  },
+  "option_lists": {
+    "itemFlagsList": [
+      {
+        "name": "Без дополнительных флагов",
+        "value": "0"
+      },
+      {
+        "name": "Складываемое",
+        "value": "ITEM_MULTI"
+      },
+      {
+        "name": "Квестовый предмет",
+        "value": "ITEM_MISSION"
+      },
+      {
+        "name": "Складываемый квестовый предмет",
+        "value": "ITEM_MULTI | ITEM_MISSION"
+      },
+      {
+        "name": "Не разделять стопку",
+        "value": "ITEM_NSPLIT"
+      }
+    ]
+  },
   "sections": [
     {
       "id": "general",
-      "title": "Основные",
+      "title": "Основное",
       "fields": [
         {
           "key": "instance",
-          "label": "Код предмета (INSTANCE)",
-          "type": "string",
+          "label": "ID",
+          "type": "identifier",
           "widget": "input",
-          "placeholder": "ItPo_CrossbowBoost",
-          "description": "Уникальный идентификатор экземпляра. Пример: INSTANCE ItPo_CrossbowBoost (C_Item).",
           "source": "instance_id",
-          "required": true
-        },
-        {
-          "key": "description",
-          "label": "Название в игре",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "\"Эликсир арбалетчика\"",
-          "description": "Обычно отображаемое название зелья; значение Daedalus может быть строкой или константой.",
-          "source": "property"
+          "required": true,
+          "default": "Potion{n}",
+          "prefix": "ItPo_",
+          "placeholder": "Potion1",
+          "description": "Вводится суффикс; полный уникальный INSTANCE — ItPo_<суффикс>."
         },
         {
           "key": "name",
-          "label": "Название / тип предмета",
+          "label": "Название",
           "type": "string",
           "widget": "input",
-          "placeholder": "NAME_Trank",
-          "description": "Поле name. В оригинальных зельях часто означает тип предмета, например NAME_Trank.",
-          "source": "property"
+          "source": "property",
+          "required": true,
+          "default": "\"Новое зелье\"",
+          "placeholder": "Новое зелье",
+          "description": "Имя, показываемое при наведении на предмет в игровом мире."
+        },
+        {
+          "key": "description",
+          "label": "Описание",
+          "type": "string",
+          "widget": "input",
+          "source": "property",
+          "default": "name",
+          "placeholder": "Новое зелье",
+          "description": "Название предмета в инвентаре; по умолчанию ссылается на name. Это не многострочное описание."
+        }
+      ]
+    },
+    {
+      "id": "parameters",
+      "title": "Параметры",
+      "fields": [
+        {
+          "key": "flags",
+          "label": "Флаги",
+          "type": "flags",
+          "widget": "combobox",
+          "source": "property",
+          "default": "ITEM_MULTI",
+          "options_ref": "itemFlagsList",
+          "description": "Дополнительные флаги. ITEM_MULTI означает складывание одинаковых предметов, а не возможность выпить."
         },
         {
           "key": "value",
-          "label": "Стоимость (золото)",
-          "type": "string",
+          "label": "Стоимость",
+          "type": "expression",
           "widget": "input",
-          "placeholder": "500 или Value_HpMaxElixier",
-          "description": "Число или константа Daedalus; редактор не заменяет константы автоматически.",
-          "source": "property"
-        },
-        {
-          "key": "mainflag",
-          "label": "Категория",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "ITEM_KAT_POTIONS",
-          "default": "ITEM_KAT_POTIONS",
-          "source": "property"
-        },
-        {
-          "key": "flags",
-          "label": "Флаги предмета",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "ITEM_MULTI",
-          "source": "property"
-        }
-      ]
-    },
-    {
-      "id": "appearance",
-      "title": "Внешний вид",
-      "fields": [
-        {
-          "key": "visual",
-          "label": "3D-модель",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "\"ItPo_Perm_Health.3ds\"",
-          "source": "property"
-        },
-        {
-          "key": "material",
-          "label": "Материал",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "MAT_GLAS",
-          "source": "property"
-        },
-        {
-          "key": "effect",
-          "label": "Визуальный эффект",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "\"SPELLFX_HEALTHPOTION\"",
-          "source": "property"
-        },
-        {
-          "key": "wear",
-          "label": "Флаг эффекта",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "WEAR_EFFECT",
-          "source": "property"
-        }
-      ]
-    },
-    {
-      "id": "usage",
-      "title": "Использование",
-      "fields": [
-        {
-          "key": "on_state[0]",
-          "label": "Функция при использовании",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "UseItPo_CrossbowBoost",
-          "description": "Имя функции Daedalus; сама функция хранится отдельно.",
-          "source": "property"
-        },
-        {
-          "key": "scemeName",
-          "label": "Анимация использования",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "\"POTIONFAST\"",
-          "source": "property"
-        }
-      ]
-    },
-    {
-      "id": "inventory_description",
-      "title": "Описание в инвентаре",
-      "description": "Значения TEXT и COUNT — самостоятельные выражения Daedalus. Отсутствующие поля не создаются автоматически.",
-      "fields": [
-        {
-          "key": "TEXT[0]",
-          "label": "Текст 0",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "",
-          "source": "property"
-        },
-        {
-          "key": "COUNT[0]",
-          "label": "Значение 0",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "",
-          "source": "property"
-        },
-        {
-          "key": "TEXT[1]",
-          "label": "Текст 1",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "NAME_Bonus_HpMax",
-          "source": "property"
-        },
-        {
-          "key": "COUNT[1]",
-          "label": "Значение 1",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "HPMax_Elixier",
-          "source": "property"
-        },
-        {
-          "key": "TEXT[2]",
-          "label": "Текст 2",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "",
-          "source": "property"
-        },
-        {
-          "key": "COUNT[2]",
-          "label": "Значение 2",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "",
-          "source": "property"
-        },
-        {
-          "key": "TEXT[3]",
-          "label": "Текст 3",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "",
-          "source": "property"
-        },
-        {
-          "key": "COUNT[3]",
-          "label": "Значение 3",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "",
-          "source": "property"
-        },
-        {
-          "key": "TEXT[4]",
-          "label": "Текст 4",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "",
-          "source": "property"
-        },
-        {
-          "key": "COUNT[4]",
-          "label": "Значение 4",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "",
-          "source": "property"
-        },
-        {
-          "key": "TEXT[5]",
-          "label": "Текст 5 (стоимость)",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "NAME_Value",
-          "source": "property"
-        },
-        {
-          "key": "COUNT[5]",
-          "label": "Значение 5 (стоимость)",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "value",
-          "source": "property"
-        }
-      ]
-    },
-    {
-      "id": "advanced",
-      "title": "Дополнительно",
-      "fields": [
-        {
-          "key": "description_raw",
-          "label": "Дополнительный комментарий редактора",
-          "type": "string",
-          "widget": "input",
-          "placeholder": "",
-          "description": "Метаданные редактора, не экспортируются в Daedalus.",
-          "source": "editor_metadata",
-          "export": false
+          "source": "property",
+          "default": "100",
+          "placeholder": "100",
+          "description": "Стоимость в золоте; можно указать число либо константу Daedalus."
         }
       ]
     }
   ],
   "unknown_properties": {
     "preserve": true,
-    "show_in_section": "advanced"
+    "show_in_section": null
   },
   "missing_properties": {
     "show_empty": true,

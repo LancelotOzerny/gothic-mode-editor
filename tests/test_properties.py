@@ -10,6 +10,7 @@ from gothic_editor.core.properties_schema import PropertiesSchema, schema_for
 from gothic_editor.core.settings import SettingsStore
 from gothic_editor.core.project_tools import ProjectTools
 from gothic_editor.core.scripts import parse_items
+from gothic_editor.ui.property_widgets import ExpressionCombobox
 
 
 class PropertiesTests(unittest.TestCase):
@@ -36,11 +37,12 @@ class PropertiesTests(unittest.TestCase):
         schema = schema_for('potions')
         form = self.app.properties
         self.assertEqual(list(form.inputs), [field.key for section in schema.sections for field in section.fields])
-        titles = [child.cget('text') for child in form.inner.winfo_children() if isinstance(child, tk.LabelFrame)]
-        self.assertEqual(titles, [section.title for section in schema.sections])
-        self.assertEqual(form.inputs['instance'].get(), self.item.instance)
-        self.assertEqual(form.inputs['scemeName'].get(), '"POTIONFAST"')
-        self.assertEqual(form.inputs['TEXT[0]'].get(), '')
+        self.assertEqual(list(form.sections), ['general', 'parameters'])
+        self.assertEqual(form.inputs['instance'].get(), 'Potion1')
+        self.assertEqual(form.inputs['name'].get(), 'Новое зелье')
+        self.assertEqual(form.inputs['description'].get(), 'Новое зелье')
+        self.assertEqual(form.inputs['flags'].get(), 'ITEM_MULTI')
+        self.assertEqual(form.inputs['value'].get(), '100')
         before = self.item.path.read_bytes()
         form.save()
         self.assertEqual(self.item.path.read_bytes(), before)
@@ -48,21 +50,34 @@ class PropertiesTests(unittest.TestCase):
     def test_arrays_case_and_expressions_round_trip_without_losing_unknown_fields(self):
         item = self.repo.edit(self.item, {'custom_bonus': 'BASE + 2', 'TEXT[0]': 'NAME_Value'})
         self.app.select(item)
-        self.assertEqual(self.app.properties.inputs['TEXT[0]'].get(), 'NAME_Value')
-        self.assertEqual(self.app.properties.inputs['custom_bonus'].get(), 'BASE + 2')
-        self.change('COUNT[0]', 'value * 2')
-        self.change('scemeName', '"POTIONSLOW"')
+        self.assertNotIn('TEXT[0]', self.app.properties.inputs)
+        self.assertNotIn('custom_bonus', self.app.properties.inputs)
+        self.change('value', 'value * 2')
         self.app.properties.save()
         item = self.app.current
-        self.assertEqual(item.fields['count[0]'], 'value * 2')
-        self.assertEqual(item.fields['scemename'], '"POTIONSLOW"')
+        self.assertEqual(item.fields['value'], 'value * 2')
+        self.assertEqual(item.fields['text[0]'], 'NAME_Value')
         self.assertEqual(item.fields['custom_bonus'], 'BASE + 2')
         self.assertNotIn('text[5]', item.fields)
         self.assertNotIn('effect', item.fields)
 
-    def test_metadata_is_persistent_and_never_exported_to_daedalus(self):
-        self.change('description_raw', 'Editor note: preserve this')
+    def test_plain_strings_round_trip_and_description_is_independent(self):
+        self.change('name', 'Зелье "силы" \\ тест')
+        self.change('description', 'Отдельное описание')
         self.app.properties.save()
+        self.repo.open(self.repo.root)
+        item=self.repo.project_items[0]
+        self.assertEqual(item.fields['name'], '"Зелье \\"силы\\" \\\\ тест"')
+        self.assertEqual(item.fields['description'], '"Отдельное описание"')
+        self.app.select(item)
+        self.assertEqual(self.app.properties.inputs['name'].get(), 'Зелье "силы" \\ тест')
+        self.assertEqual(self.app.properties.inputs['description'].get(), 'Отдельное описание')
+        before=item.path.read_bytes()
+        self.app.properties.save()
+        self.assertEqual(item.path.read_bytes(),before)
+
+    def test_metadata_is_persistent_and_never_exported_to_daedalus(self):
+        self.repo.edit(self.item, {}, metadata={'description_raw': 'Editor note: preserve this'})
         self.repo.open(self.repo.root)
         item = self.repo.project_items[0]
         data = json.loads(item.path.read_text('utf-8'))
@@ -71,7 +86,7 @@ class PropertiesTests(unittest.TestCase):
         self.assertNotIn('Editor note', item.text)
         self.assertNotIn('description_raw', '\n'.join(self.repo.components.generated()[1]))
         self.app.select(item)
-        self.assertEqual(self.app.properties.inputs['description_raw'].get(), 'Editor note: preserve this')
+        self.assertNotIn('description_raw', self.app.properties.inputs)
 
     def test_other_categories_and_ctrl_save_are_readonly(self):
         for category in ('onehand', 'armor', 'runes', 'food', 'rings', 'documents', 'ammo', 'misc'):
@@ -90,12 +105,12 @@ class PropertiesTests(unittest.TestCase):
 
     def test_instance_rename_updates_folder_and_rejects_collisions(self):
         old_folder = self.item.path.parent
-        self.change('instance', 'GE_RenamedPotion')
+        self.change('instance', 'RenamedPotion')
         self.app.properties.save()
-        self.assertEqual(self.app.current.instance, 'GE_RenamedPotion')
-        self.assertEqual(self.app.current.path.parent.name, 'GE_RenamedPotion')
+        self.assertEqual(self.app.current.instance, 'ItPo_RenamedPotion')
+        self.assertEqual(self.app.current.path.parent.name, 'ItPo_RenamedPotion')
         self.assertFalse(old_folder.exists())
-        self.assertIn('INSTANCE GE_RenamedPotion', self.app.current.text)
+        self.assertIn('INSTANCE ItPo_RenamedPotion', self.app.current.text)
         other = self.repo.create_item('potions')
         self.change('instance', other.instance)
         with patch('gothic_editor.app.messagebox.showerror') as error:
@@ -108,9 +123,9 @@ class PropertiesTests(unittest.TestCase):
         error.assert_called_once()
 
     def test_schema_extension_changes_form_without_python_field_list(self):
-        data = json.loads(Path('assets/properties/potion.json').read_text('utf-8'))
+        data = json.loads(Path('assets/schemas/potions.json').read_text('utf-8'))
         data['sections'].append({'id': 'custom', 'title': 'Extra section', 'fields': [
-            {'key': 'extra_code', 'label': 'Extra label', 'type': 'string', 'source': 'property'}]})
+            {'key': 'extra_code', 'label': 'Extra label', 'type': 'expression', 'source': 'property'}]})
         path = self.root/'custom.json'
         path.write_text(json.dumps(data), encoding='utf-8')
         with patch('gothic_editor.ui.properties.schema_for', return_value=PropertiesSchema.load(path)):
@@ -120,10 +135,10 @@ class PropertiesTests(unittest.TestCase):
         self.assertEqual(self.app.current.fields['extra_code'], 'BONUS + 1')
 
     def test_clearing_property_removes_assignment_instead_of_emitting_invalid_code(self):
-        self.change('visual', '')
+        self.change('description', '')
         self.app.properties.save()
-        self.assertNotIn('visual', self.app.current.fields)
-        self.assertNotIn('visual = ;', self.app.current.text)
+        self.assertNotIn('description', self.app.current.fields)
+        self.assertNotIn('description = ;', self.app.current.text)
 
     def test_invalid_schema_disables_save_with_an_explanation(self):
         with patch('gothic_editor.ui.properties.schema_for', side_effect=ValueError('bad schema')):
@@ -141,8 +156,7 @@ class PropertiesTests(unittest.TestCase):
         self.repo.set_game_path(str(self.root/'game'))
         copied = self.repo.copy_to_project(self.repo.game_items[0])
         self.app.select(copied)
-        self.change('instance', 'GE_CustomPotion')
-        self.change('description_raw', 'Private note')
+        self.change('instance', 'CustomPotion')
         self.app.properties.save()
         data = json.loads(self.app.current.path.read_text('utf-8'))
         self.assertIsNone(data['source_instance'])
@@ -151,7 +165,7 @@ class PropertiesTests(unittest.TestCase):
             self.assertEqual((staged/'Items/IT_Potions.d').read_bytes(), raw)
             generated = staged/'Items/GE_ComponentPotions.d'
             self.assertEqual({item.instance for item in parse_items(generated,'build')},
-                             {'GE_CustomPotion',self.item.instance})
+                             {'ItPo_CustomPotion',self.item.instance})
             self.assertNotIn('Private note',generated.read_text('cp1251'))
         self.assertEqual(source.read_bytes(),raw)
 
@@ -166,3 +180,85 @@ class PropertiesTests(unittest.TestCase):
         data = json.loads(changed.path.read_text('utf-8'))
         self.assertEqual(data['source_instance'],'ItPo_Original')
         self.assertIn('itpo_original',self.repo.components.generated()[0])
+
+    def test_combobox_displays_names_but_saves_daedalus_values(self):
+        combo=self.app.properties.inputs['flags']
+        self.assertIsInstance(combo,ExpressionCombobox)
+        self.assertEqual(str(combo['state']),'readonly')
+        self.assertEqual(combo.value_variable.get(),'Складываемое')
+        self.assertEqual(combo.get(),'ITEM_MULTI')
+        combo.current(2)  # Квестовый предмет
+        self.app.properties.save()
+        self.assertEqual(self.app.current.fields['flags'],'ITEM_MISSION')
+        self.assertNotIn('Квестовый предмет',self.app.current.text)
+        self.assertEqual(self.app.properties.inputs['flags'].value_variable.get(),'Квестовый предмет')
+
+    def test_custom_flags_expressions_resources_and_function_identifiers_stay_raw(self):
+        item=self.repo.edit(self.item,{'flags':'ITEM_MULTI | CUSTOM_FLAG'})
+        self.app.select(item)
+        values={'flags':'ITEM_MULTI | CUSTOM_FLAG', 'value':'Value_HpMaxElixier + 7',
+                'name':'"Custom type"'}
+        for key,value in values.items():
+            if key!='flags':self.change(key,value)
+        self.app.properties.save()
+        for key,value in values.items():
+            self.assertEqual(self.app.current.fields[key.casefold()],value)
+        self.assertEqual(self.app.current.fields['description'],'"Новое зелье"')
+
+    def test_original_missing_fields_do_not_receive_defaults_or_placeholders(self):
+        source=self.root/'Original.d'
+        source.write_bytes(b'INSTANCE ItPo_Test(C_Item) { name=NAME_Trank; };')
+        original=parse_items(source,'game')[0]
+        self.repo.components.import_item(original)
+        self.repo.refresh()
+        item=next(item for item in self.repo.project_items if item.instance=='ItPo_Test')
+        self.app.select(item)
+        before=item.path.read_bytes()
+        for key in ('description','flags','value'):
+            self.assertEqual(self.app.properties.inputs[key].get(),'')
+        hint=self.app.properties.inputs['value'].placeholder
+        self.assertEqual(hint['text'],'100')
+        self.app.properties.save()
+        self.assertEqual(item.path.read_bytes(),before)
+
+    def test_new_item_defaults_are_taken_from_schema_only_at_creation(self):
+        data=json.loads(Path('assets/schemas/potions.json').read_text('utf-8'))
+        data['generated_defaults']['visual']='"OtherPotion.3ds"'
+        data['generated_defaults']['inv_animate']='1'
+        for section in data['sections']:
+            for field in section['fields']:
+                if field['key']=='visual':field['default']='"OtherPotion.3ds"'
+                if field['key']=='value':field['default']='BASE_PRICE + 17'
+                if field['key']=='inv_animate':field['default']='1'
+        path=self.root/'defaults.json'
+        path.write_text(json.dumps(data),encoding='utf-8')
+        with patch('gothic_editor.core.project.schema_for',return_value=PropertiesSchema.load(path)):
+            item=self.repo.create_item('potions','Custom title')
+        self.assertEqual(item.fields['visual'],'"OtherPotion.3ds"')
+        self.assertEqual(item.fields['value'],'BASE_PRICE + 17')
+        self.assertEqual(item.fields['inv_animate'],'1')
+        self.assertEqual(item.fields['description'],'"Custom title"')
+        self.assertNotIn('wear',item.fields)
+        self.assertNotIn('on_state[1]',item.fields)
+        self.assertNotIn('inv_animate',self.item.fields)
+
+    def test_sections_collapse_without_losing_drafts_and_survive_rebuild(self):
+        self.change('value','42 + BONUS')
+        section=self.app.properties.sections['parameters']
+        section.header.invoke()
+        self.assertTrue(section.closed)
+        self.assertEqual(section.body.winfo_manager(),'')
+        self.app._rebuild_translated_ui()
+        self.assertTrue(self.app.properties.sections['parameters'].closed)
+        self.assertEqual(self.app.properties.inputs['value'].get(),'42 + BONUS')
+        self.assertEqual(self.app.properties.inputs['flags'].value_variable.get(),'Складываемое')
+        self.app.properties.sections['parameters'].header.invoke()
+        self.assertEqual(self.app.properties.sections['parameters'].body.winfo_manager(),'pack')
+
+    def test_invalid_option_references_are_rejected(self):
+        data=json.loads(Path('assets/properties/potion.json').read_text('utf-8'))
+        data['sections'][0]['fields'][0]['options_ref']='Missing'
+        path=self.root/'invalid-options.json'
+        path.write_text(json.dumps(data),encoding='utf-8')
+        with self.assertRaisesRegex(ValueError,'unknown option list'):
+            PropertiesSchema.load(path)
