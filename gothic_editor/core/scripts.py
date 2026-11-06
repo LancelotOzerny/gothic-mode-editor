@@ -1,7 +1,7 @@
 """A conservative Daedalus item reader/writer. Source files are never overwritten by scanner."""
 from __future__ import annotations
 from .localization import tr
-from dataclasses import dataclass
+from dataclasses import dataclass,field
 from pathlib import Path
 import re
 
@@ -65,6 +65,7 @@ class Item:
     begin: int
     end: int
     encoding: str = 'utf-8'
+    editor_metadata: dict[str,str] = field(default_factory=dict)
 
     @property
     def title(self):
@@ -101,6 +102,8 @@ def replace_field(block: str, key: str, value: str) -> str:
     key_pat=re.escape(key).replace(r'\[',r'\s*\[\s*').replace(r'\]',r'\s*\]')
     rex=re.compile(r'\b'+key_pat+r'\s*=\s*(?:"(?:\\.|[^"\\])*"|[^;]+)\s*;',re.I)
     m=rex.search(masked)
+    if not value.strip():
+        return block[:m.start()]+block[m.end():] if m else block
     if m:
         raw=block[m.start():m.end()]
         eq=raw.index('=')

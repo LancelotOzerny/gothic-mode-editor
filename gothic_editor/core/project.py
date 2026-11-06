@@ -222,12 +222,21 @@ class ProjectRepository:
         except ValueError:rel=Path('Items')/item.path.name
         return self._project_content()/rel
 
-    def edit(self,item:Item,values:dict[str,str]):
-        if not values:return item
-        if item.path.name=='item.json' and item.path.parent.parent==self.components.root:
-            self.components.edit(item,values)
+    def edit(self,item:Item,values:dict[str,str],instance=None,metadata=None):
+        if not values and instance is None and metadata is None:return item
+        target=instance if instance is not None else item.instance
+        if instance is not None:
+            self.components._safe_id(instance)
+            if instance.casefold()!=item.instance.casefold() and self.exists(instance):
+                raise ValueError(tr('project.file_exists'))
+        if classify(item)=='potions' and not (item.path.name=='item.json' and item.path.parent.parent==self.components.root):
+            self.components.import_item(item,as_override=item.origin=='project')
             self.refresh()
-            return next(x for x in self.project_items if x.instance.casefold()==item.instance.casefold())
+            item=next(x for x in self.project_items if x.instance.casefold()==item.instance.casefold())
+        if item.path.name=='item.json' and item.path.parent.parent==self.components.root:
+            self.components.edit(item,values,instance,metadata)
+            self.refresh()
+            return next(x for x in self.project_items if x.instance.casefold()==target.casefold())
         if item.origin=='game':item=self.copy_to_project(item)
         dest=self._destination_for(item)
         write_modified_item(item,dest,values)

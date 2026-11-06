@@ -1,0 +1,256 @@
+{
+  "schema_version": 1,
+  "id": "potions",
+  "title": "Зелья",
+  "description": "Схема панели свойств зелий Gothic 2. Все значения редактируются как текст и хранятся как исходные выражения Daedalus.",
+  "sections": [
+    {
+      "id": "general",
+      "title": "Основные",
+      "fields": [
+        {
+          "key": "instance",
+          "label": "Код предмета (INSTANCE)",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "ItPo_CrossbowBoost",
+          "description": "Уникальный идентификатор экземпляра. Пример: INSTANCE ItPo_CrossbowBoost (C_Item).",
+          "source": "instance_id",
+          "required": true
+        },
+        {
+          "key": "description",
+          "label": "Название в игре",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "\"Эликсир арбалетчика\"",
+          "description": "Обычно отображаемое название зелья; значение Daedalus может быть строкой или константой.",
+          "source": "property"
+        },
+        {
+          "key": "name",
+          "label": "Название / тип предмета",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "NAME_Trank",
+          "description": "Поле name. В оригинальных зельях часто означает тип предмета, например NAME_Trank.",
+          "source": "property"
+        },
+        {
+          "key": "value",
+          "label": "Стоимость (золото)",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "500 или Value_HpMaxElixier",
+          "description": "Число или константа Daedalus; редактор не заменяет константы автоматически.",
+          "source": "property"
+        },
+        {
+          "key": "mainflag",
+          "label": "Категория",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "ITEM_KAT_POTIONS",
+          "default": "ITEM_KAT_POTIONS",
+          "source": "property"
+        },
+        {
+          "key": "flags",
+          "label": "Флаги предмета",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "ITEM_MULTI",
+          "source": "property"
+        }
+      ]
+    },
+    {
+      "id": "appearance",
+      "title": "Внешний вид",
+      "fields": [
+        {
+          "key": "visual",
+          "label": "3D-модель",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "\"ItPo_Perm_Health.3ds\"",
+          "source": "property"
+        },
+        {
+          "key": "material",
+          "label": "Материал",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "MAT_GLAS",
+          "source": "property"
+        },
+        {
+          "key": "effect",
+          "label": "Визуальный эффект",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "\"SPELLFX_HEALTHPOTION\"",
+          "source": "property"
+        },
+        {
+          "key": "wear",
+          "label": "Флаг эффекта",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "WEAR_EFFECT",
+          "source": "property"
+        }
+      ]
+    },
+    {
+      "id": "usage",
+      "title": "Использование",
+      "fields": [
+        {
+          "key": "on_state[0]",
+          "label": "Функция при использовании",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "UseItPo_CrossbowBoost",
+          "description": "Имя функции Daedalus; сама функция хранится отдельно.",
+          "source": "property"
+        },
+        {
+          "key": "scemeName",
+          "label": "Анимация использования",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "\"POTIONFAST\"",
+          "source": "property"
+        }
+      ]
+    },
+    {
+      "id": "inventory_description",
+      "title": "Описание в инвентаре",
+      "description": "Значения TEXT и COUNT — самостоятельные выражения Daedalus. Отсутствующие поля не создаются автоматически.",
+      "fields": [
+        {
+          "key": "TEXT[0]",
+          "label": "Текст 0",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "",
+          "source": "property"
+        },
+        {
+          "key": "COUNT[0]",
+          "label": "Значение 0",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "",
+          "source": "property"
+        },
+        {
+          "key": "TEXT[1]",
+          "label": "Текст 1",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "NAME_Bonus_HpMax",
+          "source": "property"
+        },
+        {
+          "key": "COUNT[1]",
+          "label": "Значение 1",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "HPMax_Elixier",
+          "source": "property"
+        },
+        {
+          "key": "TEXT[2]",
+          "label": "Текст 2",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "",
+          "source": "property"
+        },
+        {
+          "key": "COUNT[2]",
+          "label": "Значение 2",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "",
+          "source": "property"
+        },
+        {
+          "key": "TEXT[3]",
+          "label": "Текст 3",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "",
+          "source": "property"
+        },
+        {
+          "key": "COUNT[3]",
+          "label": "Значение 3",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "",
+          "source": "property"
+        },
+        {
+          "key": "TEXT[4]",
+          "label": "Текст 4",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "",
+          "source": "property"
+        },
+        {
+          "key": "COUNT[4]",
+          "label": "Значение 4",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "",
+          "source": "property"
+        },
+        {
+          "key": "TEXT[5]",
+          "label": "Текст 5 (стоимость)",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "NAME_Value",
+          "source": "property"
+        },
+        {
+          "key": "COUNT[5]",
+          "label": "Значение 5 (стоимость)",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "value",
+          "source": "property"
+        }
+      ]
+    },
+    {
+      "id": "advanced",
+      "title": "Дополнительно",
+      "fields": [
+        {
+          "key": "description_raw",
+          "label": "Дополнительный комментарий редактора",
+          "type": "string",
+          "widget": "input",
+          "placeholder": "",
+          "description": "Метаданные редактора, не экспортируются в Daedalus.",
+          "source": "editor_metadata",
+          "export": false
+        }
+      ]
+    }
+  ],
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": "advanced"
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  }
+}

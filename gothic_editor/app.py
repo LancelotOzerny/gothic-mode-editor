@@ -20,6 +20,7 @@ from .ui.icons import IconImages
 from .ui.bottom_dock import BottomDock
 from .ui.resources import ResourcesPanel
 from .core.recent_projects import RecentProjects
+from .core.categories import classify
 from .ui.welcome import WelcomeScreen
 from .ui.project_dialog import NewProjectDialog
 from .ui.item_dialog import AddItemDialog
@@ -475,10 +476,10 @@ class EditorApp(tk.Tk):
             self._model_executor.shutdown(wait=False,cancel_futures=True)
         super().destroy()
 
-    def _action(self,method,*args):
+    def _action(self,method,*args,**kwargs):
         if not self.need_project():return
         try:
-            result=method(*args)
+            result=method(*args,**kwargs)
             self.update_hierarchy()
             if result is not None:
                 self.hierarchy.choose(result);self.select(result)
@@ -507,12 +508,14 @@ class EditorApp(tk.Tk):
         self.resources.set_item(self.repo.root,None)
 
     def rename(self,item,new_name):
+        if classify(item)!='potions':return
         # The Daedalus name attribute is the in-game name, not INSTANCE.
         escaped=new_name.replace('\\','\\\\').replace('"','\\"')
         self.save_fields(item,{'name':'"'+escaped+'"'})
 
-    def save_fields(self,item,values):
-        self._action(self.repo.edit,item,values)
+    def save_fields(self,item,values,**options):
+        if classify(item)!='potions':return
+        self._action(self.repo.edit,item,values,**options)
 
 
 def main():EditorApp().mainloop()

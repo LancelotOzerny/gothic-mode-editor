@@ -48,18 +48,20 @@ class PotionComponents:
             end=block_end(masked,match.end()-1)
             if end<0:raise ValueError('Незавершённый INSTANCE: '+str(file))
             fields={re.sub(r'\s+','',m.group(1)).lower():m.group(2).strip() for m in FIELD.finditer(masked[match.end():end-1])}
-            result.append(Item(data['instance'],file,'project',block,fields,0,len(block),'utf-8'))
+            result.append(Item(data['instance'],file,'project',block,fields,0,len(block),'utf-8',
+                               data.get('editor_metadata',{})))
         return result
 
-    def import_item(self, item:Item, instance=None):
+    def import_item(self, item:Item, instance=None, as_override=False):
         target=self._safe_id(instance or item.instance)
         folder=self.folder(target)
         if folder.exists():raise ValueError('Предмет уже существует: '+target)
         source=replace_instance(item.text,item.instance,target) if target!=item.instance else item.text
         fields=dict(item.fields)
-        data={'format':'gothic-potion-v1','instance':target,'source_instance':item.instance if target==item.instance and item.origin=='game' else None,
+        data={'format':'gothic-potion-v1','instance':target,'source_instance':item.instance if target==item.instance and (item.origin=='game' or as_override) else None,
               'source_file':self._relative_game_file(item) if target==item.instance and item.origin=='game' else None,
               'fields':fields,'template':source}
+        if item.editor_metadata:data['editor_metadata']=dict(item.editor_metadata)
         folder.mkdir(parents=True,exist_ok=False)
         try:
             self._atomic_json(folder/'item.json',data)
@@ -111,13 +113,30 @@ class PotionComponents:
         if marker.lower() in path.lower():return path[path.lower().rfind(marker.lower())+len(marker):]
         return 'Items/'+item.path.name
 
-    def edit(self,item,updates):
+    def edit(self,item,updates,instance=None,metadata=None):
         data=self._read(item.path)
+        target=self._safe_id(instance) if instance is not None else data['instance']
+        destination=self.folder(target)
+        if destination!=item.path.parent and destination.exists():
+            raise ValueError('Предмет уже существует: '+target)
+        if target!=data['instance']:
+            renamed=target.casefold()!=data['instance'].casefold()
+            data['template']=replace_instance(data['template'],data['instance'],target)
+            data['instance']=target
+            if renamed:
+                data['source_instance']=None
+                data['source_file']=None
         for key,value in updates.items():
             data['fields'][key.lower()]=value
+        if metadata is not None:data.setdefault('editor_metadata',{}).update(metadata)
         # Validate encoding to avoid broken Russian strings when building CP1251 Gothic data.
         self.render_instance(data).encode('cp1251')
-        self._atomic_json(item.path,data)
+        moved=destination.name!=item.path.parent.name
+        if moved:item.path.parent.rename(destination)
+        try:self._atomic_json(destination/'item.json',data)
+        except Exception:
+            if moved:destination.rename(item.path.parent)
+            raise
 
     def delete(self,item):
         import shutil

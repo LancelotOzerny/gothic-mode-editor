@@ -1,12 +1,16 @@
 """Editable property form with explicit save (never changes source automatically)."""
 import tkinter as tk
+from tkinter import messagebox
+from ..core.categories import classify
 from ..core.localization import tr
-from .widgets import PANEL,TXT,MUTED,ACCENT,label,make_entry
+from ..core.properties_schema import PropertyField,property_key,schema_for
+from .widgets import PANEL,MUTED,label,make_entry,Tooltip
 
 class PropertiesPanel(tk.Frame):
     def __init__(self,parent,on_save):
         super().__init__(parent,bg=PANEL)
         self.on_save=on_save;self.current=None;self.inputs={}
+        self.fields={};self.initial={};self.editable=False
         label(self,tr('properties.title'),font=('Arial',10,'bold')).pack(fill='x',padx=14,pady=(14,8))
         self.info=label(self,tr('properties.select_item'),fg=MUTED,anchor='w',wraplength=280,justify='left')
         self.info.pack(fill='x',padx=14,pady=(0,10))
@@ -28,26 +32,75 @@ class PropertiesPanel(tk.Frame):
         self.current=item
         for child in self.inner.winfo_children():child.destroy()
         self.inputs={}
+        self.fields={};self.initial={};self.editable=False
         if item is None:
             self.info.config(text=tr('properties.select_in_hierarchy'))
             self.save_btn.config(state='disabled')
             return
-        self.save_btn.config(state='normal')
+        self.editable=classify(item)=='potions' and item.origin=='project'
+        self.save_btn.config(state='normal' if self.editable else 'disabled')
         self.info.config(text=f'{item.instance}\n'+(tr('properties.project') if item.origin=='project' else tr('properties.game_readonly')))
-        preferred=['name','description','visual','mainflag','flags','value','material','damageTotal','damagetype','range','on_state[0]','scemename']
-        keys=[k for k in preferred if k in item.fields]
-        keys+=sorted(k for k in item.fields if k not in keys)
-        if 'name' not in keys:keys.insert(0,'name')
-        for key in keys:
-            label(self.inner,key,fg=MUTED,anchor='w',font=('Arial',9)).pack(fill='x',padx=13,pady=(6,2))
-            e=make_entry(self.inner)
-            e.insert(0,item.fields.get(key,'"'+item.title+'"' if key=='name' else ''))
-            e.pack(fill='x',padx=13,ipady=5)
-            self.inputs[key]=e
+        try:
+            schema=schema_for(classify(item))
+        except (OSError,ValueError,KeyError,TypeError) as exc:
+            self.editable=False
+            self.save_btn.config(state='disabled')
+            self.info.config(text=tr('properties.schema_error',error=str(exc)))
+            return
+        if schema is None:
+            label(self.inner,tr('properties.readonly'),fg=MUTED,wraplength=260).pack(fill='x',padx=13,pady=8)
+            for key in sorted(item.fields):self.render_field(self.inner,PropertyField(key,key),item.fields[key])
+        else:
+            known={property_key(field.key) for section in schema.sections for field in section.fields
+                   if field.source=='property'}
+            for section in schema.sections:
+                frame=tk.LabelFrame(self.inner,text=section.title,bg=PANEL,fg=MUTED,pady=6)
+                frame.pack(fill='x',padx=10,pady=(8,4))
+                if section.description:
+                    label(frame,section.description,fg=MUTED,wraplength=250,justify='left').pack(fill='x',padx=8,pady=5)
+                for field in section.fields:
+                    if field.source=='instance_id':value=item.instance
+                    elif field.source=='editor_metadata':value=item.editor_metadata.get(field.key,'')
+                    else:
+                        key=property_key(field.key)
+                        if not schema.show_missing and key not in item.fields:continue
+                        value=item.fields.get(key,'')
+                    self.render_field(frame,field,value)
+                if section.key==schema.unknown_section:
+                    for key in sorted(item.fields):
+                        if property_key(key) not in known:
+                            self.render_field(frame,PropertyField(key,key),item.fields[key])
         label(self.inner,tr('properties.hint'),fg=MUTED,wraplength=260,justify='left').pack(padx=12,pady=15)
         self.canvas.yview_moveto(0)
 
+    def render_field(self,parent,field,value):
+        label(parent,field.label,fg=MUTED,anchor='w',font=('Arial',9)).pack(fill='x',padx=8,pady=(6,2))
+        entry=make_entry(parent)
+        entry.insert(0,value)
+        if not self.editable:entry.config(state='readonly')
+        entry.pack(fill='x',padx=8,ipady=5)
+        hint=field.description
+        if field.placeholder:hint+=('\n' if hint else '')+tr('properties.example',value=field.placeholder)
+        if hint:Tooltip(entry,hint)
+        self.inputs[field.key]=entry
+        self.fields[field.key]=field
+        self.initial[field.key]=value
+
     def save(self):
-        if not self.current:return
-        values={k:e.get().strip() for k,e in self.inputs.items() if e.get().strip()!=self.current.fields.get(k,'') and (k in self.current.fields or e.get().strip())}
-        if values:self.on_save(self.current,values)
+        if not self.current or not self.editable:return
+        values,metadata,instance={}, {}, None
+        for key,entry in self.inputs.items():
+            field=self.fields[key]
+            value=entry.get() if field.source=='editor_metadata' else entry.get().strip()
+            if field.required and not value:
+                messagebox.showerror(tr('app.error'),tr('properties.required',name=field.label),parent=self.winfo_toplevel())
+                return
+            if value==self.initial[key]:continue
+            if field.source=='instance_id':instance=value
+            elif field.source=='editor_metadata':metadata[key]=value
+            elif field.export:values[property_key(key)]=value
+        if values or metadata or instance is not None:
+            options={}
+            if instance is not None:options['instance']=instance
+            if metadata:options['metadata']=metadata
+            self.on_save(self.current,values,**options)
