@@ -24,7 +24,8 @@ class PotionTests(unittest.TestCase):
         self.assertEqual(item.instance,'ItPo_Potion2')
         self.assertEqual(item.fields,{'name':'"Новое зелье"','description':'"Новое зелье"',
             'flags':'ITEM_MULTI','value':'100','mainflag':'ITEM_KAT_POTIONS',
-            'visual':'"ItPo_Perm_Health.3ds"','material':'MAT_GLAS','scemename':'"POTIONFAST"'})
+            'visual':'"ItPo_Perm_Health.3ds"','material':'MAT_GLAS','scemename':'"POTIONFAST"',
+            'text[5]':'NAME_Value','count[5]':'value'})
         other=self.repo.create_item('potions','Custom name')
         self.assertEqual(other.instance,'ItPo_Potion3')
         self.assertEqual(other.fields['name'],other.fields['description'])

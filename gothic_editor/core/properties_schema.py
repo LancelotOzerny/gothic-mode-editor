@@ -24,6 +24,11 @@ class PropertyField:
     options: tuple[tuple[str, str], ...] = ()
     default: str | None = None
     prefix: str = ''
+    max_rows: int = 0
+    start_index: int = 0
+    columns: tuple['PropertyField', ...] = ()
+    reserved: tuple[tuple[str, str], ...] = ()
+    options_source: str = ''
 
 
 @dataclass(frozen=True)
@@ -70,7 +75,7 @@ class PropertiesSchema:
                 key = raw['key']
                 canonical = property_key(key)
                 source = raw.get('source', 'property')
-                if (canonical in keys or raw.get('type') not in ('string', 'expression', 'identifier', 'enum', 'flags', 'resource')
+                if (canonical in keys or raw.get('type') not in ('string', 'expression', 'identifier', 'enum', 'flags', 'resource', 'key_value_list')
                         or raw.get('widget', 'input') not in ('input', 'combobox')
                         or source not in ('property', 'instance_id', 'editor_metadata')):
                     raise ValueError(f'{path}: invalid or duplicate field {key}')
@@ -81,11 +86,28 @@ class PropertiesSchema:
                 if default is not None and not isinstance(default, str):
                     raise ValueError(f'{path}: default must be a Daedalus expression: {key}')
                 keys.add(canonical)
+                columns = raw.get('columns', [])
+                maximum, start = raw.get('max_rows', 0), raw.get('start_index', 0)
+                reserved = raw.get('reserved', {})
+                if raw['type'] == 'key_value_list':
+                    if (type(maximum) is not int or maximum < 1 or type(start) is not int or start < 0
+                            or not isinstance(columns, list) or len(columns) != 2
+                            or any(not isinstance(column, dict) or column.get('type') not in ('string', 'expression')
+                            or not isinstance(column.get('label'), str)
+                            or not re.fullmatch(r'[A-Za-z_]\w*', column.get('variable', ''), re.ASCII)
+                            for column in columns)
+                            or len({column['variable'].casefold() for column in columns}) != 2
+                            or not isinstance(reserved, dict)
+                            or any(key not in [column['variable'] for column in columns] or not isinstance(value, str)
+                                   for key, value in reserved.items())):
+                        raise ValueError(f'{path}: invalid key_value_list {key}')
                 fields.append(PropertyField(key, raw['label'], source, raw.get('description', ''),
                                             raw.get('placeholder', ''), raw.get('required', False),
                                             raw.get('export', True),raw['type'],raw.get('widget','input'),
                                             tuple((option['name'],option['value']) for option in option_lists.get(reference,[])),
-                                            default, raw.get('prefix', '')))
+                                            default, raw.get('prefix', ''), maximum, start,
+                                            tuple(PropertyField(c['variable'], c['label'], field_type=c['type']) for c in columns),
+                                            tuple(reserved.items()), raw.get('options_source', '')))
             sections.append(PropertySection(section_key, section['title'], tuple(fields),
                                             section.get('description', '')))
         unknown = data.get('unknown_properties', {}).get('show_in_section')

@@ -103,11 +103,11 @@ class EditorApp(tk.Tk):
                                     command=lambda current=key:self.toggle_bottom_tab(current))
         view.add_cascade(label=tr('menu.windows'),menu=windows)
         menu.add_cascade(label=tr('menu.view'),menu=view)
-        self.tools_menu=tk.Menu(menu,tearoff=False)
+        self.tools_menu=tk.Menu(project,tearoff=False)
         for action in ('compile','sync','launch','build_and_run'):
             self.tools_menu.add_command(label=tr('pipeline.'+action),
                 command=lambda current=action:self.run_project_tool(current))
-        menu.add_cascade(label=tr('tools.title'),menu=self.tools_menu)
+        project.add_cascade(label=tr('menu.build'),menu=self.tools_menu)
         self.config(menu=menu)
         self.main_menu=menu
         if previous is not None:previous.destroy()
@@ -125,15 +125,9 @@ class EditorApp(tk.Tk):
         actions=tk.Frame(header,bg=BG);actions.grid(row=0,column=1,padx=16)
         self.play_button=tk.Button(actions,image=self.icons.frames('build.png',26,'#62d785',BG)[0],bg=BG,
                                    activebackground=PANEL,activeforeground='#89eda5',relief='flat',
-                                   text=tr('pipeline.build_and_run'),compound='left',
                                    cursor='hand2',command=lambda:self.run_project_tool('build_and_run'))
-        self.play_button.pack(side='left',padx=(0,8))
-        self.sync_button=tk.Button(actions,image=self.icons.frames('sync.png',26,'#80b4f9',BG)[0],bg=BG,
-                                   activebackground=PANEL,relief='flat',cursor='hand2',
-                                   command=lambda:self.run_project_tool('sync'))
-        self.sync_button.pack(side='left')
+        self.play_button.pack(side='left')
         Tooltip(self.play_button,tr('pipeline.build_and_run'))
-        Tooltip(self.sync_button,tr('tools.sync'))
         self.project_label=label(header,tr('app.no_project'),bg=BG,fg=MUTED,anchor='e',width=1)
         self.project_label.grid(row=0,column=2,sticky='ew')
         self._update_tool_buttons()
@@ -147,7 +141,9 @@ class EditorApp(tk.Tk):
         panes.add(middle,width=550,minsize=250)
         self.viewer=ModelViewer(middle)
         self.viewer.pack(fill='both',expand=True)
-        self.properties=PropertiesPanel(panes,self.save_fields,on_appearance=self.appearance.show)
+        from .core.item_options import item_options
+        self.properties=PropertiesPanel(panes,self.save_fields,on_appearance=self.appearance.show,
+                                        options_provider=lambda source:item_options(self.repo,source))
         panes.add(self.properties,width=350,minsize=240)
         self.bottom_dock=BottomDock(self.workspace)
         for key,(title_key,factory) in self._bottom_tab_specs.items():
@@ -249,7 +245,6 @@ class EditorApp(tk.Tk):
         running=self._tool_runner.running
         state='normal' if self.repo.root is not None and not running else 'disabled'
         self.play_button.config(state=state)
-        self.sync_button.config(state=state)
         for index in range(4):self.tools_menu.entryconfig(index,state=state)
 
     def run_project_tool(self,action):

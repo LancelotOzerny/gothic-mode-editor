@@ -2,7 +2,7 @@
   "schema_version": 3,
   "id": "potions",
   "title": "Зелья",
-  "description": "Минимальная схема свойств зелья Gothic 2. Пользователь задаёт код, name, description, flags и value; технические значения добавляются генератором при создании нового предмета.",
+  "description": "Свойства зелья, анимация использования и строки инвентаря.",
   "rules": {
     "default_applies_to": "new_items_only",
     "preserve_unrecognized_properties": true,
@@ -22,7 +22,9 @@
     "mainflag": "ITEM_KAT_POTIONS",
     "visual": "\"ItPo_Perm_Health.3ds\"",
     "material": "MAT_GLAS",
-    "scemeName": "\"POTIONFAST\""
+    "scemeName": "\"POTIONFAST\"",
+    "text[5]": "NAME_Value",
+    "count[5]": "value"
   },
   "option_lists": {
     "itemFlagsList": [
@@ -45,6 +47,22 @@
       {
         "name": "Не разделять стопку",
         "value": "ITEM_NSPLIT"
+      }
+    ],
+    "visualEffects": [
+      {
+        "name": "Нет",
+        "value": "\"\""
+      }
+    ],
+    "itemSchemes": [
+      {
+        "name": "Быстро выпить (POTIONFAST)",
+        "value": "\"POTIONFAST\""
+      },
+      {
+        "name": "Выпить (POTION)",
+        "value": "\"POTION\""
       }
     ]
   },
@@ -111,6 +129,64 @@
           "default": "100",
           "placeholder": "100",
           "description": "Стоимость в золоте; можно указать число либо константу Daedalus."
+        }
+      ]
+    },
+    {
+      "id": "appearance",
+      "title": "Внешний вид",
+      "fields": [
+        {
+          "key": "effect",
+          "label": "Визуальный эффект",
+          "type": "enum",
+          "widget": "combobox",
+          "options_ref": "visualEffects",
+          "options_source": "visual_effects"
+        }
+      ]
+    },
+    {
+      "id": "actions",
+      "title": "Действия",
+      "fields": [
+        {
+          "key": "scemeName",
+          "label": "Анимация использования",
+          "type": "enum",
+          "widget": "combobox",
+          "default": "\"POTIONFAST\"",
+          "options_ref": "itemSchemes",
+          "options_source": "item_schemes"
+        }
+      ]
+    },
+    {
+      "id": "inventory",
+      "title": "Инвентарь",
+      "description": "До 6 строк, включая автоматическую строку стоимости.",
+      "fields": [
+        {
+          "key": "inventory_rows",
+          "label": "Строки инвентаря",
+          "type": "key_value_list",
+          "max_rows": 6,
+          "start_index": 0,
+          "columns": [
+            {
+              "variable": "text",
+              "label": "Текст",
+              "type": "string"
+            },
+            {
+              "variable": "count",
+              "label": "Значение",
+              "type": "expression"
+            }
+          ],
+          "reserved": {
+            "text": "NAME_Value"
+          }
         }
       ]
     }

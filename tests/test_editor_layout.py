@@ -215,9 +215,9 @@ class EditorLayoutTests(unittest.TestCase):
         self.assertFalse(any(isinstance(widget, tk.Toplevel) for widget in self.app.winfo_children()))
 
     def test_toolbar_uses_icon_images(self):
-        for button in (self.app.play_button, self.app.sync_button):
-            self.assertTrue(button.cget('image'))
-        self.assertEqual(self.app.play_button.cget('text'), tr('pipeline.build_and_run'))
+        self.assertTrue(self.app.play_button.cget('image'))
+        self.assertEqual(self.app.play_button.cget('text'), '')
+        self.assertEqual(self.app.play_button.master.winfo_children(), [self.app.play_button])
 
 
 if __name__ == '__main__':

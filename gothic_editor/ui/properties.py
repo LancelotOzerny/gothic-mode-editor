@@ -6,13 +6,14 @@ from ..core.categories import classify
 from ..core.localization import tr
 from ..core.properties_schema import PropertyField,property_key,schema_for
 from .widgets import PANEL,MUTED,label,make_entry,Tooltip
-from .property_widgets import ExpressionCombobox,PropertySectionFrame,add_placeholder
+from .property_widgets import ExpressionCombobox,PropertySectionFrame,KeyValueList,add_placeholder
 
 class PropertiesPanel(tk.Frame):
-    def __init__(self,parent,on_save,on_appearance=None):
+    def __init__(self,parent,on_save,on_appearance=None,options_provider=None):
         super().__init__(parent,bg=PANEL)
         self.on_save=on_save;self.current=None;self.inputs={}
         self.on_appearance=on_appearance
+        self.options_provider=options_provider
         self.fields={};self.initial={};self.editable=False
         self.collapsed={}
         self.sections={}
@@ -74,8 +75,8 @@ class PropertiesPanel(tk.Frame):
                     elif field.source=='editor_metadata':value=item.editor_metadata.get(field.key,'')
                     else:
                         key=property_key(field.key)
-                        if not schema.show_missing and key not in item.fields:continue
-                        value=item.fields.get(key,'')
+                        if not schema.show_missing and key not in item.fields and field.field_type!='key_value_list':continue
+                        value=item.fields if field.field_type=='key_value_list' else item.fields.get(key,'')
                     self.render_field(frame.body,field,value)
                 if section.key==schema.unknown_section:
                     for key in sorted(item.fields):
@@ -87,12 +88,23 @@ class PropertiesPanel(tk.Frame):
         self.canvas.yview_moveto(0)
 
     def render_field(self,parent,field,value):
+        if field.field_type=='key_value_list':
+            entry=KeyValueList(parent,field,value,self.editable)
+            entry.pack(fill='x',padx=8)
+            self.inputs[field.key]=entry
+            self.fields[field.key]=field
+            self.initial[field.key]=entry.get()
+            return
         if field.field_type=='string' and re.fullmatch(r'"(?:\\.|[^"\\])*"',value):
             value=re.sub(r'\\([\\"])',r'\1',value[1:-1])
         label(parent,field.label,fg=MUTED,anchor='w',font=('Arial',9)).pack(fill='x',padx=8,pady=(6,2))
         variable=tk.StringVar(self)
         if field.widget=='combobox':
-            entry=ExpressionCombobox(parent,field.options,textvariable=variable,state='readonly')
+            options=list(field.options)
+            if field.options_source and self.options_provider:
+                for option in self.options_provider(field.options_source):
+                    if option[1] not in {value for _,value in options}:options.append(option)
+            entry=ExpressionCombobox(parent,options,textvariable=variable,state='readonly')
             entry.set_expression(value)
             if not self.editable:entry.config(state='disabled')
         else:
@@ -114,6 +126,13 @@ class PropertiesPanel(tk.Frame):
         values,metadata,instance={}, {}, None
         for key,entry in self.inputs.items():
             field=self.fields[key]
+            if field.field_type=='key_value_list':
+                if field.export:
+                    try:values.update(entry.updates())
+                    except ValueError as exc:
+                        messagebox.showerror(tr('app.error'),str(exc),parent=self.winfo_toplevel())
+                        return
+                continue
             value=entry.get() if field.source=='editor_metadata' or field.field_type=='string' else entry.get().strip()
             if value==self.initial[key]:continue
             if field.required and not value:

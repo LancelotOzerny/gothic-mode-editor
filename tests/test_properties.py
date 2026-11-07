@@ -37,7 +37,7 @@ class PropertiesTests(unittest.TestCase):
         schema = schema_for('potions')
         form = self.app.properties
         self.assertEqual(list(form.inputs), [field.key for section in schema.sections for field in section.fields])
-        self.assertEqual(list(form.sections), ['general', 'parameters'])
+        self.assertEqual(list(form.sections), ['general', 'parameters', 'appearance', 'actions', 'inventory'])
         self.assertEqual(form.inputs['instance'].get(), 'Potion1')
         self.assertEqual(form.inputs['name'].get(), 'Новое зелье')
         self.assertEqual(form.inputs['description'].get(), 'Новое зелье')
@@ -58,7 +58,7 @@ class PropertiesTests(unittest.TestCase):
         self.assertEqual(item.fields['value'], 'value * 2')
         self.assertEqual(item.fields['text[0]'], 'NAME_Value')
         self.assertEqual(item.fields['custom_bonus'], 'BASE + 2')
-        self.assertNotIn('text[5]', item.fields)
+        self.assertEqual(item.fields['text[5]'], 'NAME_Value')
         self.assertNotIn('effect', item.fields)
 
     def test_plain_strings_round_trip_and_description_is_independent(self):
@@ -262,3 +262,51 @@ class PropertiesTests(unittest.TestCase):
         path.write_text(json.dumps(data),encoding='utf-8')
         with self.assertRaisesRegex(ValueError,'unknown option list'):
             PropertiesSchema.load(path)
+
+    def test_inventory_add_limit_delete_and_responsive_layout(self):
+        widget = self.app.properties.inputs['inventory_rows']
+        for _ in range(6):widget.add_button.invoke()
+        self.assertEqual(len(widget.rows), 5)
+        self.assertEqual(str(widget.add_button['state']), 'disabled')
+        index, frame, cells = widget.rows[0]
+        cells[0][1].insert(0, 'Бонус')
+        cells[1][1].insert(0, 'BONUS + 10')
+        frame.event_generate('<Configure>', width=500)
+        self.assertEqual(cells[1][1].master.grid_info()['row'], 0)
+        frame.event_generate('<Configure>', width=200)
+        self.assertEqual(cells[1][1].master.grid_info()['row'], 1)
+        self.app._rebuild_translated_ui()
+        widget = self.app.properties.inputs['inventory_rows']
+        self.assertEqual(widget.get()[0], (index, ('"Бонус"', 'BONUS + 10')))
+        self.app.properties.save()
+        self.assertEqual(self.app.current.fields['text[0]'], '"Бонус"')
+        self.assertEqual(self.app.current.fields['count[5]'], 'value')
+        widget = self.app.properties.inputs['inventory_rows']
+        widget.remove_row(index)
+        self.app.properties.save()
+        self.assertNotIn('text[0]', self.app.current.fields)
+
+    def test_effect_none_and_animation_save_as_expressions(self):
+        self.app.properties.inputs['effect'].current(0)
+        self.app.properties.inputs['scemeName'].current(1)
+        self.app.properties.save()
+        self.assertEqual(self.app.current.fields['effect'], '""')
+        self.assertEqual(self.app.current.fields['scemename'], '"POTION"')
+
+    def test_inventory_text_in_count_does_not_save_any_pending_changes(self):
+        widget = self.app.properties.inputs['inventory_rows']
+        widget.add_row()
+        cells = widget.rows[0][2]
+        cells[0][1].insert(0, 'Время')
+        cells[1][1].insert(0, '2 минуты')
+        self.change('name', 'Изменённое имя')
+        before = self.item.path.read_bytes()
+        with patch('gothic_editor.ui.properties.messagebox.showerror') as error:
+            self.app.properties.save()
+        error.assert_called_once()
+        self.assertIn('count[0]', error.call_args.args[1])
+        self.assertEqual(self.item.path.read_bytes(), before)
+        cells[1][1].delete(0, 'end')
+        cells[1][1].insert(0, '2')
+        self.app.properties.save()
+        self.assertEqual(self.app.current.fields['count[0]'], '2')
