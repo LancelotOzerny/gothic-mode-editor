@@ -217,7 +217,7 @@ class EditorLayoutTests(unittest.TestCase):
     def test_toolbar_uses_icon_images(self):
         for button in (self.app.play_button, self.app.sync_button):
             self.assertTrue(button.cget('image'))
-            self.assertEqual(button.cget('text'), '')
+        self.assertEqual(self.app.play_button.cget('text'), tr('pipeline.build_and_run'))
 
 
 if __name__ == '__main__':

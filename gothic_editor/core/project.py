@@ -10,6 +10,8 @@ from .potion_components import PotionComponents
 from .properties_schema import schema_for
 from .item_migration import ItemMigrationService
 from .model_resolver import ModelResolver
+from .settings import field_key, validate_value
+from .settings_schema import all_fields
 
 class ProjectRepository:
     def __init__(self,shared_resources=None):
@@ -25,6 +27,7 @@ class ProjectRepository:
         self.errors=[]
         self.mesh_index={}
         self.archive_models=ArchiveModels()
+        self.project_settings={}
 
     def create(self,root:Path,name:str):
         root=root.resolve();root.mkdir(parents=True,exist_ok=True)
@@ -39,21 +42,41 @@ class ProjectRepository:
         root=root.resolve();cfg=root/'project.json'
         if not cfg.is_file():raise ValueError(tr('project.not_project'))
         data=json.loads(cfg.read_text('utf-8'))
+        if not isinstance(data,dict):raise ValueError('Некорректный project.json')
+        project_settings=data.get('settings',{})
+        if not isinstance(project_settings,dict):raise ValueError('Настройки проекта должны быть JSON-объектом')
+        for field in all_fields():
+            if field.scope=='project':validate_value(field,project_settings.get(field_key(field),field.default))
         migration=ItemMigrationService(root)
         pending=migration.pending()
         if pending and confirm_migration is not None and confirm_migration(len(pending)):
             migration.migrate()
         self.name=data.get('name',root.name)
         resources=data if self.shared_resources is None else {**data,**self.shared_resources}
-        raw=resources.get('game_path','')
+        raw=project_settings.get('resources.gothic.game_path',data.get('game_path') or resources.get('game_path',''))
         game=Path(raw).resolve() if raw else None
         self._validate_roots(root,game)
         self.root=root
+        self.project_settings=dict(project_settings)
         self.components=PotionComponents(root)
         self.game=game
         self.compiler_path=resources.get('compiler_path','')
         self.resource_editor_path=resources.get('resource_editor_path','')
         self.refresh()
+
+    def save_project_settings(self,values):
+        if not self.root:raise ValueError(tr('project.not_open'))
+        updated=dict(self.project_settings)
+        for field in all_fields():
+            key=field_key(field)
+            if field.scope=='project' and key in values:updated[key]=validate_value(field,values[key])
+        config=self.root/'project.json'
+        data=json.loads(config.read_text('utf-8'))
+        data['settings']=updated
+        temporary=config.with_suffix('.json.tmp')
+        temporary.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+        temporary.replace(config)
+        self.project_settings=updated
 
     @staticmethod
     def _validate_roots(root,game):
@@ -84,6 +107,8 @@ class ProjectRepository:
             temporary.replace(self.root/'project.json')
         else:
             self.shared_resources.update(resources)
+        if self.root and self.project_settings.get('resources.gothic.game_path')!=resources['game_path']:
+            self.save_project_settings({'resources.gothic.game_path':resources['game_path']})
         changed=self.game!=target
         self.game=target
         self.compiler_path=compiler_path

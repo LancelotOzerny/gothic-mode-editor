@@ -14,6 +14,8 @@ from gothic_editor.core.project import ProjectRepository
 from gothic_editor.core.project_tools import ProjectTools, ToolResult
 from gothic_editor.core.settings import SettingsStore
 from gothic_editor.core.scripts import parse_items
+from gothic_editor.core.mod_archive import read_mod, write_mod
+from gothic_editor.core.mod_package import generate_ini, DAT_PATH
 
 
 class ProjectToolsTests(unittest.TestCase):
@@ -36,6 +38,7 @@ class ProjectToolsTests(unittest.TestCase):
         self.compiler = self.root / 'DaedalusCompiler/DaedalusCompiler.dll'
         self.compiler.parent.mkdir()
         self.compiler.write_bytes(b'test compiler')
+        (self.project/'project.json').write_text(json.dumps({'name':'Test'}),encoding='utf-8')
         self.tools = ProjectTools(self.project, self.game, str(self.compiler))
 
     def test_single_item_override_preserves_siblings_and_helpers_in_build_and_sync(self):
@@ -63,24 +66,29 @@ class ProjectToolsTests(unittest.TestCase):
             self.assertIn('const int SHARED = 100;',staged.read_text('utf-8-sig'))
             self.assertIn('func void Helper()',staged.read_text('utf-8-sig'))
         self.assertEqual(game_file.read_text('utf-8'),original)
-        self.tools.synchronize()
-        self.assertEqual([(item.instance,item.title) for item in parse_items(game_file,'game')],
-                         [('ITMI_FIRST','Edited'),('ITMI_SECOND','Second')])
-        self.assertIn('const int SHARED = 100;',game_file.read_text('utf-8-sig'))
-        self.assertIn('func void Helper()',game_file.read_text('utf-8-sig'))
+        self.assertEqual(game_file.read_text('utf-8'),original)
 
-    def test_sync_overlays_sources_and_backs_up_before_overwrite(self):
-        result = self.tools.synchronize()
-        self.assertEqual(result.files, 3)
-        self.assertEqual((self.target / 'Items/IT_Test.d').read_bytes(), b'const int TEST_VALUE = 2;')
-        self.assertEqual((self.target / 'Items/IT_Other.d').read_bytes(), b'const int OTHER_VALUE = 3;')
-        self.assertEqual((self.target / 'Items/GE_Generated/GE_New.d').read_bytes(), b'INSTANCE GE_NEW (C_Item) { name = "New"; };')
-        self.assertEqual((result.backup / 'Items/IT_Test.d').read_bytes(), b'const int TEST_VALUE = 1;')
-        self.assertIn('Items\\GE_Generated\\GE_New.d', (self.target / 'Gothic.src').read_text('utf-8-sig'))
-        self.assertFalse((self.game / '_work/Data/Scripts/_compiled/Gothic.dat').exists())
-        again = self.tools.synchronize()
-        self.assertEqual(again.files, 0)
-        self.assertIsNone(again.backup)
+    def ready_build(self, payload=b'compiled dat'):
+        self.tools.dist_dir.mkdir(exist_ok=True)
+        archive=self.tools.dist_dir/self.tools.config.filename
+        ini=self.tools.dist_dir/self.tools.config.ini_name
+        write_mod(archive,{DAT_PATH:payload})
+        generate_ini(ini,self.tools.config)
+        return archive,ini
+
+    def test_sync_installs_only_mod_ini_without_compiling_and_repeats(self):
+        archive,ini=self.ready_build()
+        before={p.relative_to(self.game):p.read_bytes() for p in self.game.rglob('*') if p.is_file()}
+        with patch.object(self.tools,'compile',side_effect=AssertionError('Must not compile')):
+            result=self.tools.synchronize()
+        self.assertEqual(result.files,2)
+        self.assertEqual((self.game/'Data/ModVDF/Test.mod').read_bytes(),archive.read_bytes())
+        self.assertEqual((self.game/'System/Test.ini').read_bytes(),ini.read_bytes())
+        for relative,data in before.items():self.assertEqual((self.game/relative).read_bytes(),data)
+        self.assertEqual(self.tools.synchronize().files,0)
+        self.ready_build(b'new dat')
+        self.assertEqual(self.tools.synchronize().files,1)
+        self.assertTrue((self.project/'logs/sync.log').is_file())
 
     def test_compile_uses_staged_overlay_and_preserves_game_and_project_sources(self):
         before = {path.relative_to(self.game): path.read_bytes() for path in self.game.rglob('*') if path.is_file()}
@@ -103,14 +111,14 @@ class ProjectToolsTests(unittest.TestCase):
         with patch('gothic_editor.core.project_tools.shutil.which', return_value='dotnet'), \
                 patch('gothic_editor.core.compiler_runner.subprocess.run', side_effect=compile_command):
             result = self.tools.compile()
-        self.assertEqual(result.output.read_bytes(), b'compiled dat')
+        self.assertEqual(read_mod(result.output)[DAT_PATH], b'compiled dat')
         self.assertEqual(result.warnings,2)
         after = {path.relative_to(self.game): path.read_bytes() for path in self.game.rglob('*') if path.is_file()}
         self.assertEqual(before, after)
         self.assertEqual((self.source / 'Items/IT_Test.d').read_bytes(), b'const int TEST_VALUE = 2;')
         self.assertEqual(os.environ.get('DOTNET_ROLL_FORWARD'), environment)
-        self.assertEqual(sorted(path.name for path in self.tools.build_dir.iterdir()),
-                         ['Gothic.dat', 'Gothic.mod', 'compile.log', 'diagnostics.json', 'stderr.log', 'stdout.log'])
+        self.assertEqual(sorted(path.name for path in self.tools.dist_dir.iterdir()),['Test.ini','Test.mod'])
+        self.assertTrue((self.project/'logs/compiler.diagnostics.json').is_file())
 
     def test_failed_compilation_cannot_succeed_using_previous_output(self):
         self.tools.build_dir.mkdir()
@@ -137,7 +145,7 @@ class ProjectToolsTests(unittest.TestCase):
         new_dat.write_bytes(b'new dat')
         replace=Path.replace
         def fail(path,destination):
-            if path==new_dat:raise OSError('DAT locked')
+            if destination==previous_dat and path.suffix=='.tmp':raise OSError('DAT locked')
             return replace(path,destination)
         with patch.object(Path,'replace',fail),self.assertRaisesRegex(OSError,'DAT locked'):
             self.tools._publish_artifacts(staging,[(new_mod,previous_mod),(new_dat,previous_dat)])
@@ -154,16 +162,16 @@ class ProjectToolsTests(unittest.TestCase):
                 patch('gothic_editor.core.compiler_runner.subprocess.run', side_effect=crash):
             with self.assertRaises(ValueError):
                 self.tools.compile()
-        staging = next(self.tools.build_dir.glob('compile-*'))
-        metadata = json.loads((staging / 'diagnostics.json').read_text('utf-8'))
+        metadata = json.loads((self.tools.logs_dir / 'compiler.diagnostics.json').read_text('utf-8'))
+        staging=Path(metadata['cwd'])
         self.assertEqual(metadata['returncode'], 1)
         self.assertEqual(metadata['environment']['DOTNET_ROLL_FORWARD'], 'Major')
         self.assertEqual(metadata['command'][2], str(staging / 'Content/Gothic.src'))
         self.assertEqual(metadata['cwd'], str(staging))
-        self.assertTrue((staging / 'Content/Items/IT_Test.d').is_file())
-        self.assertIn('Index was outside', (staging / 'stdout.log').read_text('utf-8'))
-        self.assertEqual((staging / 'stderr.log').read_text('utf-8'), 'compiler stderr\n')
-        log = (self.tools.build_dir / 'compile.log').read_text('utf-8')
+        self.assertFalse(staging.exists())
+        self.assertIn('Index was outside', (self.tools.logs_dir / 'compiler.stdout.log').read_text('utf-8'))
+        self.assertEqual((self.tools.logs_dir / 'compiler.stderr.log').read_text('utf-8'), 'compiler stderr\n')
+        log = (self.tools.logs_dir / 'compile.log').read_text('utf-8')
         self.assertIn('Index was outside', log)
         self.assertIn('compiler stderr', log)
 
@@ -172,10 +180,10 @@ class ProjectToolsTests(unittest.TestCase):
                 patch('gothic_editor.core.compiler_runner.subprocess.run', side_effect=OSError('launch failed')):
             with self.assertRaisesRegex(OSError, 'launch failed'):
                 self.tools.compile()
-        staging = next(self.tools.build_dir.glob('compile-*'))
-        metadata = json.loads((staging / 'diagnostics.json').read_text('utf-8'))
+        metadata = json.loads((self.tools.logs_dir / 'compiler.diagnostics.json').read_text('utf-8'))
+        staging=Path(metadata['cwd'])
         self.assertIn('launch failed', metadata['exception'])
-        self.assertTrue((staging / 'Content/Gothic.src').is_file())
+        self.assertFalse(staging.exists())
 
     def test_compiler_autodetection_and_missing_runtime(self):
         self.assertEqual(ProjectTools(self.project, self.game).compiler_command()[-1], str(self.compiler))
@@ -188,26 +196,27 @@ class ProjectToolsTests(unittest.TestCase):
             ProjectTools(self.project, self.project)
 
     def test_sync_rolls_back_when_copy_fails(self):
-        original_copy = shutil.copy2
-
-        def copy(source, target, *args, **kwargs):
-            target = Path(target)
-            if target == self.target / 'Items/IT_Test.d' and self.tools.build_dir in Path(source).parents:
-                target.write_bytes(b'partial write')
-                raise OSError('Disk write error')
-            return original_copy(source, target, *args, **kwargs)
-
-        with patch('gothic_editor.core.project_tools.shutil.copy2', side_effect=copy):
-            with self.assertRaises(OSError):
-                self.tools.synchronize()
-        self.assertEqual((self.target / 'Items/IT_Test.d').read_bytes(), b'const int TEST_VALUE = 1;')
-        self.assertFalse((self.target / 'Items/GE_Generated/GE_New.d').exists())
+        self.ready_build()
+        self.tools.synchronize()
+        installed=self.game/'Data/ModVDF/Test.mod'
+        original=installed.read_bytes()
+        self.ready_build(b'new dat')
+        # Force both files to need replacement.
+        ini=self.tools.dist_dir/'Test.ini'
+        ini.write_bytes(ini.read_bytes()+b'\r\n; changed\r\n')
+        replace=Path.replace
+        def fail(path,target):
+            if target==self.game/'System/Test.ini' and path.suffix=='.tmp':raise OSError('locked')
+            return replace(path,target)
+        with patch.object(Path,'replace',fail),self.assertRaises(OSError):self.tools.synchronize()
+        self.assertEqual(installed.read_bytes(),original)
 
     def test_nested_manifests_and_wildcards_do_not_include_script_twice(self):
-        (self.target / 'Gothic.src').write_text('Items\\Items.src\n', encoding='utf-8')
-        (self.target / 'Items/Items.src').write_text('IT_*.d\nGE_Generated\\*.d\n', encoding='utf-8')
-        self.tools.synchronize()
-        self.assertNotIn('GE_New.d', (self.target / 'Gothic.src').read_text('utf-8-sig'))
+        (self.target/'Gothic.src').write_text('Items\\Items.src\n',encoding='utf-8')
+        (self.target/'Items/Items.src').write_text('IT_*.d\nGE_Generated\\*.d\n',encoding='utf-8')
+        with tempfile.TemporaryDirectory() as temporary:
+            content,_,_=self.tools._prepare(Path(temporary),lambda _:None)
+            self.assertNotIn('GE_New.d',(content/'Gothic.src').read_text('utf-8-sig'))
 
     def test_project_configuration_preserves_metadata_and_compiler(self):
         repository = ProjectRepository()
@@ -262,7 +271,7 @@ class ToolbarTests(unittest.TestCase):
         self.assertEqual(self.app.play_button.cget('state'), 'normal')
         output = self.root / 'project/build/Gothic.dat'
         with patch('gothic_editor.app.ProjectTools.compiler_command', return_value=['compiler']), \
-                patch('gothic_editor.app.ProjectTools.compile', return_value=ToolResult(output)):
+                patch('gothic_editor.app.ProjectTools.build_and_run', return_value=ToolResult(output)):
             self.app.play_button.invoke()
             self.assertEqual(self.app.play_button.cget('state'), 'disabled')
             window = self.app.terminal

@@ -6,9 +6,7 @@ import re
 import shutil
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-from uuid import uuid4
 
 from .localization import tr
 from .scripts import load_text
@@ -16,7 +14,9 @@ from .daedalus_merge import merge_project_scripts,target_path
 from .potion_build import apply_potions
 from .compiler_sources import prepare_compiler_sources
 from .compiler_runner import run_compiler
-from .build_assets import BuildAssetService
+from .mod_config import ModConfiguration
+from .mod_package import ModPackageService, generate_ini, validate_build
+from .artifact_transaction import publish_files
 
 
 @dataclass(frozen=True)
@@ -26,6 +26,8 @@ class ToolResult:
     backup: Path | None = None
     warnings: int = 0
     archive: Path | None = None
+    operation: str = 'compile'
+    manual: bool = False
 
 
 class ProjectTools:
@@ -38,14 +40,15 @@ class ProjectTools:
             raise ValueError(tr('project.overlapping_roots'))
         self.source = self.project / 'Scripts' / 'Content'
         self.target = self.game / '_work' / 'Data' / 'Scripts' / 'Content'
-        self.build_dir = self.project / 'build'
+        self.dist_dir = self.project / 'dist'
+        self.logs_dir = self.project / 'logs'
+        self.build_dir = self.dist_dir  # Compatibility for callers preparing isolated source fixtures.
         self.compiler_path = compiler_path
-        for path in (self.source, self.target):
-            if not path.is_dir():
-                raise ValueError(tr('tools.missing', path=str(path)))
+        self.config = ModConfiguration.load(self.project)
         self._inside(self.source, self.project)
         self._inside(self.target, self.game)
-        self._inside(self.build_dir, self.project)
+        self._inside(self.dist_dir, self.project)
+        self._inside(self.logs_dir, self.project)
 
     @staticmethod
     def _inside(path: Path, root: Path):
@@ -139,6 +142,8 @@ class ProjectTools:
         return manifest
 
     def _prepare(self, staging, report):
+        for path in (self.source, self.target):
+            if not path.is_dir():raise ValueError(tr('tools.missing', path=str(path)))
         content = staging / 'Content'
         content.mkdir()
         report(tr('tools.preparing'))
@@ -154,91 +159,70 @@ class ProjectTools:
         return content, manifest, project_files
 
     @staticmethod
-    def _publish_artifacts(staging, pairs):
-        previous = staging / 'previous-build'
-        previous.mkdir()
-        for _, destination in pairs:
-            if destination.exists():shutil.copy2(destination, previous / destination.name)
-        published = []
-        try:
-            for source, destination in pairs:
-                source.replace(destination)
-                published.append(destination)
-        except Exception:
-            for destination in reversed(published):
-                backup = previous / destination.name
-                if backup.exists():backup.replace(destination)
-                else:destination.unlink()
-            raise
+    def _publish_artifacts(staging, pairs, commit=lambda:None):
+        publish_files(pairs,commit)
 
     def compile(self, report=lambda _message: None):
-        command = self.compiler_command()  # Validate dependencies before preparing a build.
-        self.build_dir.mkdir(parents=True, exist_ok=True)
-        log_path = self.build_dir / 'compile.log'
-        output = self.build_dir / 'Gothic.dat'
-        archive = self.build_dir / 'Gothic.mod'
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        log_path = self.logs_dir / 'compile.log'
         log_path.write_text('', encoding='utf-8')
-        staging = self._inside(Path(tempfile.mkdtemp(prefix='compile-', dir=self.build_dir)), self.build_dir.resolve())
+        def emit(message):
+            with log_path.open('a',encoding='utf-8') as stream:stream.write(message+'\n')
+            report(message)
         try:
-            asset_service = BuildAssetService(self.project)
-            assets = asset_service.collect()
-            content, manifest, _ = self._prepare(staging, report)
-            prepare_compiler_sources(content,report)
-            temporary_output = staging / 'Gothic.dat'
-            command.extend((str(manifest), '--output-dat', str(temporary_output)))
-            report(tr('tools.compiling'))
-            result = run_compiler(command, staging, log_path)
-            if result.returncode != 0 or not temporary_output.is_file() or not temporary_output.stat().st_size:
-                raise ValueError(tr('tools.compile_failed', code=result.returncode, log=str(log_path)))
-            temporary_archive = staging / 'Gothic.mod'
-            asset_service.package(temporary_archive, temporary_output, assets)
-            self._publish_artifacts(staging,[(temporary_archive,archive),(temporary_output,output)])
-            report(tr('item_assets.packaged', path=str(archive), count=len(assets)))
-        except Exception:
-            report(tr('tools.failed_sources', path=str(staging)))
+            command = self.compiler_command()
+            package = ModPackageService(self.project,self.game,self.config)
+            package.packer()  # Fail before compilation for an invalid explicitly configured tool.
+            with tempfile.TemporaryDirectory(prefix='gothic-compile-') as temporary:
+                staging=Path(temporary)
+                content, manifest, _ = self._prepare(staging, emit)
+                prepare_compiler_sources(content,emit)
+                temporary_output = staging / 'Gothic.dat'
+                command.extend((str(manifest), '--output-dat', str(temporary_output)))
+                emit(tr('tools.compiling'))
+                try:result = run_compiler(command, staging, staging/'compiler.log')
+                finally:
+                    for name in ('diagnostics.json','stdout.log','stderr.log'):
+                        if (staging/name).is_file():shutil.copy2(staging/name,self.logs_dir/('compiler.'+name))
+                    if (staging/'compiler.log').is_file():
+                        with log_path.open('a',encoding='utf-8') as stream:
+                            stream.write((staging/'compiler.log').read_text('utf-8'))
+                if result.returncode != 0 or not temporary_output.is_file() or not temporary_output.stat().st_size:
+                    raise ValueError(tr('tools.compile_failed', code=result.returncode, log=str(log_path)))
+                emit(tr('pipeline.packaging'))
+                assets=package.assets.collect()
+                temporary_archive=package.package(staging,temporary_output,assets,emit)
+                temporary_ini=staging/self.config.ini_name
+                generate_ini(temporary_ini,self.config,self.dist_dir/self.config.ini_name)
+                packed=validate_build(temporary_archive,temporary_ini,self.config)
+                from .mod_package import DAT_PATH
+                if packed[DAT_PATH]!=temporary_output.read_bytes():raise ValueError('MOD содержит устаревший Gothic.dat')
+                archive=self.dist_dir/self.config.filename
+                ini=self.dist_dir/self.config.ini_name
+                pairs=[(temporary_archive,archive),(temporary_ini,ini)]
+                pairs.append((temporary_output if self.config.keep_dat else None,self.dist_dir/'Gothic.dat'))
+                def verify():
+                    if validate_build(archive,ini,self.config)!=packed:raise ValueError('Опубликованный MOD не совпадает с проверенной сборкой')
+                self._publish_artifacts(staging,pairs,commit=verify)
+                emit(tr('item_assets.packaged', path=str(archive), count=len(assets)))
+        except Exception as exc:
+            emit(str(exc))
             raise
-        else:
-            # Successful process diagnostics remain next to compile.log; large
-            # source copies are retained only when a build needs investigation.
-            for name in ('diagnostics.json', 'stdout.log', 'stderr.log'):
-                shutil.copy2(staging / name, self.build_dir / name)
-            shutil.rmtree(staging)
         warnings=len(re.findall(r'\bwarning\s+W\d+\s*:',log_path.read_text('utf-8',errors='replace'),flags=re.IGNORECASE))
-        return ToolResult(output,warnings=warnings,archive=archive)
+        return ToolResult(archive,warnings=warnings,archive=archive)
 
     def synchronize(self, report=lambda _message: None):
-        self.build_dir.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix='sync-', dir=self.build_dir) as temporary:
-            staging = self._inside(Path(temporary), self.build_dir.resolve())
-            content, _, project_files = self._prepare(staging, report)
-            paths = list(dict.fromkeys([*project_files, Path('Gothic.src')]))
-            changes = []
-            for relative in paths:
-                source, target = content / relative, self.target / relative
-                self._inside(target, self.game)
-                if not target.is_file() or source.read_bytes() != target.read_bytes():
-                    changes.append((source, target, relative))
-            backup = self.project / 'backups' / ('sync-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid4().hex[:8])
-            self._inside(backup, self.project)
-            # Back up every overwritten file before writing the first change.
-            for _, target, relative in changes:
-                if target.is_file():
-                    destination = backup / relative
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(target, destination)
-            report(tr('tools.syncing', count=len(changes)))
-            written = []
-            try:
-                for source, target, relative in changes:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    written.append((target, relative))
-                    shutil.copy2(source, target)
-            except OSError:
-                for target, relative in reversed(written):
-                    original = backup / relative
-                    if original.is_file():
-                        shutil.copy2(original, target)
-                    elif target.is_file():
-                        target.unlink()
-                raise
-            return ToolResult(self.target, len(changes), backup if backup.is_dir() else None)
+        from .mod_install import ModInstallerService
+        return ModInstallerService(self.project,self.game,self.config).install(report)
+
+    def launch(self, report=lambda _message: None):
+        from .mod_launch import ModLauncherService
+        return ModLauncherService(self.project,self.game,self.config).launch(report)
+
+    def build_and_run(self, report=lambda _message: None):
+        from .build_pipeline import BuildPipeline
+        return BuildPipeline(self).run(report)
+
+
+# The existing preparation/compiler service remains the single implementation.
+CompilationService = ProjectTools

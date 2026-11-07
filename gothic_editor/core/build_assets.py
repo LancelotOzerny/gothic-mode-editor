@@ -46,6 +46,32 @@ class BuildAssetService:
                     raise ValueError(f'Нельзя упаковать ресурс: {path}. Поддерживаются model.3ds, TGA и TEX.')
                 directory = '_work/data/Textures/' + ('_compiled/' if suffix == '.tex' else '')
                 add(directory + path.name, path, str(file))
+        # Existing project-wide models/textures are also mod resources, even when
+        # the visual was selected from Assets rather than imported into an item.
+        global_assets=self.store.layout.project/'Assets'
+        for path in sorted(global_assets.rglob('*')):
+            if not path.is_file():continue
+            self.store.layout.checked(path)
+            suffix=path.suffix.casefold()
+            if suffix in ('.3ds','.mrm','.msh'):
+                directory='_work/data/Meshes/'+('_compiled/' if suffix!='.3ds' else '')
+                if suffix=='.3ds':
+                    source=path.read_bytes()
+                    read_3ds_bytes(source)
+                    models.append((path,texture_references(source)))
+            elif suffix in ('.tga','.tex'):
+                directory='_work/data/Textures/'+('_compiled/' if suffix=='.tex' else '')
+            else:
+                relative=path.relative_to(global_assets)
+                roots={'sound':'Sound','anims':'Anims','worlds':'Worlds'}
+                section=roots.get(relative.parts[0].casefold())
+                if section is None:
+                    if suffix in ('.vdf','.mod'):continue  # Catalog sources are not nested as files in a MOD.
+                    raise ValueError(f'Неизвестное размещение ресурса {path}. Используйте Assets/Models, Textures, Sound, Anims или Worlds.')
+                directory='_work/data/'+section+'/'
+                add(directory+'/'.join(relative.parts[1:]),path,str(path))
+                continue
+            add(directory+path.name,path,str(path))
         for file, references in models:
             for reference in references:
                 name = Path(reference.replace('\\', '/')).name

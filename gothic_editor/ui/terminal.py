@@ -61,6 +61,7 @@ class ToolRunner:
         self.running = False
         self.messages = queue.Queue()
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='project-tools')
+        self.on_progress = lambda _:None
 
     def start(self, title, operation, log_path=None):
         if self.running:
@@ -74,7 +75,9 @@ class ToolRunner:
     def poll(self):
         while True:
             try:
-                self.append(self.messages.get_nowait())
+                message=self.messages.get_nowait()
+                self.append(message)
+                self.on_progress(message)
             except queue.Empty:
                 break
         if not self.future.done():
@@ -96,7 +99,9 @@ class ToolRunner:
         if success:
             if getattr(result,'archive',None) is not None:
                 self.append(tr('item_assets.archive_result',path=str(result.archive)))
-            key='tools.compile_success' if self.log_path is not None else 'tools.sync_success'
+            operation=getattr(result,'operation','compile' if self.log_path is not None else 'sync')
+            key={'compile':'tools.compile_success','sync':'tools.sync_success','launch':'pipeline.launch_success'}[operation]
+            if getattr(result,'manual',False):self.append(tr('pipeline.manual_launch',name=result.output.name))
             self.append(tr(key,path=str(result.output),count=result.files,warnings=result.warnings))
             if result.backup is not None:
                 self.append(tr('tools.backup',path=str(result.backup)))

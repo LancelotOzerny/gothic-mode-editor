@@ -51,7 +51,7 @@ def write_mod(path, files):
     timestamp = ((now.year - 1980) << 25 | now.month << 21 | now.day << 16 |
                  now.hour << 11 | now.minute << 5 | now.second // 2)
     header = VdfArchive.HEADER.pack(b'Gothic Editor'.ljust(256, b'\x1a'), VdfArchive.SIGNATURES[1],
-        len(records), len(files), timestamp, offset, VdfArchive.HEADER.size, 0x50)
+        len(records), len(files), timestamp, sum(len(data) for data in files.values()), VdfArchive.HEADER.size, 0x50)
     path.write_bytes(header + b''.join(entries) + b''.join(payload))
     # Check directory links and actual packed bytes, not only the source list.
     actual = read_mod(path)
@@ -63,7 +63,7 @@ def read_mod(path):
     data = path.read_bytes()
     if len(data) < VdfArchive.HEADER.size:raise VdfFormatError('Повреждён MOD')
     _, signature, count, file_count, _, size, offset, version = VdfArchive.HEADER.unpack_from(data)
-    if (signature not in VdfArchive.SIGNATURES or version != 0x50 or size != len(data)
+    if (signature not in VdfArchive.SIGNATURES or version != 0x50
             or offset < VdfArchive.HEADER.size or offset + count * 80 > len(data)):
         raise VdfFormatError('Повреждён заголовок MOD')
     records = [VdfArchive.RECORD.unpack_from(data, offset + index * 80) for index in range(count)]
@@ -86,4 +86,7 @@ def read_mod(path):
             index += 1
     if count:directory(0, '')
     if len(visited) != count or len(files) != file_count:raise VdfFormatError('Неполный каталог MOD')
+    # GothicVDFS stores payload size; older Editor archives stored total volume size.
+    if size not in (len(data),sum(len(value) for value in files.values())):
+        raise VdfFormatError('Некорректный размер MOD')
     return files

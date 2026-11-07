@@ -103,6 +103,11 @@ class EditorApp(tk.Tk):
                                     command=lambda current=key:self.toggle_bottom_tab(current))
         view.add_cascade(label=tr('menu.windows'),menu=windows)
         menu.add_cascade(label=tr('menu.view'),menu=view)
+        self.tools_menu=tk.Menu(menu,tearoff=False)
+        for action in ('compile','sync','launch','build_and_run'):
+            self.tools_menu.add_command(label=tr('pipeline.'+action),
+                command=lambda current=action:self.run_project_tool(current))
+        menu.add_cascade(label=tr('tools.title'),menu=self.tools_menu)
         self.config(menu=menu)
         self.main_menu=menu
         if previous is not None:previous.destroy()
@@ -120,13 +125,14 @@ class EditorApp(tk.Tk):
         actions=tk.Frame(header,bg=BG);actions.grid(row=0,column=1,padx=16)
         self.play_button=tk.Button(actions,image=self.icons.frames('build.png',26,'#62d785',BG)[0],bg=BG,
                                    activebackground=PANEL,activeforeground='#89eda5',relief='flat',
-                                   cursor='hand2',command=lambda:self.run_project_tool('compile'))
+                                   text=tr('pipeline.build_and_run'),compound='left',
+                                   cursor='hand2',command=lambda:self.run_project_tool('build_and_run'))
         self.play_button.pack(side='left',padx=(0,8))
         self.sync_button=tk.Button(actions,image=self.icons.frames('sync.png',26,'#80b4f9',BG)[0],bg=BG,
                                    activebackground=PANEL,relief='flat',cursor='hand2',
                                    command=lambda:self.run_project_tool('sync'))
         self.sync_button.pack(side='left')
-        Tooltip(self.play_button,tr('tools.build'))
+        Tooltip(self.play_button,tr('pipeline.build_and_run'))
         Tooltip(self.sync_button,tr('tools.sync'))
         self.project_label=label(header,tr('app.no_project'),bg=BG,fg=MUTED,anchor='e',width=1)
         self.project_label.grid(row=0,column=2,sticky='ew')
@@ -153,6 +159,7 @@ class EditorApp(tk.Tk):
         self.workspace.bind('<ButtonRelease-1>',lambda _:self.after_idle(self._remember_terminal_height))
         self.workspace.bind('<Configure>',lambda _:self._schedule_dock_resize() if self.bottom_dock.visible_keys() else None)
         self.status=tk.StringVar(value=tr('messages.start'))
+        self._tool_runner.on_progress=lambda message:self.status.set(message)
         label(self.editor_frame,textvariable=self.status,bg=BG,fg=MUTED,anchor='w').pack(fill='x',padx=14,pady=(0,8))
 
     def _update_recent_menu(self):
@@ -243,6 +250,7 @@ class EditorApp(tk.Tk):
         state='normal' if self.repo.root is not None and not running else 'disabled'
         self.play_button.config(state=state)
         self.sync_button.config(state=state)
+        for index in range(4):self.tools_menu.entryconfig(index,state=state)
 
     def run_project_tool(self,action):
         self.show_terminal()
@@ -252,21 +260,23 @@ class EditorApp(tk.Tk):
             return
         try:
             tools=ProjectTools(self.repo.root,self.repo.game,self.repo.compiler_path)
-            if action=='compile':tools.compiler_command()
         except (OSError,ValueError) as exc:
             self.terminal.append(str(exc))
             self.status.set(tr('tools.failure'))
             return
-        operation=tools.compile if action=='compile' else tools.synchronize
-        title=tr('tools.build') if action=='compile' else tr('tools.sync')
+        operations={'compile':tools.compile,'sync':tools.synchronize,'launch':tools.launch,'build_and_run':tools.build_and_run}
+        operation=operations[action]
+        title=tr('pipeline.'+action)
         self.status.set(tr('tools.running', action=title))
         self._tool_runner.start(title+' — '+self.repo.name,operation,
-                                tools.build_dir/'compile.log' if action=='compile' else None)
+                                tools.logs_dir/'compile.log' if action in ('compile','build_and_run') else None)
         self._update_tool_buttons()
 
     def _tool_completed(self,success,result):
         self._update_tool_buttons()
-        self.status.set(tr('tools.success') if success else tr('tools.failure'))
+        if success and getattr(result,'manual',False):
+            self.status.set(tr('pipeline.manual_launch',name=result.output.name))
+        else:self.status.set(tr('tools.success') if success else tr('tools.failure'))
 
     def register_bottom_tab(self,key,title_key,factory):
         """Register another dock panel; its factory receives the notebook parent."""
@@ -335,7 +345,7 @@ class EditorApp(tk.Tk):
             self.settings_window.lift()
             return
         localization.reload()
-        project_values={'resources.gothic.game_path':str(self.repo.game) if self.repo.game else '',
+        project_values={**self.repo.project_settings,'resources.gothic.game_path':str(self.repo.game) if self.repo.game else '',
                         'build.compiler.path':self.repo.compiler_path,
                         'resources.editor.path':self.repo.resource_editor_path}
         self.settings_window=SettingsWindow(self,self.settings,project_values,self.apply_settings)
@@ -355,9 +365,18 @@ class EditorApp(tk.Tk):
         hierarchy_changed=self.settings.get_value('project.hierarchy.display_mode')!=settings.get_value('project.hierarchy.display_mode')
         self.settings_store.save(settings)
         resources_changed=self.repo.root is not None and self.repo.game!=game
+        previous_config=(self.repo.root/'project.json').read_bytes() if self.repo.root is not None else None
+        previous_project_settings=dict(self.repo.project_settings)
         try:
+            if self.repo.root is not None:
+                self.repo.save_project_settings(values)
+                from .core.mod_config import ModConfiguration
+                ModConfiguration.load(self.repo.root)
             self.repo.set_configuration(game_path,compiler_path,editor_path)
         except (OSError,ValueError):
+            if previous_config is not None:
+                (self.repo.root/'project.json').write_bytes(previous_config)
+                self.repo.project_settings=previous_project_settings
             self.settings_store.save(self.settings)
             raise
         self.settings=settings

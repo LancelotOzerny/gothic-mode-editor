@@ -79,7 +79,8 @@ class CompilerSourceTests(unittest.TestCase):
             with patch('gothic_editor.core.project_tools.shutil.which',return_value='dotnet'), \
                     patch('gothic_editor.core.compiler_runner.subprocess.run',side_effect=compile_command):
                 result=ProjectTools(project,game,str(compiler)).compile()
-            self.assertEqual(result.output.read_bytes(),b'compiled DAT')
+            from gothic_editor.core.mod_archive import read_mod
+            self.assertEqual(read_mod(result.output)['_work/data/scripts/_compiled/gothic.dat'],b'compiled DAT')
             self.assertEqual(script.read_bytes(),original)
 
     def test_json_escaped_newlines_decode_into_real_daedalus_newlines(self):

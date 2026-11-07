@@ -40,7 +40,7 @@ class SettingsTests(unittest.TestCase):
                                    'resources.gothic.game_path': 'private/game/path'})
         store.save(settings)
         self.assertEqual(store.load().get_value('interface.general.window_size'), [1400, 900])
-        self.assertEqual(store.load().get_value('resources.gothic.game_path'), 'private/game/path')
+        self.assertEqual(store.load().get_value('resources.gothic.game_path'), '')
         self.assertFalse(store.path.with_suffix('.tmp').exists())
 
     def test_invalid_saved_value_falls_back_without_losing_valid_values(self):
@@ -212,7 +212,7 @@ class SettingsWindowTests(unittest.TestCase):
         window.save()
         self.assertEqual(self.app.repo.game, game.resolve())
         config = self.root / 'mod' / 'project.json'
-        self.assertEqual(self.store.load().get_value('resources.gothic.game_path'), str(game.resolve()))
+        self.assertEqual(json.loads(config.read_text('utf-8'))['settings']['resources.gothic.game_path'], str(game.resolve()))
         self.assertEqual(json.loads(config.read_text('utf-8'))['game_path'], '')
         window = self.open_dialog(resources=True)
         with patch.object(self.app.repo, 'refresh') as refresh:
@@ -253,13 +253,13 @@ class SettingsWindowTests(unittest.TestCase):
             self.assertEqual(self.app.repo.resource_editor_path,str(editor))
             data = json.loads((path/'project.json').read_text('utf-8'))
             self.assertNotIn('compiler_path',data)
-        # A legacy project cannot override configured global paths.
+        # An explicit legacy project game path takes precedence over global defaults.
         legacy = self.root/'Legacy'
         legacy.mkdir()
         config = {'name':'Legacy','game_path':str(self.root/'other-game'),'compiler_path':'old.dll'}
         (legacy/'project.json').write_text(json.dumps(config),encoding='utf-8')
         self.app.open_project_path(legacy)
-        self.assertEqual(self.app.repo.game,game)
+        self.assertEqual(self.app.repo.game,self.root/'other-game')
         self.assertEqual(self.app.repo.compiler_path,str(compiler))
         self.assertEqual(json.loads((legacy/'project.json').read_text('utf-8')),config)
 
@@ -271,13 +271,13 @@ class SettingsWindowTests(unittest.TestCase):
         config = {'name':'Legacy','game_path':str(game)}
         (legacy/'project.json').write_text(json.dumps(config),encoding='utf-8')
         self.app.open_project_path(legacy)
-        self.assertEqual(self.store.load().get_value('resources.gothic.game_path'),str(game))
+        self.assertEqual(self.app.repo.game,game)
         window = self.open_dialog(resources=True)
         window.values['resources.gothic.game_path'][0].set('')
         window.save()
         self.app.open_project_path(legacy)
         self.assertIsNone(self.app.repo.game)
-        self.assertEqual(json.loads((legacy/'project.json').read_text('utf-8')),config)
+        self.assertEqual(json.loads((legacy/'project.json').read_text('utf-8'))['settings']['resources.gothic.game_path'],'')
 
     def test_language_change_keeps_selection_drafts_and_search(self):
         self.app.repo.create(self.root / 'mod', 'Test')

@@ -17,6 +17,7 @@ env/
 build/
 backups/
 dist/
+logs/
 *.egg-info/
 
 # Editor and operating system files
