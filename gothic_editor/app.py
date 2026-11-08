@@ -58,7 +58,8 @@ class EditorApp(tk.Tk):
         width,height=max(870,width),max(540,height)
         x=max(0,(self.winfo_screenwidth()-width)//2)
         y=max(0,(self.winfo_screenheight()-height)//2)
-        self.geometry(f'{width}x{height}+{x}+{y}');self.minsize(870,540)
+        self._editor_geometry=f'{width}x{height}+{x}+{y}'
+        self.geometry(self._editor_geometry);self.minsize(870,540)
         self.configure(bg=BG)
         self.repo=ProjectRepository({key:self.settings.values[value] for key,value in RESOURCE_KEYS.items()
                                      if value in self.settings.values})
@@ -76,10 +77,6 @@ class EditorApp(tk.Tk):
         self.bind('<Control-o>',lambda e:self.open_project())
         self.bind('<Control-s>',lambda e:self.properties.save())
         self.deiconify()
-        if os.name=='nt':self.state('zoomed')
-        else:
-            try:self.attributes('-zoomed',True)
-            except tk.TclError:pass
 
     def _build_menu(self):
         previous=getattr(self,'main_menu',None)
@@ -185,15 +182,41 @@ class EditorApp(tk.Tk):
         self._update_recent_menu()
 
     def show_welcome(self):
+        if self.welcome is None:
+            if self.repo.root is not None:self._editor_geometry=self.geometry()
+        self.attributes('-fullscreen',False)
+        self.state('normal')
+        self.configure(menu='')
+        self.overrideredirect(True)
+        self.title('Gothic Editor')
+        self.minsize(720,480)
+        self.resizable(False,False)
+        x=max(0,(self.winfo_screenwidth()-720)//2)
+        y=max(0,(self.winfo_screenheight()-480)//2)
+        self.geometry(f'720x480+{x}+{y}')
         self.editor_frame.pack_forget()
         if self.welcome is not None and self.welcome.winfo_exists():self.welcome.destroy()
         self.welcome=WelcomeScreen(self,self.recent_projects,self.create_project,
-                                   self.open_project,self.open_project_path)
+                                   self.open_project,self.open_project_path,self._update_recent_menu)
         self.welcome.pack(fill='both',expand=True)
 
     def _show_editor(self):
+        was_welcome=self.welcome is not None
         if self.welcome is not None and self.welcome.winfo_exists():self.welcome.destroy()
         self.welcome=None
+        if was_welcome:
+            self.attributes('-fullscreen',False)
+            self.overrideredirect(False)
+            self.configure(menu=self.main_menu)
+            self.title('Gothic Editor — 0.2')
+            self.resizable(True,True)
+            self.minsize(870,540)
+            self.geometry(self._editor_geometry)
+            if self.repo.root is not None:
+                if os.name=='nt':self.state('zoomed')
+                else:
+                    try:self.attributes('-zoomed',True)
+                    except tk.TclError:pass
         self.editor_frame.pack(fill='both',expand=True)
 
     def need_project(self):

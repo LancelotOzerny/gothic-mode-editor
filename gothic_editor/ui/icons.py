@@ -9,22 +9,27 @@ class IconImages:
         self.master = master
         self.directory = Path(__file__).resolve().parents[2] / 'assets' / 'icons'
         self.cache = {}
+        self.sources = {}
 
     def frames(self, filename, size, foreground, background, steps=1):
         key = (filename, size, foreground, background, steps)
         if key in self.cache:
             return self.cache[key]
-        source = tk.PhotoImage(master=self.master, file=str(self.directory / filename))
-        width, height = source.width(), source.height()
-        # White/black composites recover PNG alpha, including antialiased edges.
-        composites = []
-        for color in ('black', 'white'):
-            composite = tk.PhotoImage(master=self.master, width=width, height=height)
-            composite.put(color, to=(0, 0, width, height))
-            composite.tk.call(str(composite), 'copy', str(source), '-compositingrule', 'overlay')
-            composites.append(composite)
-        alpha = [[1 - (composites[1].get(x, y)[0] - composites[0].get(x, y)[0]) / 255
-                  for x in range(width)] for y in range(height)]
+        path = self.directory / filename
+        if path not in self.sources:
+            source = tk.PhotoImage(master=self.master, file=str(path))
+            width, height = source.width(), source.height()
+            # White/black composites recover PNG alpha, including antialiased edges.
+            composites = []
+            for color in ('black', 'white'):
+                composite = tk.PhotoImage(master=self.master, width=width, height=height)
+                composite.put(color, to=(0, 0, width, height))
+                composite.tk.call(str(composite), 'copy', str(source), '-compositingrule', 'overlay')
+                composites.append(composite)
+            alpha = [[1 - (composites[1].get(x, y)[0] - composites[0].get(x, y)[0]) / 255
+                      for x in range(width)] for y in range(height)]
+            self.sources[path] = width, height, alpha
+        width, height, alpha = self.sources[path]
         fg = tuple(int(foreground[i:i + 2], 16) for i in (1, 3, 5))
         bg = tuple(int(background[i:i + 2], 16) for i in (1, 3, 5))
 

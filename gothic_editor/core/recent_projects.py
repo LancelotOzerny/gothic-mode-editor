@@ -45,15 +45,25 @@ class RecentProjects:
 
     def remember(self, path: Path, name: str):
         project = Path(path).resolve()
-        self.entries = ([RecentProject(project, str(name))] +
+        entries = ([RecentProject(project, str(name))] +
                         [entry for entry in self.entries if self._key(entry.path) != self._key(project)])[:self.LIMIT]
+        self._save(entries)
+
+    def _save(self, entries):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix('.tmp')
         temporary.write_text(json.dumps([{'path': str(entry.path), 'name': entry.name}
-                                         for entry in self.entries], ensure_ascii=False, indent=2), encoding='utf-8')
+                                         for entry in entries], ensure_ascii=False, indent=2), encoding='utf-8')
         temporary.replace(self.path)
+        self.entries = entries
 
     def parent_directory(self):
         if self.entries and self.entries[0].path.parent.is_dir():
             return self.entries[0].path.parent
         return None
+
+    def forget(self, path: Path):
+        """Remove only the history entry, never the project directory."""
+        project = Path(path).resolve()
+        entries = [entry for entry in self.entries if self._key(entry.path) != self._key(project)]
+        self._save(entries)

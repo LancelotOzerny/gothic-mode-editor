@@ -1,57 +1,290 @@
-"""Startup project picker with a persistent recent-project list."""
+"""Searchable startup project list; project files are never removed here."""
+import os
+import subprocess
+import sys
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 from ..core.localization import tr
-from .widgets import BG, PANEL, MUTED, label
+from .icons import IconImages
+from .widgets import BG, PANEL, MUTED, TXT, ACCENT, label, make_entry
+from .welcome_controls import RoundedIconButton, WelcomeScrollbar, blend
+
+
+class ProjectConfirmationDialog(tk.Toplevel):
+    def __init__(self, parent, entry, action):
+        super().__init__(parent, bg=BG)
+        self.withdraw()
+        self.result = False
+        self.title(tr('welcome.'+action+'_title'))
+        owner = parent.winfo_toplevel()
+        self.transient(owner)
+        content = tk.Frame(self, bg=BG, padx=24, pady=20)
+        content.pack(fill='both', expand=True)
+        label(content, tr('welcome.'+action+'_question', name=entry.name), bg=BG,
+              font=('Arial',12,'bold'), wraplength=420, justify='left').pack(fill='x')
+        label(content, str(entry.path), bg=BG, fg=MUTED, wraplength=420,
+              justify='left').pack(fill='x', pady=12)
+        if action=='remove':
+            label(content, tr('welcome.files_kept'), bg=BG, wraplength=420, justify='left').pack(fill='x')
+        actions = tk.Frame(content, bg=BG)
+        actions.pack(fill='x', pady=(20,0))
+        cancel = ttk.Button(actions, text=tr('settings.cancel'), command=self.destroy)
+        cancel.pack(side='right')
+        ttk.Button(actions, text=tr('welcome.'+action), command=self.confirm).pack(side='right', padx=8)
+        self.bind('<Escape>', lambda _:self.destroy())
+        self.update_idletasks()
+        x = owner.winfo_rootx() + (owner.winfo_width()-self.winfo_reqwidth())//2
+        y = owner.winfo_rooty() + (owner.winfo_height()-self.winfo_reqheight())//2
+        self.geometry(f'+{max(0,x)}+{max(0,y)}')
+        self.deiconify()
+        self.grab_set()
+        cancel.focus_set()
+
+    def confirm(self):
+        self.result = True
+        self.destroy()
 
 
 class WelcomeScreen(tk.Frame):
-    def __init__(self, parent, history, on_create, on_browse, on_open):
+    def __init__(self, parent, history, on_create, on_browse, on_open, on_history_change=lambda:None):
         super().__init__(parent, bg=BG)
-        self.entries = list(history.entries[:10])
-        self.on_open = on_open
-        self.on_browse = on_browse
-        self.columnconfigure(0, weight=1)
-        self.columnconfigure(2, weight=1)
-        self.rowconfigure(0, weight=1)
-        self.rowconfigure(2, weight=1)
-        content = tk.Frame(self, bg=PANEL, padx=24, pady=24, bd=1, relief='solid')
-        content.grid(row=1, column=1, padx=24, pady=24)
-        label(content, 'Gothic Editor', font=('Arial', 22, 'bold')).pack(anchor='w', pady=(0, 20))
-        table = tk.Frame(content, bg=PANEL)
+        self.history = history
+        self.entries = list(history.entries)
+        self.on_open, self.on_browse = on_open, on_browse
+        self.on_history_change = on_history_change
+        self.icons = IconImages(self)
+        self.rows = []
+        self.selected = None
+        self.is_fullscreen=False
+        self._opening_dialog=False
+        content = tk.Frame(self, bg=BG)
+        content.pack(fill='both', expand=True, padx=20, pady=12)
+        self.title_bar = tk.Frame(content,bg=BG)
+        self.title_bar.pack(fill='x',pady=(0,10))
+        title_label=label(self.title_bar, 'Gothic Editor', bg=BG, font=('Arial',20,'bold'))
+        title_label.pack(side='left')
+        self._drag_origin=None
+        for widget in (self.title_bar,title_label):
+            widget.bind('<ButtonPress-1>',self.start_drag)
+            widget.bind('<B1-Motion>',self.drag)
+            widget.bind('<ButtonRelease-1>',self.stop_drag)
+        self.close_button=RoundedIconButton(self.title_bar,self.icons,'close.png','×',tr('app.exit'),
+                                            parent.destroy,background=BG,size=30,padding=5)
+        self.close_button.pack(side='right')
+        self.fullscreen_button=RoundedIconButton(self.title_bar,self.icons,'fullscreen.png','□',
+            tr('welcome.fullscreen'),self.toggle_fullscreen,background=BG,size=30,padding=5)
+        self.fullscreen_button.pack(side='right',padx=(0,6))
+        self.header = tk.Frame(content, bg=BG)
+        self.header.pack(fill='x', pady=(0,12))
+        self.search_frame = tk.Frame(self.header, bg=BG)
+        self.search_frame.columnconfigure(1, weight=1)
+        self.search_frame.rowconfigure(0, minsize=40)
+        label(self.search_frame, bg=BG, **self.icon('search.png', tr('welcome.search'),size=36)).grid(row=0, column=0, padx=(0,8))
+        self.query = tk.StringVar(self)
+        self.search = make_entry(self.search_frame, textvariable=self.query, width=15)
+        self.search.grid(row=0, column=1, sticky='nsew')
+        self.search.bind('<Return>', lambda _:self.open_selected())
+        self.actions = tk.Frame(self.header, bg=BG)
+        for filename, caption, fallback, command in [('create_project.png', 'welcome.create_button', '+', on_create),
+                                                     ('open_project.png', 'welcome.open_button', '…', on_browse)]:
+            RoundedIconButton(self.actions,self.icons,filename,fallback,tr(caption),command,
+                              background=BG).pack(side='left',padx=(8,0))
+        self.header.bind('<Configure>', self.layout_header)
+        label(content, tr('welcome.recent_title'), bg=BG, fg=MUTED).pack(anchor='w', pady=(0,10))
+        table = tk.Frame(content, bg=BG)
         table.pack(fill='both', expand=True)
-        scroll = ttk.Scrollbar(table)
-        scroll.pack(side='right', fill='y')
-        self.projects = ttk.Treeview(table, columns=('project',), show='',
-                                     selectmode='browse', height=10, yscrollcommand=scroll.set)
-        self.projects.column('project', width=680, minwidth=260)
-        self.projects.pack(fill='both', expand=True)
-        scroll.config(command=self.projects.yview)
-        for index, entry in enumerate(self.entries):
-            self.projects.insert('', 'end', iid=str(index), values=(f'{entry.name} ({entry.path})',))
-        if self.entries:
-            self.projects.selection_set('0')
-            self.projects.focus('0')
-        else:
-            label(content, tr('welcome.empty'), fg=MUTED).pack(anchor='w', pady=8)
-        actions = tk.Frame(content, bg=PANEL)
-        actions.pack(fill='x', pady=(18, 0))
-        ttk.Button(actions, text=tr('welcome.create_button'), command=on_create).pack(side='right')
-        ttk.Button(actions, text=tr('welcome.open_button'), command=self.open_selected).pack(side='right', padx=8)
-        self.projects.bind('<Return>', lambda _: self.open_selected())
-        self.projects.bind('<Double-Button-1>', self.double_click)
+        self.canvas = tk.Canvas(table, bg=BG, highlightthickness=0)
+        self.scrollbar = WelcomeScrollbar(table, command=self.canvas.yview)
+        self.scrollbar.pack(side='right', fill='y',padx=(6,0))
+        self.canvas.pack(side='left', fill='both', expand=True)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.projects = tk.Frame(self.canvas, bg=BG)
+        self.window = self.canvas.create_window((0,0), window=self.projects, anchor='nw')
+        self.canvas.bind('<Configure>', lambda e:self.canvas.itemconfigure(self.window, width=e.width))
+        self.projects.bind('<Configure>', lambda _:self.canvas.configure(scrollregion=self.canvas.bbox('all')))
+        self.canvas.bind('<MouseWheel>', self.scroll)
+        self.query.trace_add('write', lambda *_:self.render_projects())
+        self.render_projects()
+
+    def icon(self, filename, fallback, size=18):
+        image = ''
+        if (self.icons.directory / filename).is_file():
+            try:image = self.icons.frames(filename, size, TXT, BG)[0]
+            except (tk.TclError, OSError):pass
+        return {'image':image, 'text':'' if image else fallback}
+
+    def layout_header(self, event):
+        self.header.columnconfigure(0, weight=1)
+        self.search_frame.grid(row=0, column=0, sticky='ew')
+        self.actions.grid(row=0, column=1, sticky='e')
+
+    def render_projects(self):
+        for child in self.projects.winfo_children():child.destroy()
+        self.rows = []
+        self.entries = list(self.history.entries)
+        query = self.query.get().strip().casefold()
+        visible = [entry for entry in self.entries if query in f'{entry.name} {entry.path}'.casefold()]
+        self.selected = next((entry for entry in visible if entry.path.is_dir()),None)
+        for entry in visible:self.add_row(entry)
+        if not visible:
+            label(self.projects, tr('welcome.no_matches' if query else 'welcome.empty'),
+                  bg=BG, fg=MUTED).pack(anchor='w', pady=20)
+        self.canvas.yview_moveto(0)
+
+    def add_row(self, entry):
+        available=entry.path.is_dir()
+        row = tk.Frame(self.projects, bg=PANEL, padx=12, pady=10, takefocus=available)
+        row.available=available
+        row.animation=None
+        row.progress=0
+        row.target=0
+        row.pack(fill='x', pady=(0,6))
+        row.columnconfigure(1, weight=1)
+        initials = ''.join(word[0] for word in entry.name.split()[:2]).upper() or '?'
+        badge = label(row, initials, bg=BG, fg=ACCENT if available else MUTED, width=3, height=2, font=('Arial',14,'bold'))
+        badge.grid(row=0, column=0, rowspan=2, padx=(0,14))
+        name = label(row, entry.name, anchor='w', justify='left', fg=TXT if available else MUTED,
+                     font=('Arial',11,'bold') if available else ('Arial',11,'bold overstrike'))
+        row.name_label=name
+        name.grid(row=0, column=1, sticky='ew')
+        path = label(row, str(entry.path), fg=MUTED, anchor='w', justify='left')
+        path.grid(row=1, column=1, sticky='ew', pady=(4,0))
+        actions = tk.Frame(row, bg=PANEL, width=88, height=40)
+        actions.grid(row=0, column=2, rowspan=2, padx=(12,0))
+        actions.grid_propagate(False)
+        actions.columnconfigure(0,minsize=44)
+        actions.columnconfigure(1,minsize=44)
+        buttons = []
+        for index, (filename, caption, fallback, command) in enumerate([
+                ('open_folder.png', 'welcome.open_folder', '[П]', lambda:self.open_folder(entry)),
+                ('remove_recent.png', 'welcome.remove', '[×]', lambda:self.remove_recent(entry))]):
+            if not available and filename=='open_folder.png':continue
+            button = RoundedIconButton(actions,self.icons,filename,fallback,tr(caption),command)
+            button.grid(row=0, column=index, padx=2)
+            button.paint(opacity=0 if available else 1)
+            button.grid_remove()
+            buttons.append(button)
+
+        def animate():
+            row.animation=None
+            if row.progress!=row.target:
+                row.progress += 1 if row.target>row.progress else -1
+            amount=row.progress/6
+            background=blend(PANEL,'#252e3c',amount)
+            for widget in (row,name,path,actions):widget.configure(bg=background)
+            for button in buttons:
+                if row.progress:button.grid()
+                button.paint(background,amount)
+                if not row.progress:button.grid_remove()
+            if row.progress!=row.target:row.animation=row.after(20,animate)
+
+        def hover(_=None):
+            x, y = row.winfo_pointerxy()
+            inside = (row.winfo_rootx() <= x < row.winfo_rootx()+row.winfo_width()
+                      and row.winfo_rooty() <= y < row.winfo_rooty()+row.winfo_height())
+            if not available:
+                for button in buttons:
+                    if inside:button.grid()
+                    else:button.grid_remove()
+                return
+            row.target=6 if inside else 0
+            if row.animation is None and row.progress!=row.target:animate()
+
+        def cancel_animation(event):
+            if event.widget is row and row.animation is not None:
+                row.after_cancel(row.animation)
+                row.animation=None
+
+        row.bind('<Destroy>',cancel_animation)
+
+        def select(_=None):
+            if not available:return
+            self.selected = entry
+            row.focus_set()
+
+        def resize(event):
+            for widget in (name,path):widget.configure(wraplength=max(80,event.width-220))
+
+        for widget in (row,badge,name,path,actions,*buttons):
+            widget.configure(cursor='hand2')
+            widget.bind('<Enter>', hover, add='+')
+            widget.bind('<Leave>', hover, add='+')
+            widget.bind('<MouseWheel>', self.scroll, add='+')
+        for widget in (row,badge,name,path):
+            widget.bind('<Button-1>', select)
+            if available:widget.bind('<ButtonRelease-1>', lambda _, current=entry:self.open_entry(current))
+        if available:row.bind('<Return>', lambda _:self.open_entry(entry))
+        row.bind('<Configure>', resize)
+        self.rows.append((entry,row,buttons))
+
+    def toggle_fullscreen(self):
+        owner=self.winfo_toplevel()
+        if not self.is_fullscreen:self._normal_geometry=owner.geometry()
+        self.is_fullscreen=not self.is_fullscreen
+        if self.is_fullscreen:owner.overrideredirect(False)
+        owner.attributes('-fullscreen',self.is_fullscreen)
+        if not self.is_fullscreen:
+            owner.overrideredirect(True)
+            owner.geometry(self._normal_geometry)
+        self.fullscreen_button.filename='restore.png' if self.is_fullscreen else 'fullscreen.png'
+        self.fullscreen_button.text='▣' if self.is_fullscreen else '□'
+        self.fullscreen_button.tooltip.text=tr('welcome.restore' if self.is_fullscreen else 'welcome.fullscreen')
+        self.fullscreen_button.paint()
+
+    def start_drag(self,event):
+        if self.is_fullscreen:return
+        owner=self.winfo_toplevel()
+        self._drag_origin=(event.x_root,event.y_root,owner.winfo_x(),owner.winfo_y())
+
+    def drag(self,event):
+        if self._drag_origin is None:return
+        mouse_x,mouse_y,window_x,window_y=self._drag_origin
+        x=max(0,window_x+event.x_root-mouse_x)
+        y=max(0,window_y+event.y_root-mouse_y)
+        self.winfo_toplevel().geometry(f'+{x}+{y}')
+
+    def stop_drag(self,event):
+        self._drag_origin=None
+
+    def scroll(self, event):
+        self.canvas.yview_scroll(-int(event.delta/120), 'units')
+        return 'break'
 
     def open_selected(self):
-        selection = self.projects.selection()
-        if selection:
-            self.on_open(self.entries[int(selection[0])].path)
-        else:
-            self.on_browse()
+        if self.selected:self.open_entry(self.selected)
+        else:self.on_browse()
 
-    def double_click(self, event):
-        row = self.projects.identify_row(event.y)
-        if row:
-            self.projects.selection_set(row)
-            self.open_selected()
-        return 'break'
+    def open_entry(self,entry):
+        if self._opening_dialog:return
+        if not entry.path.is_dir():
+            self.render_projects()
+            return
+        self._opening_dialog=True
+        try:
+            dialog=ProjectConfirmationDialog(self,entry,'open')
+            self.wait_window(dialog)
+        finally:self._opening_dialog=False
+        if dialog.result:
+            if entry.path.is_dir():self.on_open(entry.path)
+            else:self.render_projects()
+
+    def open_folder(self, entry):
+        try:
+            if not entry.path.is_dir():raise FileNotFoundError(str(entry.path))
+            if sys.platform == 'win32':os.startfile(str(entry.path))
+            else:subprocess.Popen(['open' if sys.platform == 'darwin' else 'xdg-open', str(entry.path)])
+        except OSError as exc:
+            messagebox.showerror(tr('app.error'), str(exc), parent=self.winfo_toplevel())
+
+    def remove_recent(self, entry):
+        if entry.path.is_dir():
+            dialog = ProjectConfirmationDialog(self, entry, 'remove')
+            self.wait_window(dialog)
+            if not dialog.result:return
+        try:self.history.forget(entry.path)
+        except OSError as exc:
+            messagebox.showerror(tr('app.error'), tr('welcome.save_error',error=str(exc)), parent=self.winfo_toplevel())
+            return
+        self.on_history_change()
+        self.render_projects()

@@ -1,5 +1,6 @@
 import json
 import tempfile
+import time
 import tkinter as tk
 import unittest
 from pathlib import Path
@@ -64,7 +65,7 @@ class WelcomeTests(unittest.TestCase):
     def test_startup_lists_ten_and_menu_lists_five(self):
         self.assertIsNone(self.app.repo.root)
         self.assertTrue(self.app.welcome.winfo_exists())
-        self.assertEqual(len(self.app.welcome.projects.get_children()),10)
+        self.assertEqual(len(self.app.welcome.rows),10)
         self.assertEqual(self.app.recent_menu.index('end'),4)
         self.assertEqual(self.app.editor_frame.winfo_manager(),'')
 
@@ -80,9 +81,10 @@ class WelcomeTests(unittest.TestCase):
 
     def test_startup_selection_opens_selected_project(self):
         screen=self.app.welcome
-        screen.projects.selection_set('4')
+        screen.selected=screen.entries[4]
         chosen=screen.entries[4].path
-        screen.open_selected()
+        with patch.object(screen,'wait_window',side_effect=lambda dialog:dialog.confirm()):
+            screen.open_selected()
         self.assertEqual(self.app.repo.root,chosen)
         self.assertIsNone(self.app.welcome)
 
@@ -127,7 +129,7 @@ class WelcomeTests(unittest.TestCase):
         self.app.recent_projects.entries=[]
         self.app._update_recent_menu()
         self.app.show_welcome()
-        self.assertEqual(len(self.app.welcome.projects.get_children()),0)
+        self.assertEqual(len(self.app.welcome.rows),0)
         self.assertEqual(self.app.recent_menu.entrycget(0,'state'),'disabled')
         with patch('gothic_editor.app.filedialog.askdirectory',return_value='') as picker:
             self.app.welcome.open_selected()
@@ -136,18 +138,181 @@ class WelcomeTests(unittest.TestCase):
             self.app.create_project()
         self.assertIsNone(self.app.repo.root)
 
-    def test_welcome_has_single_column_without_headings(self):
-        tree=self.app.welcome.projects
-        self.assertEqual(tuple(tree['columns']),('project',))
-        self.assertFalse(tree['show'])
-        entry=self.app.welcome.entries[0]
-        self.assertEqual(tree.item('0','values'),(f'{entry.name} ({entry.path})',))
+    def test_search_matches_name_and_full_path_without_changing_history(self):
+        screen=self.app.welcome
+        before=list(self.app.recent_projects.entries)
+        screen.query.set('PROJECT 11')
+        self.assertEqual([entry.name for entry,_,_ in screen.rows],['Project 11'])
+        screen.query.set(str(self.projects[5]))
+        self.assertEqual([entry.path for entry,_,_ in screen.rows],[self.projects[5]])
+        screen.query.set('no such project')
+        self.assertEqual(screen.rows,[])
+        screen.query.set('')
+        self.assertEqual(len(screen.rows),10)
+        self.assertEqual(self.app.recent_projects.entries,before)
 
     def test_language_rebuild_keeps_startup_and_history(self):
         self.app._rebuild_translated_ui()
         self.assertTrue(self.app.welcome.winfo_exists())
-        self.assertEqual(len(self.app.welcome.projects.get_children()),10)
+        self.assertEqual(len(self.app.welcome.rows),10)
         self.assertEqual(self.app.recent_menu.index('end'),4)
+
+    def test_removal_confirmation_only_changes_history(self):
+        screen=self.app.welcome
+        entry=screen.entries[0]
+        original=(entry.path/'project.json').read_bytes()
+        with patch.object(screen,'wait_window',side_effect=lambda dialog:dialog.destroy()):
+            screen.remove_recent(entry)
+        self.assertIn(entry,self.app.recent_projects.entries)
+        with patch.object(screen,'wait_window',side_effect=lambda dialog:dialog.confirm()):
+            screen.remove_recent(entry)
+        self.assertNotIn(entry,self.app.recent_projects.entries)
+        self.assertNotIn(entry,RecentProjects(self.app.recent_projects.path).entries)
+        self.assertEqual((entry.path/'project.json').read_bytes(),original)
+        self.assertEqual(len(screen.rows),9)
+        self.assertNotIn(entry.name,self.app.recent_menu.entrycget(0,'label'))
+
+    def test_open_folder_does_not_open_project_or_ask_confirmation(self):
+        screen=self.app.welcome
+        entry=screen.entries[0]
+        with patch('gothic_editor.ui.welcome.os.startfile',create=True) as start, \
+                patch('gothic_editor.ui.welcome.sys.platform','win32'), \
+                patch('gothic_editor.ui.welcome.messagebox.askyesno') as confirm:
+            screen.open_folder(entry)
+        start.assert_called_once_with(str(entry.path))
+        confirm.assert_not_called()
+        self.assertIsNone(self.app.repo.root)
+
+    def test_missing_icons_fall_back_without_loading_images(self):
+        screen=self.app.welcome
+        screen.icons.directory=self.root/'absent-icons'
+        with patch.object(screen.icons,'frames') as frames:
+            screen.render_projects()
+            self.assertEqual(screen.icon('search.png','Search')['text'],'Search')
+            self.assertEqual(screen.rows[0][2][0].text,'[П]')
+        frames.assert_not_called()
+
+    def test_row_hover_and_single_click_confirm_before_opening_project(self):
+        screen=self.app.welcome
+        self.app.deiconify()
+        self.app.update()
+        entry,row,buttons=screen.rows[1]
+        with patch.object(row,'winfo_pointerxy',return_value=(row.winfo_rootx()+5,row.winfo_rooty()+5)):
+            row.event_generate('<Enter>')
+            deadline=time.monotonic()+.6
+            while time.monotonic()<deadline:
+                self.app.update()
+                time.sleep(.01)
+        self.assertTrue(all(button.winfo_manager()=='grid' for button in buttons))
+        self.assertEqual(row.progress,6)
+        with patch.object(row,'winfo_pointerxy',return_value=(-1,-1)):
+            row.event_generate('<Leave>')
+            deadline=time.monotonic()+.6
+            while time.monotonic()<deadline:
+                self.app.update()
+                time.sleep(.01)
+        self.assertTrue(all(not button.winfo_manager() for button in buttons))
+        with patch.object(screen,'on_open') as opened, \
+                patch.object(screen,'wait_window',side_effect=lambda dialog:dialog.destroy()) as modal:
+            row.event_generate('<ButtonPress-1>',x=5,y=5)
+            row.event_generate('<ButtonRelease-1>',x=5,y=5)
+            modal.assert_called_once()
+            opened.assert_not_called()
+        with patch.object(screen,'on_open') as opened, \
+                patch.object(screen,'wait_window',side_effect=lambda dialog:dialog.confirm()):
+            screen.open_entry(entry)
+            opened.assert_called_once_with(entry.path)
+
+    def test_resizing_keeps_search_buttons_and_scrollable_rows(self):
+        self.app.deiconify()
+        screen=self.app.welcome
+        for width in (870,1200):
+            self.app.geometry(f'{width}x540')
+            self.app.update()
+            self.assertTrue(screen.search.winfo_viewable())
+            self.assertTrue(screen.actions.winfo_viewable())
+            self.assertLessEqual(screen.actions.winfo_x()+screen.actions.winfo_width(),screen.header.winfo_width())
+        screen.canvas.yview_moveto(1)
+        self.app.update()
+        self.assertGreater(screen.canvas.yview()[0],0)
+        with patch('gothic_editor.app.filedialog.askdirectory',return_value='') as picker:
+            screen.actions.winfo_children()[1].invoke()
+        picker.assert_called_once()
+
+    def test_welcome_is_centered_borderless_and_editor_restores_its_chrome(self):
+        self.app.deiconify()
+        self.app.update()
+        self.assertEqual((self.app.winfo_width(),self.app.winfo_height()),(720,480))
+        self.assertTrue(self.app.overrideredirect())
+        self.assertEqual(self.app.cget('menu'),'')
+        self.assertAlmostEqual(self.app.winfo_x(),(self.app.winfo_screenwidth()-720)//2,delta=2)
+        self.assertAlmostEqual(self.app.winfo_y(),(self.app.winfo_screenheight()-480)//2,delta=2)
+        self.app.open_project_path(self.projects[-1])
+        self.assertFalse(self.app.overrideredirect())
+        self.assertEqual(str(self.app.cget('menu')),str(self.app.main_menu))
+        self.assertEqual(self.app.minsize(),(870,540))
+
+    def test_missing_directory_disables_opening_and_removes_without_confirmation(self):
+        entry=self.app.recent_projects.entries[0]
+        (entry.path/'project.json').unlink()
+        entry.path.rmdir()
+        screen=self.app.welcome
+        screen.render_projects()
+        _,row,buttons=screen.rows[0]
+        self.assertFalse(row.available)
+        self.assertIn('overstrike',str(row.name_label.cget('font')))
+        self.assertEqual(len(buttons),1)
+        with patch.object(screen,'on_open') as opened, patch.object(screen,'wait_window') as modal:
+            screen.open_entry(entry)
+            screen.remove_recent(entry)
+        opened.assert_not_called()
+        modal.assert_not_called()
+        self.assertNotIn(entry,self.app.recent_projects.entries)
+
+    def test_action_buttons_are_40_pixels_and_use_their_actual_background(self):
+        screen=self.app.welcome
+        self.app.deiconify()
+        self.app.update()
+        button=screen.rows[0][2][1]
+        button.grid()
+        button.paint(background='#252e3c',opacity=1)
+        self.app.update_idletasks()
+        self.assertEqual((button.winfo_width(),button.winfo_height()),(40,40))
+        self.assertEqual((screen.close_button.winfo_width(),screen.close_button.winfo_height()),(30,30))
+        self.assertEqual(button.cget('bg'),'#252e3c')
+        self.assertIsNotNone(button.image)
+        self.assertEqual((button.image.width(),button.image.height()),(20,20))
+
+    def test_fullscreen_restores_size_and_opening_restores_editor_window(self):
+        screen=self.app.welcome
+        self.app.deiconify()
+        self.app.update()
+        original=self.app.geometry()
+        screen.fullscreen_button.invoke()
+        self.app.update()
+        self.assertTrue(self.app.attributes('-fullscreen'))
+        self.assertTrue(screen.is_fullscreen)
+        screen.fullscreen_button.invoke()
+        self.app.update()
+        self.assertFalse(self.app.attributes('-fullscreen'))
+        self.assertEqual(self.app.geometry(),original)
+        screen.fullscreen_button.invoke()
+        self.app.update()
+        self.app.open_project_path(self.projects[-1])
+        self.assertFalse(self.app.attributes('-fullscreen'))
+        self.assertFalse(self.app.overrideredirect())
+
+    def test_history_write_failure_keeps_visible_project(self):
+        screen=self.app.welcome
+        entry=screen.entries[0]
+        before=list(self.app.recent_projects.entries)
+        with patch.object(screen,'wait_window',side_effect=lambda dialog:dialog.confirm()), \
+                patch('gothic_editor.core.recent_projects.Path.replace',side_effect=OSError('write failed')), \
+                patch('gothic_editor.ui.welcome.messagebox.showerror') as error:
+            screen.remove_recent(entry)
+        error.assert_called_once()
+        self.assertEqual(self.app.recent_projects.entries,before)
+        self.assertEqual(len(screen.rows),10)
 
 
 if __name__=='__main__':
