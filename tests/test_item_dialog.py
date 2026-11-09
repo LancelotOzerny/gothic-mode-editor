@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from gothic_editor.app import EditorApp
 from gothic_editor.core.settings import SettingsStore
-from gothic_editor.ui.item_dialog import AddItemDialog
+from gothic_editor.ui.windows.item_dialog import AddItemDialog
 
 
 class AddItemTests(unittest.TestCase):
@@ -47,6 +47,14 @@ class AddItemTests(unittest.TestCase):
         dialog = AddItemDialog(self.app, 'weapons', self.app.repo.game_items)
         self.app.update()
         self.assertEqual({item.instance for item in dialog.matches}, {'BOW', 'SWORD'})
+        dialog.name.set('Blocked weapon')
+        dialog.projects.selection_set('0')
+        dialog.projects.event_generate('<<TreeviewSelect>>')
+        self.assertEqual(str(dialog.create_button['state']),'disabled')
+        self.assertEqual(str(dialog.copy_button['state']),'disabled')
+        dialog.create()
+        dialog.copy()
+        self.assertIsNone(dialog.result)
         self.assertEqual(dialog.grab_current(), dialog)
         x = self.app.winfo_rootx() + (self.app.winfo_width() - dialog.winfo_width()) // 2
         y = self.app.winfo_rooty() + (self.app.winfo_height() - dialog.winfo_height()) // 2
@@ -78,5 +86,34 @@ class AddItemTests(unittest.TestCase):
         self.assertEqual(self.app.current.title, 'Named potion')
         self.assertEqual(self.app.current.path.name, 'item.json')
         with patch.object(self.app, 'wait_window', side_effect=lambda dialog: dialog.destroy()):
-            self.app.create_item('weapons')
+            self.app.create_item('potions')
         self.assertEqual(len(self.app.repo.project_items), 1)
+
+    def test_other_categories_cannot_be_added_copied_duplicated_or_deleted(self):
+        before=self.source.read_bytes()
+        for key in ('weapons','onehand','armor','runes','food','rings','documents','ammo','misc'):
+            with patch('gothic_editor.app.AddItemDialog') as dialog:
+                self.app.create_item(key)
+            dialog.assert_not_called()
+        sword=next(item for item in self.app.repo.game_items if item.instance=='SWORD')
+        # Existing project items stay readable; app commands must not modify them.
+        existing=self.app.repo.copy_to_project(sword)
+        stored=existing.path.read_bytes()
+        with patch.object(self.app.repo,'copy_to_project') as copy, \
+                patch.object(self.app.repo,'duplicate') as duplicate, \
+                patch.object(self.app.repo,'delete') as delete, \
+                patch.object(self.app.repo,'edit') as edit, \
+                patch('gothic_editor.app.messagebox.askyesno') as confirm:
+            self.app.copy_to_project(sword)
+            self.app.duplicate(existing)
+            self.app.delete(existing)
+            self.app.rename(existing,'Blocked')
+            self.app.save_fields(existing,{'name':'"Blocked"'})
+        for operation in (copy,duplicate,delete,edit,confirm):operation.assert_not_called()
+        self.assertEqual(existing.path.read_bytes(),stored)
+        self.assertEqual(self.source.read_bytes(),before)
+        with patch('tkinter.Menu.tk_popup'):
+            self.app.hierarchy.context(type('Event',(),{'x_root':0,'y_root':0})(),existing)
+        menu=self.app.hierarchy._context_menu
+        self.assertEqual(menu.entrycget(0,'state'),'disabled')
+        self.assertEqual(menu.entrycget(1,'state'),'disabled')

@@ -1,7 +1,6 @@
 import math
 import tkinter as tk
-from ..core.localization import tr
-from ..core.mesh import MeshFormatError, read_3ds
+from gothic_editor.core.localization import tr
 
 class ModelViewer(tk.Canvas):
     def __init__(self, master, **kwargs):

@@ -3,12 +3,12 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
 
-from ..core.item_assets import ItemAssetManager
-from ..core.model_resolver import ModelResolver
-from ..core.localization import tr
-from .widgets import PANEL, MUTED, label
-from .property_widgets import PropertySectionFrame
-from .property_controls import PropertyButton
+from gothic_editor.core.item_assets import ItemAssetManager
+from gothic_editor.core.model_resolver import ModelResolver
+from gothic_editor.core.localization import tr
+from gothic_editor.ui.widgets import label
+from gothic_editor.ui.widgets.sections import PropertySectionFrame
+from gothic_editor.ui.widgets.buttons import PropertyButton
 
 
 class ItemAppearanceController:

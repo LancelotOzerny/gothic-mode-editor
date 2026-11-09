@@ -74,7 +74,7 @@ class PropertyListTests(unittest.TestCase):
         text = 'Potion "strong" \\ test'
         self.assertEqual(display_value(expression_value(text, 'string'), 'string'), text)
         self.assertEqual(expression_value('BASE + 1', 'expression'), 'BASE + 1')
-        data = json.loads(Path('assets/schemas/potions.json').read_text('utf-8'))
+        data = json.loads(Path('assets/properties/potion.json').read_text('utf-8'))
         data['sections'][-1]['fields'][0]['max_rows'] = -1
         path = self.root/'bad.json'
         path.write_text(json.dumps(data), encoding='utf-8')
@@ -92,5 +92,5 @@ class PropertyListTests(unittest.TestCase):
         item = self.repo.project_items[0]
         self.assertEqual(item.fields['effect'], '"CUSTOM_FX"')
         self.assertEqual(item.fields['scemename'], '"CUSTOM_USE"')
-        self.assertIn(('CUSTOM_USE', '"CUSTOM_USE"'), item_options(self.repo, 'item_schemes'))
+        self.assertNotIn(('CUSTOM_USE', '"CUSTOM_USE"'), item_options(self.repo, 'item_schemes'))
         self.assertNotIn('on_state[0]', item.fields)

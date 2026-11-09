@@ -8,6 +8,7 @@ from .categories import classify,get_category,leaf_for
 from .archive_models import ArchiveModels
 from .potion_components import PotionComponents
 from .properties_schema import schema_for
+from .potion_schemes import DEFAULT_POTION_SCHEME
 from .item_migration import ItemMigrationService
 from .model_resolver import ModelResolver
 from .settings import field_key, validate_value
@@ -212,6 +213,8 @@ class ProjectRepository:
             else:fields.setdefault('name','"'+tr('items.default_potion')+'"')
             if fields.get('description') in (None,'name'):fields['description']=fields['name']
             fields.update(schema.generated_defaults)
+            fields={key:value for key,value in fields.items() if key.casefold()!='scemename'}
+            fields['scemeName']=DEFAULT_POTION_SCHEME
             code=f'INSTANCE {instance} (C_Item)\n{{\n'+''.join(
                 f'    {key} = {value};\n' for key,value in fields.items())+'};'
             code.encode('cp1251')

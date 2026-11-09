@@ -194,7 +194,7 @@ class AppearanceTests(unittest.TestCase):
     def test_import_updates_preview_and_replacement_requires_confirmation(self):
         source=self.root/'model.3ds'
         source.write_bytes(model())
-        with patch('gothic_editor.ui.item_appearance.filedialog.askopenfilename',return_value=str(source)):
+        with patch('gothic_editor.ui.controllers.item_appearance.filedialog.askopenfilename',return_value=str(source)):
             self.app.appearance.import_model(self.item)
         item=self.app.current
         self.assertEqual(self.app.viewer.faces,[(0,1,2)])
@@ -202,13 +202,13 @@ class AppearanceTests(unittest.TestCase):
         self.assertTrue(any(p.name=='model.3ds' for p in self.app.resources.paths.values()))
         changed=geometry_3ds([(0.,0.,0.),(2.,0.,0.),(0.,2.,0.)],[(0,1,2)])
         source.write_bytes(changed)
-        with patch('gothic_editor.ui.item_appearance.filedialog.askopenfilename',return_value=str(source)), \
-                patch('gothic_editor.ui.item_appearance.messagebox.askyesno',return_value=False) as confirm:
+        with patch('gothic_editor.ui.controllers.item_appearance.filedialog.askopenfilename',return_value=str(source)), \
+                patch('gothic_editor.ui.controllers.item_appearance.messagebox.askyesno',return_value=False) as confirm:
             self.app.appearance.import_model(item)
         confirm.assert_called_once()
         self.assertEqual((item.path.parent/'assets/model.3ds').read_bytes(),model())
-        with patch('gothic_editor.ui.item_appearance.filedialog.askopenfilename',return_value=str(source)), \
-                patch('gothic_editor.ui.item_appearance.messagebox.askyesno',return_value=True):
+        with patch('gothic_editor.ui.controllers.item_appearance.filedialog.askopenfilename',return_value=str(source)), \
+                patch('gothic_editor.ui.controllers.item_appearance.messagebox.askyesno',return_value=True):
             self.app.appearance.import_model(item)
         self.assertEqual(self.app.viewer.vertices[1],(2.,0.,0.))
         self.assertTrue(any(self.app.repo.root.glob('backups/item-assets-*')))
@@ -237,7 +237,7 @@ class AppearanceTests(unittest.TestCase):
         self.assertIn(original_item,self.app.hierarchy.items)
         source=self.root/'model.3ds'
         source.write_bytes(model())
-        with patch('gothic_editor.ui.item_appearance.filedialog.askopenfilename',return_value=str(source)):
+        with patch('gothic_editor.ui.controllers.item_appearance.filedialog.askopenfilename',return_value=str(source)):
             self.app.appearance.import_model(original_item)
         rows=[i for i in self.app.hierarchy.items if i.instance=='ItPo_Original']
         self.assertEqual(len(rows),1)

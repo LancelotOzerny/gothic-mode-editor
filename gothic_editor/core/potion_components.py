@@ -11,6 +11,7 @@ from pathlib import Path
 from .scripts import Item, INST, FIELD, block_end, mask_comments, replace_field, replace_instance, load_text
 from .item_layout import ItemLayout
 from .model_resolver import ModelResolver
+from .potion_schemes import imported_potion_scheme
 
 class PotionComponents:
     def __init__(self, root: Path):
@@ -68,6 +69,8 @@ class PotionComponents:
         source=replace_instance(item.text,item.instance,target) if target!=item.instance else item.text
         original=self._read(item.path) if self.owns(item.path) else None
         fields=dict(original['fields'] if original else item.fields)
+        for key,value in fields.items():
+            if key.casefold()=='scemename':fields[key]=imported_potion_scheme(value)
         if original:source=replace_instance(original['template'],item.instance,target)
         data={'format':'gothic-potion-v1','instance':target,'source_instance':item.instance if target==item.instance and (item.origin=='game' or as_override) else None,
               'source_file':self._relative_game_file(item) if target==item.instance and item.origin=='game' else None,

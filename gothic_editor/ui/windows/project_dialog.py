@@ -3,8 +3,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from ..core.localization import tr
-from .widgets import BG, label, make_entry
+from gothic_editor.core.localization import tr
+from gothic_editor.ui.widgets import BG, label, make_entry
 
 
 class NewProjectDialog(tk.Toplevel):

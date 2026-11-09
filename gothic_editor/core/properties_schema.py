@@ -136,7 +136,6 @@ def schema_for(category):
     if filename is None:
         return None
     roots = (Path(sys.executable).resolve().parent,Path(__file__).resolve().parents[2])
-    paths = [root / relative for root in roots for relative in
-             (Path('assets/schemas')/(category+'.json'),Path('assets/properties')/filename)]
+    paths = [root / 'assets' / 'properties' / filename for root in roots]
     path = next((path for path in paths if path.is_file()),paths[-1])
     return PropertiesSchema.load(path)

@@ -9,7 +9,7 @@ from unittest.mock import patch
 from gothic_editor.app import EditorApp
 from gothic_editor.core.recent_projects import RecentProjects
 from gothic_editor.core.settings import EditorSettings, SettingsStore
-from gothic_editor.ui.project_dialog import NewProjectDialog
+from gothic_editor.ui.windows.project_dialog import NewProjectDialog
 
 
 class RecentProjectsTests(unittest.TestCase):
@@ -107,7 +107,7 @@ class WelcomeTests(unittest.TestCase):
         for name in ('../Outside','Project11'):
             dialog=NewProjectDialog(self.app,self.root/'Mods')
             dialog.name.set(name)
-            with patch('gothic_editor.ui.project_dialog.messagebox.showerror') as error:
+            with patch('gothic_editor.ui.windows.project_dialog.messagebox.showerror') as error:
                 dialog.submit()
             error.assert_called_once()
             self.assertIsNone(dialog.result)
@@ -175,9 +175,9 @@ class WelcomeTests(unittest.TestCase):
     def test_open_folder_does_not_open_project_or_ask_confirmation(self):
         screen=self.app.welcome
         entry=screen.entries[0]
-        with patch('gothic_editor.ui.welcome.os.startfile',create=True) as start, \
-                patch('gothic_editor.ui.welcome.sys.platform','win32'), \
-                patch('gothic_editor.ui.welcome.messagebox.askyesno') as confirm:
+        with patch('gothic_editor.ui.panels.welcome.os.startfile',create=True) as start, \
+                patch('gothic_editor.ui.panels.welcome.sys.platform','win32'), \
+                patch('gothic_editor.ui.panels.welcome.messagebox.askyesno') as confirm:
             screen.open_folder(entry)
         start.assert_called_once_with(str(entry.path))
         confirm.assert_not_called()
@@ -308,7 +308,7 @@ class WelcomeTests(unittest.TestCase):
         before=list(self.app.recent_projects.entries)
         with patch.object(screen,'wait_window',side_effect=lambda dialog:dialog.confirm()), \
                 patch('gothic_editor.core.recent_projects.Path.replace',side_effect=OSError('write failed')), \
-                patch('gothic_editor.ui.welcome.messagebox.showerror') as error:
+                patch('gothic_editor.ui.panels.welcome.messagebox.showerror') as error:
             screen.remove_recent(entry)
         error.assert_called_once()
         self.assertEqual(self.app.recent_projects.entries,before)

@@ -2,10 +2,12 @@
 import re
 
 from .scripts import load_text, mask_comments, unquote
+from .potion_schemes import POTION_SCHEMES
 
 
 def item_options(repo, source):
-    key = {'visual_effects': 'effect', 'item_schemes': 'scemename'}.get(source)
+    if source == 'item_schemes':return list(POTION_SCHEMES)
+    key = {'visual_effects': 'effect'}.get(source)
     if key is None:return []
     names = {unquote(item.fields[key]) for item in repo.game_items + repo.project_items if item.fields.get(key)}
     if source == 'visual_effects':

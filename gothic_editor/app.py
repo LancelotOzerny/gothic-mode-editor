@@ -6,26 +6,28 @@ from pathlib import Path
 from tkinter import filedialog,messagebox,ttk
 from .core.project import ProjectRepository
 from .ui.widgets import BG,PANEL,TXT,MUTED,label,Tooltip
-from .ui.hierarchy import HierarchyPanel
-from .ui.properties import PropertiesPanel
-from .ui.viewer import ModelViewer,read_3ds,MeshFormatError
+from gothic_editor.ui.panels.hierarchy import HierarchyPanel
+from gothic_editor.ui.panels.properties import PropertiesPanel
+from gothic_editor.ui.panels.viewer import ModelViewer
+from .core.mesh import read_3ds, MeshFormatError
 from .core.localization import localization,tr
 from .core.settings import EditorSettings,SettingsStore,field_key
 from .core.settings_schema import all_fields
-from .ui.settings import SettingsWindow
+from gothic_editor.ui.windows.settings import SettingsWindow
 from .core.archive_models import load_archive_model
 from .core.model_export import export_model_3ds
 from .core.project_tools import ProjectTools
-from .ui.terminal import TerminalPanel,ToolRunner
-from .ui.icons import IconImages
-from .ui.bottom_dock import BottomDock
-from .ui.resources import ResourcesPanel
+from gothic_editor.ui.panels.terminal import TerminalPanel
+from gothic_editor.ui.controllers.tool_runner import ToolRunner
+from gothic_editor.ui.widgets.icons import IconImages
+from gothic_editor.ui.widgets.dock import BottomDock
+from gothic_editor.ui.panels.resources import ResourcesPanel
 from .core.recent_projects import RecentProjects
-from .core.categories import classify
-from .ui.welcome import WelcomeScreen
-from .ui.project_dialog import NewProjectDialog
-from .ui.item_dialog import AddItemDialog
-from .ui.item_appearance import ItemAppearanceController
+from .core.categories import classify, EDITABLE_CATEGORIES
+from gothic_editor.ui.panels.welcome import WelcomeScreen
+from gothic_editor.ui.windows.project_dialog import NewProjectDialog
+from gothic_editor.ui.windows.item_dialog import AddItemDialog
+from gothic_editor.ui.controllers.item_appearance import ItemAppearanceController
 
 RESOURCE_KEYS={'game_path':'resources.gothic.game_path','compiler_path':'build.compiler.path',
                'resource_editor_path':'resources.editor.path'}
@@ -211,7 +213,7 @@ class EditorApp(tk.Tk):
     def _activate_welcome(self):
         self._welcome_map_after=None
         if self.welcome is None or not self.winfo_viewable():return
-        from .ui.window_helpers import show_in_taskbar
+        from gothic_editor.ui.platform import show_in_taskbar
         try:show_in_taskbar(self)
         except OSError as exc:self.terminal.append(str(exc))
         self.lift()
@@ -584,6 +586,7 @@ class EditorApp(tk.Tk):
             messagebox.showerror(tr('app.error'),str(exc))
 
     def create_item(self,key):
+        if key not in EDITABLE_CATEGORIES:return
         if not self.need_project():return
         dialog=AddItemDialog(self,key,self.repo.game_items)
         self.wait_window(dialog)
@@ -591,10 +594,13 @@ class EditorApp(tk.Tk):
         action,value=dialog.result
         if action=='copy':self.copy_to_project(value)
         else:self._action(self.repo.create_item,key,value)
-    def duplicate(self,item):self._action(self.repo.duplicate,item)
-    def copy_to_project(self,item):self._action(self.repo.copy_to_project,item)
+    def duplicate(self,item):
+        if classify(item) in EDITABLE_CATEGORIES:self._action(self.repo.duplicate,item)
+    def copy_to_project(self,item):
+        if classify(item) in EDITABLE_CATEGORIES:self._action(self.repo.copy_to_project,item)
 
     def delete(self,item):
+        if classify(item) not in EDITABLE_CATEGORIES:return
         if item.origin!='project':return
         if not messagebox.askyesno(tr('app.delete_item'),tr('messages.delete',instance=item.instance)):
             return
@@ -604,13 +610,13 @@ class EditorApp(tk.Tk):
         self.resources.set_item(self.repo.root,None)
 
     def rename(self,item,new_name):
-        if classify(item)!='potions':return
+        if classify(item) not in EDITABLE_CATEGORIES:return
         # The Daedalus name attribute is the in-game name, not INSTANCE.
         escaped=new_name.replace('\\','\\\\').replace('"','\\"')
         self.save_fields(item,{'name':'"'+escaped+'"'})
 
     def save_fields(self,item,values,autosave=False,**options):
-        if classify(item)!='potions':return
+        if classify(item) not in EDITABLE_CATEGORIES:return
         if not autosave:return self._action(self.repo.edit,item,values,**options)
         try:
             result=self.repo.edit(item,values,**options)

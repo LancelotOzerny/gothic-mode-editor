@@ -10,7 +10,7 @@ from gothic_editor.core.properties_schema import PropertiesSchema, schema_for
 from gothic_editor.core.settings import SettingsStore
 from gothic_editor.core.project_tools import ProjectTools
 from gothic_editor.core.scripts import parse_items
-from gothic_editor.ui.property_widgets import ExpressionCombobox
+from gothic_editor.ui.widgets.choice_field import ExpressionChoiceField
 
 
 class PropertiesTests(unittest.TestCase):
@@ -118,17 +118,17 @@ class PropertiesTests(unittest.TestCase):
         error.assert_called_once()
         self.assertEqual(len(self.repo.project_items), 2)
         self.change('instance', '')
-        with patch('gothic_editor.ui.properties.messagebox.showerror') as error:
+        with patch('gothic_editor.ui.controllers.property_editor.messagebox.showerror') as error:
             self.app.properties.save()
         error.assert_called_once()
 
     def test_schema_extension_changes_form_without_python_field_list(self):
-        data = json.loads(Path('assets/schemas/potions.json').read_text('utf-8'))
+        data = json.loads(Path('assets/properties/potion.json').read_text('utf-8'))
         data['sections'].append({'id': 'custom', 'title': 'Extra section', 'fields': [
             {'key': 'extra_code', 'label': 'Extra label', 'type': 'expression', 'source': 'property'}]})
         path = self.root/'custom.json'
         path.write_text(json.dumps(data), encoding='utf-8')
-        with patch('gothic_editor.ui.properties.schema_for', return_value=PropertiesSchema.load(path)):
+        with patch('gothic_editor.ui.panels.properties.schema_for', return_value=PropertiesSchema.load(path)):
             self.app.select(self.item)
         self.change('extra_code', 'BONUS + 1')
         self.app.properties.save()
@@ -141,7 +141,7 @@ class PropertiesTests(unittest.TestCase):
         self.assertNotIn('description = ;', self.app.current.text)
 
     def test_invalid_schema_disables_save_with_an_explanation(self):
-        with patch('gothic_editor.ui.properties.schema_for', side_effect=ValueError('bad schema')):
+        with patch('gothic_editor.ui.panels.properties.schema_for', side_effect=ValueError('bad schema')):
             self.app.select(self.item)
         self.assertFalse(self.app.properties.editable)
         self.assertIn('bad schema', self.app.properties.info['text'])
@@ -183,7 +183,7 @@ class PropertiesTests(unittest.TestCase):
 
     def test_combobox_displays_names_but_saves_daedalus_values(self):
         combo=self.app.properties.inputs['flags']
-        self.assertIsInstance(combo,ExpressionCombobox)
+        self.assertIsInstance(combo,ExpressionChoiceField)
         self.assertEqual(str(combo['state']),'readonly')
         self.assertEqual(combo.value_variable.get(),'Складываемое')
         self.assertEqual(combo.get(),'ITEM_MULTI')
@@ -222,7 +222,7 @@ class PropertiesTests(unittest.TestCase):
         self.assertEqual(item.path.read_bytes(),before)
 
     def test_new_item_defaults_are_taken_from_schema_only_at_creation(self):
-        data=json.loads(Path('assets/schemas/potions.json').read_text('utf-8'))
+        data=json.loads(Path('assets/properties/potion.json').read_text('utf-8'))
         data['generated_defaults']['visual']='"OtherPotion.3ds"'
         data['generated_defaults']['inv_animate']='1'
         for section in data['sections']:
@@ -302,7 +302,7 @@ class PropertiesTests(unittest.TestCase):
         cells[1][1].insert(0, '2 минуты')
         self.change('name', 'Изменённое имя')
         before = self.item.path.read_bytes()
-        with patch('gothic_editor.ui.properties.messagebox.showerror') as error:
+        with patch('gothic_editor.ui.controllers.property_editor.messagebox.showerror') as error:
             self.app.properties.save()
         error.assert_called_once()
         self.assertIn('count[0]', error.call_args.args[1])
@@ -384,7 +384,7 @@ class PropertiesTests(unittest.TestCase):
         cells[0][1].insert(0,'Время')
         cells[1][1].insert(0,'2 минуты')
         before=self.app.current.path.read_bytes()
-        with patch('gothic_editor.ui.properties.messagebox.showerror') as error:
+        with patch('gothic_editor.ui.controllers.property_editor.messagebox.showerror') as error:
             cells[1][1].event_generate('<FocusOut>')
         error.assert_called_once()
         self.assertEqual(self.app.current.path.read_bytes(),before)
@@ -401,7 +401,7 @@ class PropertiesTests(unittest.TestCase):
         self.assertEqual(stored.fields['value'],'321')
         self.assertEqual(self.app.current.instance,other.instance)
         self.change('instance','')
-        with patch('gothic_editor.ui.properties.messagebox.showerror') as error:
+        with patch('gothic_editor.ui.controllers.property_editor.messagebox.showerror') as error:
             self.app.select(stored)
         error.assert_called_once()
         self.assertEqual(self.app.current.instance,other.instance)
@@ -421,34 +421,34 @@ class PropertiesTests(unittest.TestCase):
         combo=self.app.properties.inputs['flags']
         combo.event_generate('<ButtonPress-1>',x=10,y=8)
         self.app.update()
-        self.assertIsNone(combo.popup)
+        self.assertIsNone(combo.selection_window)
         combo.event_generate('<ButtonRelease-1>',x=10,y=8)
         self.app.update()
-        self.assertIsNotNone(combo.popup)
-        self.assertFalse(combo.popup.overrideredirect())
-        self.assertEqual((combo.popup.winfo_width(),combo.popup.winfo_height()),(480,320))
-        self.assertAlmostEqual(combo.popup.winfo_x(),self.app.winfo_rootx()+(self.app.winfo_width()-480)//2,delta=3)
-        self.assertAlmostEqual(combo.popup.winfo_y(),self.app.winfo_rooty()+(self.app.winfo_height()-320)//2,delta=3)
-        self.assertTrue(all(button.winfo_height()==40 for button in combo.option_buttons))
-        self.assertTrue(combo.option_buttons[combo.current()].selected)
-        combo.option_buttons[2].event_generate('<ButtonRelease-1>',x=10,y=20)
+        self.assertIsNotNone(combo.selection_window)
+        self.assertFalse(combo.selection_window.overrideredirect())
+        self.assertEqual((combo.selection_window.winfo_width(),combo.selection_window.winfo_height()),(480,320))
+        self.assertAlmostEqual(combo.selection_window.winfo_x(),self.app.winfo_rootx()+(self.app.winfo_width()-480)//2,delta=3)
+        self.assertAlmostEqual(combo.selection_window.winfo_y(),self.app.winfo_rooty()+(self.app.winfo_height()-320)//2,delta=3)
+        self.assertTrue(all(button.winfo_height()==40 for button in combo.selection_window.option_buttons))
+        self.assertTrue(combo.selection_window.option_buttons[combo.current()].selected)
+        combo.selection_window.option_buttons[2].event_generate('<ButtonRelease-1>',x=10,y=20)
         self.app.update()
-        combo.option_buttons[2].event_generate('<Leave>')
-        self.assertTrue(combo.option_buttons[2].selected)
-        self.assertEqual(sum(button.selected for button in combo.option_buttons),1)
-        self.assertIsNotNone(combo.popup)
-        combo.choose_button.invoke()
+        combo.selection_window.option_buttons[2].event_generate('<Leave>')
+        self.assertTrue(combo.selection_window.option_buttons[2].selected)
+        self.assertEqual(sum(button.selected for button in combo.selection_window.option_buttons),1)
+        self.assertIsNotNone(combo.selection_window)
+        combo.selection_window.choose_button.invoke()
         self.app.update()
-        self.assertIsNone(combo.popup)
+        self.assertIsNone(combo.selection_window)
         self.assertEqual(self.app.current.fields['flags'],'ITEM_MULTI')
         combo.event_generate('<FocusOut>')
         self.assertEqual(self.app.current.fields['flags'],'ITEM_MISSION')
-        combo.open_popup()
+        combo.open_choices()
         self.app.update()
-        combo.focus_option(0)
-        combo.popup.event_generate('<Escape>')
+        combo.selection_window.focus_option(0)
+        combo.selection_window.event_generate('<Escape>')
         self.app.update()
-        self.assertIsNone(combo.popup)
+        self.assertIsNone(combo.selection_window)
         self.assertEqual(self.app.current.fields['flags'],'ITEM_MISSION')
 
     def test_inventory_headers_are_shared_and_create_icon_stays_visible(self):
@@ -472,17 +472,17 @@ class PropertiesTests(unittest.TestCase):
         self.app.update()
         combo=self.app.properties.inputs['effect']
         combo.options=tuple((str(i),f'"FX_{i}"') for i in range(20))
-        combo.open_popup()
+        combo.open_choices()
         self.app.update()
-        combo.focus_option(19)
+        combo.selection_window.focus_option(19)
         self.app.update()
-        self.assertGreater(combo.option_buttons[-1].master.master.yview()[0],0)
-        combo.choose(19)
+        self.assertGreater(combo.selection_window.option_buttons[-1].master.master.yview()[0],0)
+        combo.selection_window.apply(19)
         combo.event_generate('<FocusOut>')
         self.assertEqual(self.app.current.fields['effect'],'"FX_19"')
         combo.config(state='disabled')
-        combo.open_popup()
-        self.assertIsNone(combo.popup)
+        combo.open_choices()
+        self.assertIsNone(combo.selection_window)
 
     def test_clicking_field_padding_focuses_native_entry_and_accepts_typing(self):
         self.app.deiconify()
@@ -509,9 +509,9 @@ class PropertiesTests(unittest.TestCase):
                 target.event_generate('<ButtonPress-1>',x=3,y=3)
                 target.event_generate('<ButtonRelease-1>',x=3,y=3)
                 self.app.update()
-                self.assertIsNotNone(combo.popup)
-                self.assertTrue(combo.popup.winfo_viewable())
-                combo.close_popup()
+                self.assertIsNotNone(combo.selection_window)
+                self.assertTrue(combo.selection_window.winfo_viewable())
+                combo.close_choices()
                 self.app.update()
 
     def test_repeated_selection_does_not_grab_mouse_or_block_text_input(self):
@@ -520,10 +520,10 @@ class PropertiesTests(unittest.TestCase):
         combo=self.app.properties.inputs['flags']
         entry=self.app.properties.inputs['name']
         for option in (2,1,2):
-            combo.open_popup()
+            combo.open_choices()
             self.app.update()
             self.assertIsNone(self.app.grab_current())
-            combo.choose(option)
+            combo.selection_window.apply(option)
             self.app.update()
             self.assertIsNone(self.app.grab_current())
             entry.surface.event_generate('<ButtonPress-1>',x=5,y=20)
@@ -534,18 +534,18 @@ class PropertiesTests(unittest.TestCase):
             entry.event_generate('<KeyPress>',keysym='space')
             self.app.update()
             self.assertEqual(len(entry.get()),len(before)+1)
-            self.assertIsNone(combo.popup)
+            self.assertIsNone(combo.selection_window)
 
     def test_selection_window_does_not_block_other_fields(self):
         self.app.deiconify()
         self.app.update()
         combo=self.app.properties.inputs['flags']
         entry=self.app.properties.inputs['value']
-        combo.open_popup()
+        combo.open_choices()
         self.app.update()
         entry.surface.event_generate('<ButtonPress-1>',x=5,y=20)
         entry.surface.event_generate('<ButtonRelease-1>',x=5,y=20)
         self.app.update()
-        self.assertIsNotNone(combo.popup)
+        self.assertIsNotNone(combo.selection_window)
         self.assertIsNone(self.app.grab_current())
         self.assertIs(self.app.focus_get(),entry)

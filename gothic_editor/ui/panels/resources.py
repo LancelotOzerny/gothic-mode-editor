@@ -2,9 +2,9 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from ..core.localization import tr
-from ..core.resources import item_resource_files, open_in_editor, open_in_folder
-from .widgets import BG, PANEL, MUTED, label
+from gothic_editor.core.localization import tr
+from gothic_editor.core.resources import item_resource_files, open_in_editor, open_in_folder
+from gothic_editor.ui.widgets import BG, PANEL, MUTED, label
 
 
 class ResourcesPanel(tk.Frame):

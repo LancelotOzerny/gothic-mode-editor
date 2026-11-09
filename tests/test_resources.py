@@ -115,14 +115,14 @@ class ResourceDockTests(unittest.TestCase):
         row = next(key for key,path in resources.paths.items() if path.name=='item.json')
         event = SimpleNamespace(y=1,x_root=0,y_root=0)
         with patch.object(resources.tree,'identify_row',return_value=row), \
-                patch('gothic_editor.ui.resources.open_in_editor') as launch:
+                patch('gothic_editor.ui.panels.resources.open_in_editor') as launch:
             resources.double_click(event)
             launch.assert_called_once_with(self.item.path,self.app.repo.resource_editor_path,self.app.repo.root)
         with patch.object(resources.tree,'identify_row',return_value=row), patch('tkinter.Menu.tk_popup'):
             resources.context(event)
         self.assertTrue(resources.menu.winfo_exists())
-        with patch('gothic_editor.ui.resources.open_in_editor') as launch, \
-                patch('gothic_editor.ui.resources.open_in_folder') as reveal:
+        with patch('gothic_editor.ui.panels.resources.open_in_editor') as launch, \
+                patch('gothic_editor.ui.panels.resources.open_in_folder') as reveal:
             resources.menu.invoke(0)
             resources.menu.invoke(1)
         launch.assert_called_once()

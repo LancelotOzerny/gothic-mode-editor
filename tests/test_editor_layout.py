@@ -12,7 +12,7 @@ from gothic_editor.core.localization import localization, tr
 from gothic_editor.core.project import ProjectRepository
 from gothic_editor.core.project_tools import ToolResult
 from gothic_editor.core.settings import SettingsStore
-from gothic_editor.ui.hierarchy import CategoryRow
+from gothic_editor.ui.panels.hierarchy import CategoryRow
 
 
 class OriginalCopyTests(unittest.TestCase):
@@ -107,7 +107,7 @@ class EditorLayoutTests(unittest.TestCase):
         self.assertFalse(row.opened)
         self.assertIn('[1]', project.heading.cget('text'))
         self.assertEqual(set(panel.sections),{'project'})
-        with patch('gothic_editor.ui.hierarchy.monotonic',return_value=100.) as clock:
+        with patch('gothic_editor.ui.panels.hierarchy.monotonic',return_value=100.) as clock:
             row.toggle()
             row.cancel_animation()
             clock.return_value=100.07
@@ -131,7 +131,7 @@ class EditorLayoutTests(unittest.TestCase):
         copied = []
         panel = self.app.hierarchy
         panel.on_copy = copied.append
-        item = SimpleNamespace(origin='game')
+        item = SimpleNamespace(origin='game',instance='ITPO_TEST',fields={},path=Path('IT_Test.d'))
         labels = []
         def popup(menu, x, y):
             labels.append(menu.entrycget(0, 'label'))

@@ -7,7 +7,7 @@ from pathlib import Path
 class IconImages:
     def __init__(self, master):
         self.master = master
-        self.directory = Path(__file__).resolve().parents[2] / 'assets' / 'icons'
+        self.directory = Path(__file__).resolve().parents[3] / 'assets' / 'icons'
         self.cache = {}
         self.sources = {}
 

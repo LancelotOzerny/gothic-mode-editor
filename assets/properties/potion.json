@@ -2,7 +2,6 @@
   "schema_version": 3,
   "id": "potions",
   "title": "Зелья",
-  "description": "Свойства зелья, анимация использования и строки инвентаря.",
   "rules": {
     "default_applies_to": "new_items_only",
     "preserve_unrecognized_properties": true,
@@ -80,29 +79,26 @@
           "required": true,
           "default": "Potion{n}",
           "prefix": "ItPo_",
-          "placeholder": "Potion1",
-          "description": "Вводится суффикс; полный уникальный INSTANCE — ItPo_<суффикс>."
+          "placeholder": "Potion1"
         },
         {
           "key": "name",
-          "label": "Название",
+          "label": "Название (при подборе)",
           "type": "string",
           "widget": "input",
           "source": "property",
           "required": true,
           "default": "\"Новое зелье\"",
-          "placeholder": "Новое зелье",
-          "description": "Имя, показываемое при наведении на предмет в игровом мире."
+          "placeholder": "Новое зелье"
         },
         {
           "key": "description",
-          "label": "Описание",
+          "label": "Название (в инвентаре)",
           "type": "string",
           "widget": "input",
           "source": "property",
           "default": "name",
-          "placeholder": "Новое зелье",
-          "description": "Название предмета в инвентаре; по умолчанию ссылается на name. Это не многострочное описание."
+          "placeholder": "Новое зелье"
         }
       ]
     },
@@ -117,18 +113,16 @@
           "widget": "combobox",
           "source": "property",
           "default": "ITEM_MULTI",
-          "options_ref": "itemFlagsList",
-          "description": "Дополнительные флаги. ITEM_MULTI означает складывание одинаковых предметов, а не возможность выпить."
+          "options_ref": "itemFlagsList"
         },
         {
           "key": "value",
-          "label": "Стоимость",
+          "label": "Стоимость (монет)",
           "type": "expression",
           "widget": "input",
           "source": "property",
           "default": "100",
-          "placeholder": "100",
-          "description": "Стоимость в золоте; можно указать число либо константу Daedalus."
+          "placeholder": "100"
         }
       ]
     },

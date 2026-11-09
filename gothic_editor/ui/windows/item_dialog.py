@@ -2,9 +2,9 @@
 import tkinter as tk
 from tkinter import ttk
 
-from ..core.categories import classify, get_category, walk_categories
-from ..core.localization import tr
-from .widgets import BG, MUTED, label, make_entry
+from gothic_editor.core.categories import classify, get_category, walk_categories, EDITABLE_CATEGORIES
+from gothic_editor.core.localization import tr
+from gothic_editor.ui.widgets import BG, MUTED, label, make_entry
 
 
 class AddItemDialog(tk.Toplevel):
@@ -12,6 +12,7 @@ class AddItemDialog(tk.Toplevel):
         super().__init__(parent, bg=BG)
         self.withdraw()
         self.result = None
+        self.editable=category_key in EDITABLE_CATEGORIES
         self.title(tr('items.add_title', category=tr('categories.' + category_key)))
         self.transient(parent)
         self.geometry('720x490')
@@ -45,9 +46,9 @@ class AddItemDialog(tk.Toplevel):
         self.copy_button.pack(side='right', padx=8)
         self.search.trace_add('write', self.refresh)
         self.name.trace_add('write', lambda *_: self.create_button.config(
-            state='normal' if self.name.get().strip() else 'disabled'))
+            state='normal' if self.editable and self.name.get().strip() else 'disabled'))
         self.projects.bind('<<TreeviewSelect>>', lambda _: self.copy_button.config(
-            state='normal' if self.projects.selection() else 'disabled'))
+            state='normal' if self.editable and self.projects.selection() else 'disabled'))
         self.projects.bind('<Double-Button-1>', self.double_click)
         self.projects.bind('<Return>', lambda _: self.copy())
         self.name_entry.bind('<Return>', lambda _: self.create())
@@ -74,13 +75,13 @@ class AddItemDialog(tk.Toplevel):
 
     def create(self):
         name = self.name.get().strip()
-        if name:
+        if self.editable and name:
             self.result = ('create', name)
             self.destroy()
 
     def copy(self):
         selection = self.projects.selection()
-        if selection:
+        if self.editable and selection:
             self.result = ('copy', self.matches[int(selection[0])])
             self.destroy()
 

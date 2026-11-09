@@ -147,7 +147,7 @@ class SettingsWindowTests(unittest.TestCase):
     def test_invalid_input_keeps_dialog_and_settings_unchanged(self):
         window = self.open_dialog()
         window.values['interface.general.window_size'][0].set('bad')
-        with patch('gothic_editor.ui.settings.messagebox.showerror') as error:
+        with patch('gothic_editor.ui.windows.settings.messagebox.showerror') as error:
             window.save()
         error.assert_called_once()
         self.assertTrue(window.winfo_exists())
@@ -228,7 +228,7 @@ class SettingsWindowTests(unittest.TestCase):
         self.app.repo.create(self.root / 'mod', 'Test')
         window = self.open_dialog(resources=True)
         window.values['resources.gothic.game_path'][0].set(str(self.root / 'missing'))
-        with patch('gothic_editor.ui.settings.messagebox.showerror') as error:
+        with patch('gothic_editor.ui.windows.settings.messagebox.showerror') as error:
             window.save()
         error.assert_called_once()
         self.assertIsNone(self.app.repo.game)

@@ -4,10 +4,10 @@ from __future__ import annotations
 import tkinter as tk
 from time import monotonic
 
-from ..core.categories import CATEGORIES, classify
-from ..core.localization import tr
-from .icons import IconImages
-from .widgets import BG, PANEL, INPUT, TXT, MUTED, ACCENT, label, make_entry
+from gothic_editor.core.categories import CATEGORIES, classify, EDITABLE_CATEGORIES
+from gothic_editor.core.localization import tr
+from gothic_editor.ui.widgets.icons import IconImages
+from gothic_editor.ui.widgets import BG, PANEL, INPUT, TXT, MUTED, ACCENT, label, make_entry
 
 
 class CategoryRow(tk.Frame):
@@ -35,7 +35,7 @@ class CategoryRow(tk.Frame):
                       font=('Arial', 10, 'bold'), anchor='w')
         title.pack(side='left', fill='x', expand=True)
         title.bind('<Button-1>', lambda _: self.toggle())
-        if section.origin == 'project':
+        if section.origin == 'project' and category.key in EDITABLE_CATEGORIES:
             plus = tk.Label(row, text='+', bg=INPUT, fg=ACCENT, font=('Arial', 14, 'bold'),
                             width=2, cursor='hand2')
             plus.pack(side='right', padx=5)
@@ -240,6 +240,7 @@ class HierarchyPanel(tk.Frame):
         self.on_select(item)
 
     def rename(self, item, row, title):
+        if classify(item) not in EDITABLE_CATEGORIES:return
         title.pack_forget()
         entry = make_entry(row, font=('Arial', 10))
         entry.insert(0, item.title)
@@ -269,11 +270,12 @@ class HierarchyPanel(tk.Frame):
             self._context_menu.destroy()
         menu = tk.Menu(self, tearoff=False, bg=INPUT, fg=TXT)
         self._context_menu = menu
+        state='normal' if classify(item) in EDITABLE_CATEGORIES else 'disabled'
         if item.origin == 'project':
-            menu.add_command(label=tr('hierarchy.duplicate'), command=lambda: self.on_duplicate(item))
-            menu.add_command(label=tr('hierarchy.delete'), command=lambda: self.on_delete(item))
+            menu.add_command(label=tr('hierarchy.duplicate'), state=state, command=lambda: self.on_duplicate(item))
+            menu.add_command(label=tr('hierarchy.delete'), state=state, command=lambda: self.on_delete(item))
         else:
-            menu.add_command(label=tr('hierarchy.copy_to_project'), command=lambda: self.on_copy(item))
+            menu.add_command(label=tr('hierarchy.copy_to_project'), state=state, command=lambda: self.on_copy(item))
         if self.on_export_model is not None:
             menu.add_command(label=tr('hierarchy.download_model_3ds'), command=lambda: self.on_export_model(item))
         try:

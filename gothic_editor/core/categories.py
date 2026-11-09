@@ -2,6 +2,8 @@
 from dataclasses import dataclass,field
 import re
 
+EDITABLE_CATEGORIES = frozenset({'potions'})
+
 @dataclass
 class Category:
     name:str
