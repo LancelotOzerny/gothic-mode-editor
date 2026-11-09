@@ -1,13 +1,12 @@
-"""Potion appearance controls; persistence stays in the asset manager/repository."""
+"""Model controls within the schema's appearance group; persistence stays in core."""
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
 
 from gothic_editor.core.item_assets import ItemAssetManager
+from gothic_editor.core.categories import classify
 from gothic_editor.core.model_resolver import ModelResolver
 from gothic_editor.core.localization import tr
-from gothic_editor.ui.widgets import label
-from gothic_editor.ui.widgets.sections import PropertySectionFrame
 from gothic_editor.ui.widgets.buttons import PropertyButton
 
 
@@ -16,13 +15,10 @@ class ItemAppearanceController:
         self.app = app
 
     def show(self, parent, item):
-        section = PropertySectionFrame(parent, tr('item_assets.appearance'))
-        section.pack(fill='x', pady=(0,30))
-        label(section.body, item.visual or tr('viewer.no_visual'), wraplength=260,
-              justify='left').pack(fill='x', padx=8, pady=8)
         for key, action in [('choose_model', self.choose), ('import_model', self.import_model),
                             ('import_textures', self.import_textures), ('remove_model', self.remove)]:
-            button = PropertyButton(section.body,lambda fn=action:fn(self.app.current or item),text=tr('item_assets.'+key))
+            if classify(item)!='potions' and key!='choose_model':continue
+            button = PropertyButton(parent,lambda fn=action:fn(self.app.current or item),text=tr('item_assets.'+key))
             button.pack(fill='x', padx=8, pady=(0,6))
             if key == 'remove_model' and not self._custom(item):button.config(state='disabled')
 
@@ -92,6 +88,9 @@ class ItemAppearanceController:
             value = choice.get()
             if not value or not self._confirm_replace(item):return
             window.destroy()
+            if classify(item)!='potions':
+                self.app.save_fields(item, {'visual':'"' + value.replace('\\','\\\\').replace('"','\\"') + '"'})
+                return
             def operation(current, manager):
                 if self._custom(current):manager.remove_model(current)
                 repo.edit(current, {'visual':'"' + value.replace('\\','\\\\').replace('"','\\"') + '"'})

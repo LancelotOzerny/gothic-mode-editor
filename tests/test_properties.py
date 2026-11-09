@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from gothic_editor.app import EditorApp
 from gothic_editor.core.properties_schema import PropertiesSchema, schema_for
+from gothic_editor.core.property_blocks import load_property_data
 from gothic_editor.core.settings import SettingsStore
 from gothic_editor.core.project_tools import ProjectTools
 from gothic_editor.core.scripts import parse_items
@@ -123,7 +124,7 @@ class PropertiesTests(unittest.TestCase):
         error.assert_called_once()
 
     def test_schema_extension_changes_form_without_python_field_list(self):
-        data = json.loads(Path('assets/properties/potion.json').read_text('utf-8'))
+        data = load_property_data(Path('assets/properties/categories/potions.json'))
         data['sections'].append({'id': 'custom', 'title': 'Extra section', 'fields': [
             {'key': 'extra_code', 'label': 'Extra label', 'type': 'expression', 'source': 'property'}]})
         path = self.root/'custom.json'
@@ -222,7 +223,7 @@ class PropertiesTests(unittest.TestCase):
         self.assertEqual(item.path.read_bytes(),before)
 
     def test_new_item_defaults_are_taken_from_schema_only_at_creation(self):
-        data=json.loads(Path('assets/properties/potion.json').read_text('utf-8'))
+        data=load_property_data(Path('assets/properties/categories/potions.json'))
         data['generated_defaults']['visual']='"OtherPotion.3ds"'
         data['generated_defaults']['inv_animate']='1'
         for section in data['sections']:
@@ -256,7 +257,7 @@ class PropertiesTests(unittest.TestCase):
         self.assertEqual(self.app.properties.sections['parameters'].body.winfo_manager(),'pack')
 
     def test_invalid_option_references_are_rejected(self):
-        data=json.loads(Path('assets/properties/potion.json').read_text('utf-8'))
+        data=load_property_data(Path('assets/properties/categories/potions.json'))
         data['sections'][0]['fields'][0]['options_ref']='Missing'
         path=self.root/'invalid-options.json'
         path.write_text(json.dumps(data),encoding='utf-8')
@@ -289,7 +290,8 @@ class PropertiesTests(unittest.TestCase):
 
     def test_effect_none_and_animation_save_as_expressions(self):
         self.app.properties.inputs['effect'].current(0)
-        self.app.properties.inputs['scemeName'].current(1)
+        combo = self.app.properties.inputs['scemeName']
+        combo.current(next(index for index, (_, expression) in enumerate(combo.options) if expression == '"POTION"'))
         self.app.properties.save()
         self.assertEqual(self.app.current.fields['effect'], '""')
         self.assertEqual(self.app.current.fields['scemename'], '"POTION"')

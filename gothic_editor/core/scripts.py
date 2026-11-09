@@ -115,7 +115,7 @@ def replace_field(block: str, key: str, value: str) -> str:
 def replace_instance(block: str, old: str, new: str) -> str:
     return re.sub(r'(\bINSTANCE\s+)'+re.escape(old)+r'(\s*\()',lambda m:m.group(1)+new+m.group(2),block,count=1,flags=re.I)
 
-def write_modified_item(item:Item, destination:Path, updates:dict[str,str]):
+def write_modified_item(item:Item, destination:Path, updates:dict[str,str], instance=None):
     """Always write a project file; preserve all other item definitions verbatim."""
     source,codec=load_text(destination if destination.exists() else item.path)
     items=parse_items(destination if destination.exists() else item.path,'project')
@@ -123,6 +123,7 @@ def write_modified_item(item:Item, destination:Path, updates:dict[str,str]):
     if not target:raise ValueError(tr('scripts.item_missing'))
     part=source[target.begin:target.end]
     for k,v in updates.items():part=replace_field(part,k,v)
+    if instance is not None:part=replace_instance(part,item.instance,instance)
     source=source[:target.begin]+part+source[target.end:]
     destination.parent.mkdir(parents=True,exist_ok=True)
     # Source scripts from Gothic are commonly ANSI/CP1251; retain the encoding.

@@ -182,9 +182,9 @@ class ProjectRepository:
 
     def exists(self,instance):return any(it.instance.casefold()==instance.casefold() for it in self.items)
 
-    def new_id(self,original='GE_Item'):
+    def new_id(self,original='GE_Item',prefix='GE_'):
         base=clean_id(original)
-        if not base.startswith('GE_'):base='GE_'+base
+        if not base.casefold().startswith(prefix.casefold()):base=prefix+base
         candidate=base;n=2
         while self.exists(candidate):candidate=f'{base}_{n}';n+=1
         return candidate
@@ -200,24 +200,28 @@ class ProjectRepository:
 
     def create_item(self,category_key,name=None):
         title=(name or tr('items.default_name')).replace('\\','\\\\').replace('"','\\"')
-        if category_key=='potions':
-            schema=schema_for(category_key)
+        schema=schema_for(category_key)
+        if schema is not None:
             number=schema.numbering_start
             instance=schema.instance_prefix+schema.instance_pattern.replace('{n}',str(number))
-            while self.exists(instance):
+            while (self.exists(instance) or (category_key!='potions' and
+                    (self._project_content()/'Items'/'GE_Generated'/(instance+'.d')).exists())):
                 number+=1
                 instance=schema.instance_prefix+schema.instance_pattern.replace('{n}',str(number))
             fields={field.key:field.default for section in schema.sections for field in section.fields
                     if field.source=='property' and field.export and field.default not in (None,'')}
             if name:fields['name']='"'+title+'"'
-            else:fields.setdefault('name','"'+tr('items.default_potion')+'"')
+            else:fields.setdefault('name','"'+tr('items.default_potion' if category_key=='potions' else 'items.default_name')+'"')
             if fields.get('description') in (None,'name'):fields['description']=fields['name']
             fields.update(schema.generated_defaults)
-            fields={key:value for key,value in fields.items() if key.casefold()!='scemename'}
-            fields['scemeName']=DEFAULT_POTION_SCHEME
+            if category_key=='potions':
+                fields={key:value for key,value in fields.items() if key.casefold()!='scemename'}
+                fields['scemeName']=DEFAULT_POTION_SCHEME
             code=f'INSTANCE {instance} (C_Item)\n{{\n'+''.join(
                 f'    {key} = {value};\n' for key,value in fields.items())+'};'
             code.encode('cp1251')
+            if category_key!='potions':
+                return self._write_new(instance,code)
             metadata={field.key:field.default for section in schema.sections for field in section.fields
                       if field.source=='editor_metadata' and field.default is not None}
             item=Item(instance,self.root/'__new__','project',code,{},0,len(code),editor_metadata=metadata)
@@ -234,7 +238,7 @@ class ProjectRepository:
 
     def duplicate(self,item:Item):
         """Duplicate a single item definition; original game files untouched."""
-        instance=self.new_id(item.instance+'_Copy')
+        instance=self.new_id(item.instance+'_Copy',prefix='ItSc_' if classify(item)=='scrolls' else 'GE_')
         code=replace_instance(item.text,item.instance,instance)
         if classify(item)=='potions':
             self.components.import_item(item,instance)
@@ -285,9 +289,9 @@ class ProjectRepository:
             return next(x for x in self.project_items if x.instance.casefold()==target.casefold())
         if item.origin=='game':item=self.copy_to_project(item)
         dest=self._destination_for(item)
-        write_modified_item(item,dest,values)
+        write_modified_item(item,dest,values,instance=instance)
         self.refresh()
-        return next(x for x in self.items if x.instance.casefold()==item.instance.casefold())
+        return next(x for x in self.items if x.instance.casefold()==target.casefold())
 
     def delete(self,item:Item):
         if item.origin!='project':raise ValueError(tr('project.cannot_delete_original'))

@@ -42,7 +42,7 @@ class StructureTests(unittest.TestCase):
         with patch('gothic_editor.core.properties_schema.Path.is_file',return_value=True), \
                 patch.object(PropertiesSchema,'load',return_value=sentinel) as read:
             self.assertIs(schema_for('potions'),sentinel)
-        self.assertEqual(read.call_args.args[0].parts[-3:],('assets','properties','potion.json'))
+        self.assertEqual(read.call_args.args[0].parts[-4:],('assets','properties','categories','potions.json'))
 
 
 class GenericFormTests(unittest.TestCase):

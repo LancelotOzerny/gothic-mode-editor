@@ -1,0 +1,52 @@
+{
+  "option_lists": {
+    "itemFlagsList": [
+      {
+        "name": "Без дополнительных флагов",
+        "value": "0"
+      },
+      {
+        "name": "Складываемое",
+        "value": "ITEM_MULTI"
+      },
+      {
+        "name": "Квестовый предмет",
+        "value": "ITEM_MISSION"
+      },
+      {
+        "name": "Складываемый квестовый предмет",
+        "value": "ITEM_MULTI | ITEM_MISSION"
+      },
+      {
+        "name": "Не разделять стопку",
+        "value": "ITEM_NSPLIT"
+      }
+    ]
+  },
+  "sections": [
+    {
+      "id": "parameters",
+      "title": "Параметры",
+      "fields": [
+        {
+          "key": "flags",
+          "label": "Флаги",
+          "type": "flags",
+          "widget": "combobox",
+          "source": "property",
+          "default": "ITEM_MULTI",
+          "options_ref": "itemFlagsList"
+        },
+        {
+          "key": "value",
+          "label": "Стоимость (монет)",
+          "type": "expression",
+          "widget": "input",
+          "source": "property",
+          "default": "100",
+          "placeholder": "100"
+        }
+      ]
+    }
+  ]
+}

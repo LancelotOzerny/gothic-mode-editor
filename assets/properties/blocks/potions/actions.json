@@ -1,0 +1,31 @@
+{
+  "option_lists": {
+    "itemSchemes": [
+      {
+        "name": "Быстро выпить (POTIONFAST)",
+        "value": "\"POTIONFAST\""
+      },
+      {
+        "name": "Выпить (POTION)",
+        "value": "\"POTION\""
+      }
+    ]
+  },
+  "sections": [
+    {
+      "id": "actions",
+      "title": "Действия",
+      "fields": [
+        {
+          "key": "scemeName",
+          "label": "Анимация использования",
+          "type": "enum",
+          "widget": "combobox",
+          "default": "\"POTIONFAST\"",
+          "options_ref": "itemSchemes",
+          "options_source": "item_schemes"
+        }
+      ]
+    }
+  ]
+}

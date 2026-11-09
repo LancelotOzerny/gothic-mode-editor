@@ -1,6 +1,7 @@
 import shutil
 import tempfile
 import unittest
+from time import monotonic
 from pathlib import Path
 from unittest.mock import patch
 
@@ -191,12 +192,18 @@ class AppearanceTests(unittest.TestCase):
         self.app.show_project()
         self.app.select(self.item)
 
+    def finish_load(self):
+        deadline=monotonic()+5
+        while self.app._model_future is not None and monotonic()<deadline:self.app.update()
+        self.assertIsNone(self.app._model_future)
+
     def test_import_updates_preview_and_replacement_requires_confirmation(self):
         source=self.root/'model.3ds'
         source.write_bytes(model())
         with patch('gothic_editor.ui.controllers.item_appearance.filedialog.askopenfilename',return_value=str(source)):
             self.app.appearance.import_model(self.item)
         item=self.app.current
+        self.finish_load()
         self.assertEqual(self.app.viewer.faces,[(0,1,2)])
         self.assertEqual(item.visual,'model_ItPo_Potion1.3ds')
         self.assertTrue(any(p.name=='model.3ds' for p in self.app.resources.paths.values()))
@@ -210,6 +217,7 @@ class AppearanceTests(unittest.TestCase):
         with patch('gothic_editor.ui.controllers.item_appearance.filedialog.askopenfilename',return_value=str(source)), \
                 patch('gothic_editor.ui.controllers.item_appearance.messagebox.askyesno',return_value=True):
             self.app.appearance.import_model(item)
+        self.finish_load()
         self.assertEqual(self.app.viewer.vertices[1],(2.,0.,0.))
         self.assertTrue(any(self.app.repo.root.glob('backups/item-assets-*')))
 

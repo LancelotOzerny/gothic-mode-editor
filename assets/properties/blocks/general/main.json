@@ -1,0 +1,41 @@
+{
+  "sections": [
+    {
+      "id": "general",
+      "title": "Основное",
+      "fields": [
+        {
+          "key": "instance",
+          "label": "ID",
+          "type": "identifier",
+          "widget": "input",
+          "source": "instance_id",
+          "required": true,
+          "default": "Item{n}",
+          "prefix": "",
+          "placeholder": "Item1"
+        },
+        {
+          "key": "name",
+          "label": "Название (при подборе)",
+          "type": "string",
+          "widget": "input",
+          "source": "property",
+          "required": true,
+          "default": "\"Новый предмет\"",
+          "placeholder": ""
+        },
+        {
+          "key": "description",
+          "label": "Название (в инвентаре)",
+          "type": "string",
+          "widget": "input",
+          "source": "property",
+          "tooltip": "Если не указано, то\nвозьмет значение названия при подборе",
+          "default": "name",
+          "placeholder": ""
+        }
+      ]
+    }
+  ]
+}

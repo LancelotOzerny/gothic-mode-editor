@@ -2,7 +2,7 @@
 from dataclasses import dataclass,field
 import re
 
-EDITABLE_CATEGORIES = frozenset({'potions'})
+EDITABLE_CATEGORIES = frozenset({'potions', 'scrolls'})
 
 @dataclass
 class Category:
@@ -54,7 +54,7 @@ def classify(item):
     if 'ITEM_KAT_DOCS' in main:return 'documents'
     if 'ITEM_KAT_MUN' in main:return 'ammo'
     if 'ITEM_KAT_RUNE' in main:
-        if 'SCROLL' in instance or 'SCROLL' in item.path.name.upper():return 'scrolls'
+        if instance.startswith('ITSC_') or 'SCROLL' in instance or 'SCROLL' in item.path.name.upper():return 'scrolls'
         return 'runes'
     if 'ITEM_KAT_MAGIC' in main:
         return 'rings' if 'RING' in instance else 'amulets'

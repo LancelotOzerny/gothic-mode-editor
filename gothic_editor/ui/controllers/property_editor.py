@@ -31,7 +31,7 @@ class PropertyEditor:
                         messagebox.showerror(tr('app.error'),str(exc),parent=form.winfo_toplevel())
                         return False
                 continue
-            value=entry.get() if field.source=='editor_metadata' or field.field_type=='string' else entry.get().strip()
+            value=entry.get() if field.source=='editor_metadata' or field.field_type in ('string','resource') else entry.get().strip()
             if value==form.initial[key]:continue
             if field.required and not value:
                 messagebox.showerror(tr('app.error'),tr('properties.required',name=field.label),parent=form.winfo_toplevel())
@@ -40,7 +40,7 @@ class PropertyEditor:
                 instance=value if not field.prefix or value.casefold().startswith(field.prefix.casefold()) else field.prefix+value
             elif field.source=='editor_metadata':metadata[key]=value
             elif field.export:
-                if field.field_type=='string' and value and not re.fullmatch(r'"(?:\\.|[^"\\])*"',value):
+                if field.field_type in ('string','resource') and value and not re.fullmatch(r'"(?:\\.|[^"\\])*"',value):
                     value='"'+value.replace('\\','\\\\').replace('"','\\"')+'"'
                 values[property_key(key)]=value
         if values or metadata or instance is not None:

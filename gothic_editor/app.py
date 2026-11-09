@@ -511,6 +511,10 @@ class EditorApp(tk.Tk):
         self.current=item
         self.properties.show(item)
         self.resources.set_item(self.repo.root,item)
+        self._show_model(item,camera)
+
+    def _show_model(self,item,camera=None):
+        self._cancel_model_load()
         visual=item.visual
         name=Path(visual.replace('\\','/')).name.lower() if visual else ''
         source_name=str(Path(name).with_suffix('.3ds')) if Path(name).suffix=='.mrm' else name
@@ -620,6 +624,8 @@ class EditorApp(tk.Tk):
             self.update_hierarchy()
             if result.path!=item.path:self.resources.set_item(self.repo.root,result)
             else:self.resources.item=result
+            if result.visual!=item.visual:
+                self._show_model(result,(self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom))
             return result
         except (OSError,ValueError) as exc:
             messagebox.showerror(tr('app.error'),str(exc),parent=self)

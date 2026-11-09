@@ -1,0 +1,36 @@
+{
+  "generated_defaults": {
+    "text[5]": "NAME_Value",
+    "count[5]": "value"
+  },
+  "sections": [
+    {
+      "id": "inventory",
+      "title": "Инвентарь",
+      "fields": [
+        {
+          "key": "inventory_rows",
+          "label": "Строки инвентаря",
+          "type": "key_value_list",
+          "max_rows": 6,
+          "start_index": 0,
+          "columns": [
+            {
+              "variable": "text",
+              "label": "Текст",
+              "type": "string"
+            },
+            {
+              "variable": "count",
+              "label": "Значение",
+              "type": "expression"
+            }
+          ],
+          "reserved": {
+            "text": "NAME_Value"
+          }
+        }
+      ]
+    }
+  ]
+}

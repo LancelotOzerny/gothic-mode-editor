@@ -7,6 +7,7 @@ from pathlib import Path
 from gothic_editor.core.item_options import item_options
 from gothic_editor.core.project import ProjectRepository
 from gothic_editor.core.properties_schema import PropertiesSchema, schema_for
+from gothic_editor.core.property_blocks import load_property_data
 from gothic_editor.core.property_lists import PropertyList, display_value, expression_value
 
 
@@ -74,7 +75,7 @@ class PropertyListTests(unittest.TestCase):
         text = 'Potion "strong" \\ test'
         self.assertEqual(display_value(expression_value(text, 'string'), 'string'), text)
         self.assertEqual(expression_value('BASE + 1', 'expression'), 'BASE + 1')
-        data = json.loads(Path('assets/properties/potion.json').read_text('utf-8'))
+        data = load_property_data(Path('assets/properties/categories/potions.json'))
         data['sections'][-1]['fields'][0]['max_rows'] = -1
         path = self.root/'bad.json'
         path.write_text(json.dumps(data), encoding='utf-8')

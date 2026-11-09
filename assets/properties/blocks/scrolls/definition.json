@@ -1,0 +1,44 @@
+{
+  "id": "scrolls",
+  "title": "Свитки",
+  "rules": {
+    "default_applies_to": "new_items_only",
+    "preserve_unrecognized_properties": true,
+    "do_not_overwrite_missing_fields": true,
+    "editable_combobox": false,
+    "values_are_daedalus_expressions": true,
+    "instance_is_not_c_item_property": true,
+    "unique_instance_case_insensitive": true
+  },
+  "instance": {
+    "prefix": "ItSc_",
+    "suffix_default_pattern": "Scroll{n}",
+    "numbering_start": 1,
+    "unique_case_insensitive": true
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_RUNE"
+  },
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  },
+  "field_overrides": {
+    "instance": {
+      "prefix": "ItSc_",
+      "default": "Scroll{n}",
+      "placeholder": "Scroll1"
+    },
+    "name": {
+      "default": "\"Новый свиток\"",
+      "placeholder": ""
+    },
+    "description": {
+      "placeholder": ""
+    }
+  }
+}

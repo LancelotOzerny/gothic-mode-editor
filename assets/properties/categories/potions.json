@@ -1,0 +1,10 @@
+{
+  "blocks": [
+    "general/main.json",
+    "general/inventory.json",
+    "general/parameters.json",
+    "general/appearance.json",
+    "potions/actions.json",
+    "potions/definition.json"
+  ]
+}

@@ -1,9 +1,9 @@
 """Property descriptions independent of widgets and item persistence."""
 from dataclasses import dataclass, field
-import json
 from pathlib import Path
 import re
 import sys
+from .property_blocks import load_property_data
 
 
 def property_key(key):
@@ -59,7 +59,7 @@ class PropertiesSchema:
 
     @classmethod
     def load(cls, path):
-        data = json.loads(Path(path).read_text('utf-8-sig'))
+        data = load_property_data(path)
         if data.get('schema_version') not in (1, 2, 3) or not isinstance(data.get('sections'), list):
             raise ValueError(f'{path}: unsupported properties schema')
         option_lists = data.get('option_lists', {})
@@ -140,11 +140,11 @@ class PropertiesSchema:
 
 def schema_for(category):
     # Additional item types can be registered here when their forms are ready.
-    files = {'potions': 'potion.json'}
+    files = {'potions': 'potions.json', 'scrolls': 'scrolls.json'}
     filename = files.get(category)
     if filename is None:
         return None
     roots = (Path(sys.executable).resolve().parent,Path(__file__).resolve().parents[2])
-    paths = [root / 'assets' / 'properties' / filename for root in roots]
+    paths = [root / 'assets' / 'properties' / 'categories' / filename for root in roots]
     path = next((path for path in paths if path.is_file()),paths[-1])
     return PropertiesSchema.load(path)

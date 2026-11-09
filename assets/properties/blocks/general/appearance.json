@@ -1,0 +1,32 @@
+{
+  "option_lists": {
+    "visualEffects": [
+      {
+        "name": "Нет",
+        "value": "\"\""
+      }
+    ]
+  },
+  "sections": [
+    {
+      "id": "appearance",
+      "title": "Внешний вид",
+      "fields": [
+        {
+          "key": "visual",
+          "label": "Модель",
+          "type": "resource",
+          "widget": "input"
+        },
+        {
+          "key": "effect",
+          "label": "Визуальный эффект",
+          "type": "enum",
+          "widget": "combobox",
+          "options_ref": "visualEffects",
+          "options_source": "visual_effects"
+        }
+      ]
+    }
+  ]
+}

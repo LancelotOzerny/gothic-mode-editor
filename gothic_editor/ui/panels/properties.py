@@ -89,8 +89,8 @@ class PropertiesPanel(tk.Frame):
                     for key in sorted(item.fields):
                         if property_key(key) not in known:
                             self.render_field(frame.body,PropertyField(key,key),item.fields[key])
-        if self.on_appearance is not None and classify(item)=='potions':
-            self.on_appearance(self.inner,item)
+        if self.on_appearance is not None and classify(item) in EDITABLE_CATEGORIES and 'appearance' in self.sections:
+            self.on_appearance(self.sections['appearance'].body,item)
         self.canvas.yview_moveto(0)
 
     def render_field(self,parent,field,value):
@@ -105,7 +105,7 @@ class PropertiesPanel(tk.Frame):
             self.fields[field.key]=field
             self.initial[field.key]=entry.get()
             return
-        if field.field_type=='string' and re.fullmatch(r'"(?:\\.|[^"\\])*"',value):
+        if field.field_type in ('string','resource') and re.fullmatch(r'"(?:\\.|[^"\\])*"',value):
             value=re.sub(r'\\([\\"])',r'\1',value[1:-1])
         FieldLabel(parent,field.label,field.tooltip).pack(fill='x',padx=8,pady=(6,2))
         variable=tk.StringVar(self)
