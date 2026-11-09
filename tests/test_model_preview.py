@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 from concurrent.futures import Future
 from time import monotonic
+from time import sleep
 
 from gothic_editor.core.archive_models import ArchiveModels
 from gothic_editor.core.mesh import PreviewMesh, read_3ds_bytes, read_mrm
@@ -205,6 +206,14 @@ class PreviewRenderTests(unittest.TestCase):
 
 
 class PreviewWidgetTests(unittest.TestCase):
+    def finish_frame(self, root, viewer):
+        deadline=monotonic()+10
+        while monotonic()<deadline:
+            root.update()
+            if viewer._wanted_key in viewer._frames and viewer.renderer._future is None:return
+            sleep(.005)
+        self.fail('Background render did not finish')
+
     def test_default_toggle_selection_camera_and_missing_icons(self):
         root = tk.Tk()
         self.addCleanup(root.destroy)
@@ -214,9 +223,14 @@ class PreviewWidgetTests(unittest.TestCase):
         root.update()
         preview = ModelPreview(read_3ds_bytes(textured_3ds(), preview=True), {'Bottle.TGA': read_tga(tga())}, [])
         viewer.set_preview(preview)
+        self.finish_frame(root,viewer)
         self.assertTrue(viewer.textured)
         self.assertTrue(viewer.texture_button.selected)
         self.assertIsNotNone(viewer.image)
+        with patch.object(viewer.renderer,'request',wraps=viewer.renderer.request) as request:
+            viewer.draw()
+            viewer.draw()
+            request.assert_not_called()
         self.assertEqual((viewer.image.width(), viewer.image.height()), (viewer.winfo_width()-20, viewer.winfo_height()-110))
         viewer.draw(preview=True)
         viewer.event_generate('<ButtonRelease-1>', x=10, y=70)
@@ -233,6 +247,24 @@ class PreviewWidgetTests(unittest.TestCase):
         self.assertTrue(viewer.textured)
         viewer.set_mesh(caption='missing')
         self.assertFalse(viewer.vertices)
+
+    def test_ui_callback_runs_while_background_frame_is_pending(self):
+        root=tk.Tk()
+        self.addCleanup(root.destroy)
+        root.geometry('800x650')
+        viewer=ModelViewer(root)
+        viewer.pack(fill='both',expand=True)
+        root.update()
+        mesh=read_3ds_bytes(textured_3ds(),preview=True)
+        mesh.faces*=8
+        mesh.uvs*=8
+        mesh.texture_names*=8
+        viewer.set_preview(ModelPreview(mesh,{'Bottle.TGA':read_tga(tga())},[]))
+        responsive=tk.BooleanVar(root,value=False)
+        root.after(1,lambda:responsive.set(viewer.renderer._future is not None))
+        root.wait_variable(responsive)
+        self.assertTrue(responsive.get())
+        self.finish_frame(root,viewer)
 
     def test_render_requests_are_coalesced_and_cancelled_on_destroy(self):
         root = tk.Tk()

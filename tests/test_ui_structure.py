@@ -120,6 +120,8 @@ class GenericFormTests(unittest.TestCase):
         entry.delete(0,'end')
         entry.insert(0,'After')
         entry.event_generate('<FocusOut>')
+        self.assertTrue(form.editor.dirty)
+        form.save()
         self.assertEqual(saves[-1],{'caption':'"After"'})
         self.assertIs(form.inputs['caption'],entry)
         choice=form.inputs['mode']
@@ -135,6 +137,7 @@ class GenericFormTests(unittest.TestCase):
         self.assertIsNone(choice.selection_window)
         self.assertEqual(choice.get(),'MODE_B')
         choice.event_generate('<FocusOut>')
+        form.save()
         self.assertEqual(item.fields['mode'],'MODE_B')
         choice.open_choices()
         self.root.update()

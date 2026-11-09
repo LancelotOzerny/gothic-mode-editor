@@ -1,7 +1,8 @@
 import tkinter as tk
+from collections import OrderedDict
 from gothic_editor.core.localization import tr
 from gothic_editor.core.mesh import PreviewMesh
-from gothic_editor.core.preview_render import render_mesh
+from gothic_editor.ui.controllers.preview_renderer import PreviewRenderer
 from gothic_editor.ui.widgets.buttons import PropertyButton
 
 class ModelViewer(tk.Canvas):
@@ -17,6 +18,10 @@ class ModelViewer(tk.Canvas):
         self.missing = []
         self.textured = True
         self.image = None
+        self._scene_revision = 0
+        self._frames = OrderedDict()
+        self._wanted_key = None
+        self.renderer = PreviewRenderer(self,self._frame_ready,self._frame_error)
         self._draw_after = None
         self._quality_after = None
         self._preview_requested = False
@@ -39,6 +44,7 @@ class ModelViewer(tk.Canvas):
         self.bind('<Button-5>', lambda _: self.change_zoom(1/1.12))
 
     def set_mesh(self, vertices=None, faces=None, caption=''):
+        self._invalidate_scene()
         self.vertices = vertices or []
         self.faces = faces or []
         self.mesh = PreviewMesh(self.vertices, self.faces)
@@ -48,6 +54,7 @@ class ModelViewer(tk.Canvas):
         self.draw()
 
     def set_preview(self, preview, caption=''):
+        self._invalidate_scene()
         self.mesh = preview.mesh
         self.vertices, self.faces = self.mesh.vertices, self.mesh.faces
         self.textures, self.missing = preview.textures, preview.missing
@@ -60,6 +67,14 @@ class ModelViewer(tk.Canvas):
         self.texture_button.set_selected(enabled)
         self.solid_button.set_selected(not enabled)
         self.draw()
+
+    def _invalidate_scene(self):
+        self._scene_revision += 1
+        self._frames.clear()
+        self._wanted_key = None
+        self.image = None
+        self.delete('model')
+        self.renderer.discard_requested()
 
     def start_drag(self, ev): self.last = ev.x, ev.y
 
@@ -98,36 +113,61 @@ class ModelViewer(tk.Canvas):
             callback = getattr(self, attribute)
             if callback is not None:self.after_cancel(callback)
             setattr(self, attribute, None)
+        self.renderer.close()
 
     def draw(self, preview=False):
         if self._draw_after is not None:
             self.after_cancel(self._draw_after)
             self._draw_after = None
-        self.delete('all')
-        self.image = None
+        self.delete('chrome')
         w, h = max(self.winfo_width(), 100), max(self.winfo_height(), 100)
-        self.create_text(12, 25, anchor='w', text=tr('viewer.title'), fill='#909bab', font=('Arial', 10, 'bold'))
-        self.create_window(w-9, 7, anchor='ne', window=self.toolbar)
+        self.create_text(12, 25, anchor='w', text=tr('viewer.title'), fill='#909bab', font=('Arial', 10, 'bold'),tags='chrome')
+        self.create_window(w-9, 7, anchor='ne', window=self.toolbar,tags='chrome')
         if not self.vertices:
             self.create_text(w/2, h/2, text=self.caption or tr('viewer.not_found'), fill='#bdc6d5',
-                             font=('Arial', 11), width=max(w-30, 80), justify='center')
+                             font=('Arial', 11), width=max(w-30, 80), justify='center',tags='chrome')
             return
         # Huge models are not the target of the potion viewer.
         if len(self.faces) > 15000:
-            self.create_text(w/2,h/2,text=tr('viewer.too_complex'),fill='white')
+            self.create_text(w/2,h/2,text=tr('viewer.too_complex'),fill='white',tags='chrome')
             return
         width, height = max(1,w-20), max(1,h-110)
         # Keep rotation responsive; render at native resolution once dragging ends.
         factor = max(1, (max(width,height)+479)//480) if preview else 1
         rw, rh = max(1,width//factor), max(1,height//factor)
-        pixels = render_mesh(self.mesh,self.textures,rw,rh,self.angle_x,self.angle_y,self.zoom,self.textured)
-        ppm = f'P6\n{rw} {rh}\n255\n'.encode('ascii') + pixels
-        self.image = tk.PhotoImage(master=self, data=ppm, format='PPM')
-        if factor > 1:self.image = self.image.zoom(factor)
-        self.create_image(w/2, 55+height/2, image=self.image)
+        key=(self._scene_revision,w,h,self.angle_x,self.angle_y,self.zoom,self.textured,factor)
+        self._wanted_key=key
+        if key in self._frames:
+            self.renderer.discard_requested()
+            self._present(key)
+        else:
+            self.renderer.request(key,self.mesh,self.textures,
+                                  (rw,rh,self.angle_x,self.angle_y,self.zoom,self.textured))
         if self.textured and self.missing:
             self.create_text(w/2,h-44,text=tr('viewer.missing_textures',count=len(self.missing)),
-                             fill='#909bab',font=('Arial',9))
-        self.create_text(w/2, h-20, text=tr('viewer.controls'), fill='#94a3b8', font=('Arial', 9))
+                             fill='#909bab',font=('Arial',9),tags='chrome')
+        self.create_text(w/2, h-20, text=tr('viewer.controls'), fill='#94a3b8', font=('Arial', 9),tags='chrome')
+
+    def _frame_ready(self,key,ppm):
+        wanted=self._wanted_key
+        if wanted is None or key[0]!=self._scene_revision:return
+        if key!=wanted and wanted in self._frames:return
+        picture=tk.PhotoImage(master=self,data=ppm,format='PPM')
+        self._frames[key]=picture.zoom(key[7]) if key[7]>1 else picture
+        self._frames.move_to_end(key)
+        while len(self._frames)>4:self._frames.popitem(last=False)
+        if key[1:3]==wanted[1:3] and key[6]==wanted[6]:self._present(key)
+
+    def _present(self,key):
+        self.image=self._frames[key]
+        self._frames.move_to_end(key)
+        self.delete('model')
+        self.create_image(key[1]/2,key[2]/2,image=self.image,tags='model')
+        self.tag_lower('model')
+
+    def _frame_error(self,key,error):
+        if self._wanted_key is not None and key[0]==self._scene_revision:
+            self.create_text(self.winfo_width()/2,self.winfo_height()/2,
+                text=tr('messages.mesh_error',error=str(error)),fill='#bdc6d5',width=300,tags='chrome')
 
 

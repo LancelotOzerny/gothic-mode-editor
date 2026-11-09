@@ -155,6 +155,7 @@ class ScrollFormTests(unittest.TestCase):
                     entry.delete(0, 'end')
                     entry.insert(0, value)
                     entry.event_generate('<FocusOut>')
+                form.save()
                 deadline = monotonic() + 5
                 while app._model_future is not None and monotonic() < deadline:app.update()
                 self.assertEqual(app.viewer.faces, [(0,1,2)])

@@ -1,61 +1,123 @@
-"""Validate edited fields and persist changes without rebuilding the view."""
+"""In-memory form drafts and debounced persistence without rebuilding widgets."""
 import re
-from tkinter import messagebox
 
 from gothic_editor.core.localization import tr
 from gothic_editor.core.properties_schema import property_key
+from gothic_editor.core.property_lists import validate_expression
 
 
 class PropertyEditor:
+    AUTOSAVE_DELAY = 1000
+
     def __init__(self, form):
         self.form = form
         self._saving = False
+        self._after = None
+        self._traces = []
+        self.dirty = set()
+        self.draft = {}
+
+    def cancel(self):
+        if self._after is not None:
+            self.form.after_cancel(self._after)
+            self._after = None
+
+    def reset(self):
+        self.cancel()
+        for variable, trace in self._traces:
+            variable.trace_remove('write', trace)
+        self._traces.clear()
+        self.dirty.clear()
+        self.draft.clear()
+
+    def watch(self, key, variable):
+        trace = variable.trace_add('write', lambda *_:self.changed(key))
+        self._traces.append((variable, trace))
+
+    def changed(self, key):
+        form = self.form
+        if self._saving or not form.editable or key not in form.inputs:return
+        entry = form.inputs[key]
+        # A Tk variable trace can precede the native Entry's content update.
+        value = entry.get() if form.fields[key].field_type=='key_value_list' else entry.value_variable.get()
+        if form.fields[key].widget=='combobox':value=entry.get()
+        self.draft[key] = value
+        if value == form.initial[key]:self.dirty.discard(key)
+        else:self.dirty.add(key)
+        form.clear_field_error(key)
+        self.cancel()
+        form.set_save_status('properties.unsaved' if self.dirty else 'properties.saved')
+        if self.dirty:self._after = form.after(self.AUTOSAVE_DELAY, self._autosave)
+
+    def _autosave(self):
+        self._after = None
+        self.save(automatic=True)
 
     def save(self, keys=None, automatic=False):
         form = self.form
         if self._saving or not form.current or not form.editable:return True
+        self.cancel()
         self._saving = True
-        try:return self._save(keys,automatic)
+        try:return self._save(keys)
         finally:self._saving = False
 
-    def _save(self,keys,automatic):
-        form=self.form
-        values,metadata,instance={}, {}, None
-        for key,entry in form.inputs.items():
-            if keys is not None and key not in keys:continue
-            field=form.fields[key]
-            if field.field_type=='key_value_list':
-                if field.export:
-                    try:values.update(entry.updates())
-                    except ValueError as exc:
-                        messagebox.showerror(tr('app.error'),str(exc),parent=form.winfo_toplevel())
-                        return False
-                continue
-            value=entry.get() if field.source=='editor_metadata' or field.field_type in ('string','resource') else entry.get().strip()
-            if value==form.initial[key]:continue
-            if field.required and not value:
-                messagebox.showerror(tr('app.error'),tr('properties.required',name=field.label),parent=form.winfo_toplevel())
-                return False
-            if field.source=='instance_id':
-                instance=value if not field.prefix or value.casefold().startswith(field.prefix.casefold()) else field.prefix+value
-            elif field.source=='editor_metadata':metadata[key]=value
-            elif field.export:
-                if field.field_type in ('string','resource') and value and not re.fullmatch(r'"(?:\\.|[^"\\])*"',value):
-                    value='"'+value.replace('\\','\\\\').replace('"','\\"')+'"'
-                values[property_key(key)]=value
+    def _save(self, keys):
+        form = self.form
+        values, metadata, instance = {}, {}, None
+        instance_key = None
+        valid = True
+        selected = [key for key in form.inputs if keys is None or key in keys]
+        for key in selected:
+            entry, field = form.inputs[key], form.fields[key]
+            form.clear_field_error(key)
+            try:
+                if field.field_type=='key_value_list':
+                    if field.export:values.update(entry.updates())
+                    continue
+                value = entry.get()
+                if field.source!='editor_metadata' and field.field_type not in ('string','resource'):value=value.strip()
+                if value==form.initial[key]:continue
+                if field.required and not value:
+                    raise ValueError(tr('properties.required',name=field.label))
+                if field.field_type=='expression' and not validate_expression(value):
+                    raise ValueError(tr('properties.expression_required'))
+                if field.source=='instance_id':
+                    instance_key = key
+                    instance = value if not field.prefix or value.casefold().startswith(field.prefix.casefold()) else field.prefix+value
+                    if not re.fullmatch(r'[A-Za-z_]\w*',instance,re.ASCII):
+                        raise ValueError(tr('properties.invalid_instance'))
+                elif field.source=='editor_metadata':metadata[key]=value
+                elif field.export:
+                    if field.field_type in ('string','resource') and value and not re.fullmatch(r'"(?:\\.|[^"\\])*"',value):
+                        value='"'+value.replace('\\','\\\\').replace('"','\\"')+'"'
+                    values[property_key(key)]=value
+            except ValueError as exc:
+                form.show_field_error(key,str(exc))
+                valid = False
+        if not valid:
+            form.set_save_status('properties.invalid',error=True)
+            return False
         if values or metadata or instance is not None:
-            options={}
+            options = {'autosave':True}
             if instance is not None:options['instance']=instance
             if metadata:options['metadata']=metadata
-            if automatic:options['autosave']=True
-            result=form.on_save(form.current,values,**options)
-            if result is None:return False
-            if automatic:
-                form.current=result
-                form.info.config(text=result.instance)
-                for key,entry in form.inputs.items():
-                    if keys is not None and key not in keys:continue
-                    if form.fields[key].field_type=='key_value_list':entry.accept_saved(result.fields)
-                    form.initial[key]=entry.get()
+            form.set_save_status('properties.saving')
+            try:result=form.on_save(form.current,values,**options)
+            except (OSError,ValueError) as exc:
+                form.set_save_status('properties.save_error',error=True,detail=str(exc))
+                if instance_key is not None:form.show_field_error(instance_key,str(exc))
+                return False
+            if result is None:
+                form.set_save_status('properties.save_error',error=True,detail=tr('properties.save_rejected'))
+                return False
+            form.current=result
+            form.info.config(text=result.instance)
+        for key in selected:
+            entry=form.inputs[key]
+            if form.fields[key].field_type=='key_value_list':entry.accept_saved(form.current.fields)
+            form.initial[key]=entry.get()
+            self.draft.pop(key,None)
+            self.dirty.discard(key)
+        form.set_save_status('properties.unsaved' if self.dirty else 'properties.saved')
+        if self.dirty:self._after=form.after(self.AUTOSAVE_DELAY,self._autosave)
         return True
-

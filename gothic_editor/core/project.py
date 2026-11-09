@@ -182,6 +182,14 @@ class ProjectRepository:
 
     def exists(self,instance):return any(it.instance.casefold()==instance.casefold() for it in self.items)
 
+    def _replace_project_file(self, old_path, updated):
+        """Update the in-memory overlay after a write, without rescanning scripts or assets."""
+        self.project_items=[item for item in self.project_items if item.path!=old_path]+list(updated)
+        self.project_items.sort(key=lambda item:(item.title.casefold(),item.instance.casefold()))
+        merged={item.instance.casefold():item for item in self.game_items}
+        merged.update((item.instance.casefold(),item) for item in self.project_items)
+        self.items=sorted(merged.values(),key=lambda item:(item.title.casefold(),item.instance.casefold()))
+
     def new_id(self,original='GE_Item',prefix='GE_'):
         base=clean_id(original)
         if not base.casefold().startswith(prefix.casefold()):base=prefix+base
@@ -284,13 +292,18 @@ class ProjectRepository:
             self.refresh()
             item=next(x for x in self.project_items if x.instance.casefold()==item.instance.casefold())
         if self.components.owns(item.path):
-            self.components.edit(item,values,instance,metadata)
-            self.refresh()
-            return next(x for x in self.project_items if x.instance.casefold()==target.casefold())
+            updated=self.components.edit(item,values,instance,metadata)
+            self._replace_project_file(item.path,[updated])
+            old_model=ModelResolver.custom_model(item.path.parent)
+            old_name=ModelResolver.generated_name(item.instance).casefold()
+            if self.mesh_index.get(old_name)==old_model:self.mesh_index.pop(old_name)
+            model=ModelResolver.custom_model(updated.path.parent)
+            if model.is_file():self.mesh_index[ModelResolver.generated_name(updated.instance).casefold()]=model
+            return updated
         if item.origin=='game':item=self.copy_to_project(item)
         dest=self._destination_for(item)
         write_modified_item(item,dest,values,instance=instance)
-        self.refresh()
+        self._replace_project_file(item.path,parse_items(dest,'project'))
         return next(x for x in self.items if x.instance.casefold()==target.casefold())
 
     def delete(self,item:Item):

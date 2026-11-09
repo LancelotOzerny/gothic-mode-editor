@@ -21,13 +21,17 @@ class PropertiesTests(unittest.TestCase):
         self.root = Path(temporary.name)
         with patch('gothic_editor.app.SettingsStore', return_value=SettingsStore(self.root/'settings.json')):
             self.app = EditorApp()
-        self.addCleanup(self.app.destroy)
+        self.addCleanup(self.close_app)
         self.app.withdraw()
         self.repo = self.app.repo
         self.repo.create(self.root/'project', 'Test')
         self.item = self.repo.create_item('potions')
         self.app.show_project()
         self.app.select(self.item)
+
+    def close_app(self):
+        self.app.properties.show(None)
+        self.app.destroy()
 
     def change(self, key, value):
         entry = self.app.properties.inputs[key]
@@ -114,14 +118,12 @@ class PropertiesTests(unittest.TestCase):
         self.assertIn('INSTANCE ItPo_RenamedPotion', self.app.current.text)
         other = self.repo.create_item('potions')
         self.change('instance', other.instance)
-        with patch('gothic_editor.app.messagebox.showerror') as error:
-            self.app.properties.save()
-        error.assert_called_once()
+        self.assertFalse(self.app.properties.save())
+        self.assertIn('instance',self.app.properties.error_labels)
         self.assertEqual(len(self.repo.project_items), 2)
         self.change('instance', '')
-        with patch('gothic_editor.ui.controllers.property_editor.messagebox.showerror') as error:
-            self.app.properties.save()
-        error.assert_called_once()
+        self.assertFalse(self.app.properties.save())
+        self.assertIn('instance',self.app.properties.error_labels)
 
     def test_schema_extension_changes_form_without_python_field_list(self):
         data = load_property_data(Path('assets/properties/categories/potions.json'))
@@ -304,17 +306,15 @@ class PropertiesTests(unittest.TestCase):
         cells[1][1].insert(0, '2 минуты')
         self.change('name', 'Изменённое имя')
         before = self.item.path.read_bytes()
-        with patch('gothic_editor.ui.controllers.property_editor.messagebox.showerror') as error:
-            self.app.properties.save()
-        error.assert_called_once()
-        self.assertIn('count[0]', error.call_args.args[1])
+        self.assertFalse(self.app.properties.save())
+        self.assertIn('count[0]',self.app.properties.error_labels['inventory_rows'].cget('text'))
         self.assertEqual(self.item.path.read_bytes(), before)
         cells[1][1].delete(0, 'end')
         cells[1][1].insert(0, '2')
         self.app.properties.save()
         self.assertEqual(self.app.current.fields['count[0]'], '2')
 
-    def test_autosave_on_focus_out_preserves_widgets_and_other_drafts(self):
+    def test_autosave_batches_pending_fields_and_preserves_widgets(self):
         self.app.deiconify()
         self.app.update()
         form=self.app.properties
@@ -323,17 +323,19 @@ class PropertiesTests(unittest.TestCase):
         entry=form.inputs['value']
         with patch.object(self.repo,'edit',wraps=self.repo.edit) as edit:
             entry.event_generate('<FocusOut>')
+            self.app.properties.save(automatic=True)
             self.assertEqual(edit.call_count,1)
             self.assertEqual(self.app.current.fields['value'],'235')
-            self.assertEqual(self.app.current.fields['name'],'"Новое зелье"')
+            self.assertEqual(self.app.current.fields['name'],'"Незавершённое имя"')
             self.assertIs(form.inputs['value'],entry)
             self.assertEqual(form.inputs['name'].get(),'Незавершённое имя')
             entry.event_generate('<FocusOut>')
+            self.app.properties.save(automatic=True)
             self.assertEqual(edit.call_count,1)
         self.assertEqual(form.info.cget('text'),self.app.current.instance)
         self.assertFalse(hasattr(form,'save_btn'))
 
-    def test_combobox_and_enter_wait_for_focus_loss_before_saving(self):
+    def test_combobox_and_enter_wait_for_autosave_before_saving(self):
         self.app.deiconify()
         self.app.update()
         combo=self.app.properties.inputs['effect']
@@ -341,6 +343,7 @@ class PropertiesTests(unittest.TestCase):
         combo.event_generate('<<ComboboxSelected>>')
         self.assertNotIn('effect',self.app.current.fields)
         combo.event_generate('<FocusOut>')
+        self.app.properties.save(automatic=True)
         self.assertEqual(self.app.current.fields['effect'],'""')
         self.change('instance','AutosavedPotion')
         entry=self.app.properties.inputs['instance']
@@ -349,10 +352,12 @@ class PropertiesTests(unittest.TestCase):
         entry.event_generate('<Return>')
         self.assertEqual(self.app.current.instance,self.item.instance)
         entry.event_generate('<FocusOut>')
+        self.app.properties.save(automatic=True)
         self.assertEqual(self.app.current.instance,'ItPo_AutosavedPotion')
         self.assertTrue(self.app.current.path.is_file())
         self.change('name','После переименования')
         self.app.properties.inputs['name'].event_generate('<FocusOut>')
+        self.app.properties.save(automatic=True)
         self.assertEqual(self.repo.project_items[0].fields['name'],'"После переименования"')
 
     def test_inventory_autosave_preserves_constants_and_removes_assignments(self):
@@ -366,12 +371,15 @@ class PropertiesTests(unittest.TestCase):
         count.delete(0,'end')
         count.insert(0,'BASE + 2')
         count.event_generate('<FocusOut>')
+        self.app.properties.save(automatic=True)
         self.assertEqual(self.app.current.fields['text[0]'],'NAME_Bonus')
         self.assertEqual(self.app.current.fields['count[0]'],'BASE + 2')
         before=self.app.current.path.read_bytes()
         count.event_generate('<FocusOut>')
+        self.app.properties.save(automatic=True)
         self.assertEqual(self.app.current.path.read_bytes(),before)
         widget.remove_row(0)
+        self.app.properties.save(automatic=True)
         self.assertNotIn('text[0]',self.app.current.fields)
         self.assertNotIn('count[0]',self.app.current.fields)
         self.assertEqual(self.app.current.fields['text[5]'],'NAME_Value')
@@ -386,13 +394,13 @@ class PropertiesTests(unittest.TestCase):
         cells[0][1].insert(0,'Время')
         cells[1][1].insert(0,'2 минуты')
         before=self.app.current.path.read_bytes()
-        with patch('gothic_editor.ui.controllers.property_editor.messagebox.showerror') as error:
-            cells[1][1].event_generate('<FocusOut>')
-        error.assert_called_once()
+        self.assertFalse(self.app.properties.save(automatic=True))
+        self.assertIn('inventory_rows',self.app.properties.error_labels)
         self.assertEqual(self.app.current.path.read_bytes(),before)
         cells[1][1].delete(0,'end')
         cells[1][1].insert(0,'2')
         cells[1][1].event_generate('<FocusOut>')
+        self.app.properties.save(automatic=True)
         self.assertEqual(self.app.current.fields['count[0]'],'2')
 
     def test_switching_items_flushes_drafts_and_rejects_invalid_required_value(self):
@@ -403,9 +411,8 @@ class PropertiesTests(unittest.TestCase):
         self.assertEqual(stored.fields['value'],'321')
         self.assertEqual(self.app.current.instance,other.instance)
         self.change('instance','')
-        with patch('gothic_editor.ui.controllers.property_editor.messagebox.showerror') as error:
-            self.app.select(stored)
-        error.assert_called_once()
+        self.app.select(stored)
+        self.assertIn('instance',self.app.properties.error_labels)
         self.assertEqual(self.app.current.instance,other.instance)
 
     def test_build_flushes_focused_field_before_starting_tools(self):
@@ -444,6 +451,7 @@ class PropertiesTests(unittest.TestCase):
         self.assertIsNone(combo.selection_window)
         self.assertEqual(self.app.current.fields['flags'],'ITEM_MULTI')
         combo.event_generate('<FocusOut>')
+        self.app.properties.save(automatic=True)
         self.assertEqual(self.app.current.fields['flags'],'ITEM_MISSION')
         combo.open_choices()
         self.app.update()
@@ -481,6 +489,7 @@ class PropertiesTests(unittest.TestCase):
         self.assertGreater(combo.selection_window.option_buttons[-1].master.master.yview()[0],0)
         combo.selection_window.apply(19)
         combo.event_generate('<FocusOut>')
+        self.app.properties.save(automatic=True)
         self.assertEqual(self.app.current.fields['effect'],'"FX_19"')
         combo.config(state='disabled')
         combo.open_choices()
@@ -500,6 +509,7 @@ class PropertiesTests(unittest.TestCase):
         self.app.update()
         self.assertEqual(len(entry.get()),len(before)+1)
         entry.event_generate('<FocusOut>')
+        self.app.properties.save(automatic=True)
         self.assertIn(entry.get(),self.app.current.fields['name'])
 
     def test_dropdown_opens_from_text_padding_and_arrow(self):

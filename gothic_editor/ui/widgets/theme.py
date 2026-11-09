@@ -7,6 +7,7 @@ def label(parent,text='',**kw):
     return tk.Label(parent,text=text,bg=kw.pop('bg',PANEL),fg=kw.pop('fg',TXT),**kw)
 
 FIELD_HEIGHT = 40
+ERROR = '#ef9a9a'
 FIELD_FONT = 'TkDefaultFont'
 OPTION_BG = '#293444'
 HOVER_BG = '#354257'

@@ -5,7 +5,7 @@ from gothic_editor.core.categories import classify, EDITABLE_CATEGORIES
 from gothic_editor.core.localization import tr
 from gothic_editor.core.properties_schema import PropertyField, property_key, schema_for
 from gothic_editor.ui.widgets import PANEL, MUTED, BORDER, label
-from gothic_editor.ui.widgets.choice_field import ExpressionChoiceField
+from gothic_editor.ui.widgets.theme import ERROR
 from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
 from gothic_editor.ui.widgets.form import create_field
 from gothic_editor.ui.widgets.key_value_list import KeyValueList
@@ -23,11 +23,14 @@ class PropertiesPanel(Panel):
         self.fields={};self.initial={};self.editable=False
         self.collapsed={}
         self.sections={}
-        self._generation=0
+        self.error_labels={}
         self.editor=PropertyEditor(self)
+        self.bind('<Destroy>',lambda event:self.editor.reset() if event.widget is self else None,add='+')
         label(self,tr('properties.title'),font=('Arial',10,'bold')).pack(fill='x',padx=14,pady=(14,0))
         self.info=label(self,tr('properties.select_item'),fg=MUTED,anchor='center',wraplength=280,justify='center')
         self.info.pack(fill='x',padx=14,pady=(4,0))
+        self.save_status=label(self,'',fg=MUTED,wraplength=280,justify='left')
+        self.save_status.pack(fill='x',padx=14,pady=(2,0))
         separator=tk.Frame(self,bg=PANEL,height=1)
         separator.pack(fill='x',pady=(10,20))
         tk.Frame(separator,bg=BORDER).place(relx=.05,relwidth=.9,relheight=1)
@@ -37,7 +40,9 @@ class PropertiesPanel(Panel):
         self.show(None)
 
     def show(self,item):
-        self._generation+=1
+        self.editor.reset()
+        self.error_labels={}
+        self.save_status.config(text='')
         self.current=item
         for child in self.inner.winfo_children():child.destroy()
         self.inputs={}
@@ -47,11 +52,13 @@ class PropertiesPanel(Panel):
             self.info.config(text=tr('properties.select_in_hierarchy'))
             return
         self.editable=classify(item) in EDITABLE_CATEGORIES and item.origin=='project'
+        if self.editable:self.set_save_status('properties.saved')
         self.info.config(text=item.instance)
         try:
             schema=schema_for(classify(item))
         except (OSError,ValueError,KeyError,TypeError) as exc:
             self.editable=False
+            self.save_status.config(text='')
             self.info.config(text=tr('properties.schema_error',error=str(exc)))
             return
         if schema is None:
@@ -86,12 +93,11 @@ class PropertiesPanel(Panel):
         self.canvas.yview_moveto(0)
 
     def render_field(self,parent,field,value):
-        generation=self._generation
-        commit=lambda *_:self.commit_field(field.key,generation)
         if field.field_type=='key_value_list':
             if field.tooltip:
                 FieldLabel(parent,field.label,field.tooltip).pack(fill='x',padx=8,pady=(6,2))
-            entry=KeyValueList(parent,field,value,self.editable,on_commit=commit)
+            entry=KeyValueList(parent,field,value,self.editable,
+                               on_change=lambda:self.editor.changed(field.key))
             entry.pack(fill='x',padx=8)
             self.inputs[field.key]=entry
             self.fields[field.key]=field
@@ -115,17 +121,26 @@ class PropertiesPanel(Panel):
             entry=create_field(parent,variable=variable,readonly=not self.editable)
         entry.pack(fill='x',padx=8,ipady=5)
         entry.value_variable=variable
-        entry.bind('<FocusOut>',commit,add='+')
         add_placeholder(entry,variable,field.placeholder)
         self.inputs[field.key]=entry
         self.fields[field.key]=field
         self.initial[field.key]=value
+        self.editor.watch(field.key,variable)
 
-    def commit_field(self,key,generation):
-        if generation!=self._generation:return
-        entry=self.inputs.get(key)
-        if isinstance(entry,ExpressionChoiceField) and entry.selection_window is not None:return
-        self.save(keys=(key,),automatic=True)
+    def set_save_status(self,key,error=False,**values):
+        self.save_status.config(text=tr(key,**values),fg=ERROR if error else MUTED)
+
+    def clear_field_error(self,key):
+        if key in self.error_labels:self.error_labels[key].pack_forget()
+
+    def show_field_error(self,key,message):
+        entry=self.inputs[key]
+        surface=getattr(entry,'surface',entry)
+        if key not in self.error_labels:
+            self.error_labels[key]=label(surface.master,'',fg=ERROR,wraplength=270,justify='left')
+        error=self.error_labels[key]
+        error.config(text=message)
+        error.pack(after=surface,fill='x',padx=8,pady=(3,5))
 
     def save(self,keys=None,automatic=False):
         return self.editor.save(keys,automatic)

@@ -7,11 +7,12 @@ from .field_label import FieldLabel
 
 class KeyValueList(tk.Frame):
     """Two schema-defined columns with stable array indices and responsive layout."""
-    def __init__(self, parent, field, fields, editable=True, on_commit=lambda:None):
+    def __init__(self, parent, field, fields, editable=True, on_commit=lambda:None, on_change=lambda:None):
         super().__init__(parent, bg=PANEL)
         self.model = PropertyList(field, fields)
         self.editable = editable
         self.on_commit = on_commit
+        self.on_change = on_change
         self.rows = []
         self.column_header=tk.Frame(self,bg=PANEL)
         self.column_header.pack(fill='x')
@@ -41,7 +42,7 @@ class KeyValueList(tk.Frame):
     def get(self):
         result = []
         for index, _, cells in self.rows:
-            values = tuple(original if entry.get() == initial else expression_value(entry.get(), column.field_type)
+            values = tuple(original if entry.value_variable.get() == initial else expression_value(entry.value_variable.get(), column.field_type)
                            for column, entry, initial, original in cells)
             result.append((index, values))
         return result
@@ -59,6 +60,7 @@ class KeyValueList(tk.Frame):
         if self.editable and index is not None:
             self._append(index, ('', '') )
             self._update_button()
+            self.on_change()
 
     def _append(self, index, values):
         frame = tk.Frame(self, bg=PANEL)
@@ -66,10 +68,13 @@ class KeyValueList(tk.Frame):
         cells, holders = [], []
         for column, value in zip(self.model.field.columns, values):
             holder = tk.Frame(frame, bg=PANEL)
-            entry = PropertyEntry(holder, width=1)
+            variable=tk.StringVar(self)
+            entry = PropertyEntry(holder, width=1,textvariable=variable)
             initial = display_value(value, column.field_type)
             entry.insert(0, initial)
-            entry.bind('<FocusOut>',lambda _:self.on_commit(),add='+')
+            entry.value_variable=variable
+            trace=variable.trace_add('write',lambda *_:self.on_change())
+            entry.bind('<Destroy>',lambda event,v=variable,t=trace:v.trace_remove('write',t),add='+')
             if not self.editable:entry.config(state='readonly')
             entry.pack(fill='x')
             holders.append(holder)
@@ -97,6 +102,7 @@ class KeyValueList(tk.Frame):
                 self.rows.remove(row)
                 row[1].destroy()
         self._update_button()
+        self.on_change()
         self.on_commit()
 
     def _update_button(self):

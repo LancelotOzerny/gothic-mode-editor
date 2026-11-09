@@ -47,19 +47,18 @@ class PotionComponents:
         return data
 
     def list_items(self):
-        result=[]
-        for file in self.files():
-            data=self._read(file)
-            block=self.render_instance(data,file.parent)
-            masked=mask_comments(block)
-            match=INST.search(masked)
-            if match is None:raise ValueError('Не удалось распознать '+str(file))
-            end=block_end(masked,match.end()-1)
-            if end<0:raise ValueError('Незавершённый INSTANCE: '+str(file))
-            fields={re.sub(r'\s+','',m.group(1)).lower():m.group(2).strip() for m in FIELD.finditer(masked[match.end():end-1])}
-            result.append(Item(data['instance'],file,'project',block,fields,0,len(block),'utf-8',
-                               data.get('editor_metadata',{})))
-        return result
+        return [self.read_item(file) for file in self.files()]
+
+    def read_item(self, file):
+        data=self._read(file)
+        block=self.render_instance(data,file.parent)
+        masked=mask_comments(block)
+        match=INST.search(masked)
+        if match is None:raise ValueError('Не удалось распознать '+str(file))
+        end=block_end(masked,match.end()-1)
+        if end<0:raise ValueError('Незавершённый INSTANCE: '+str(file))
+        fields={re.sub(r'\s+','',m.group(1)).lower():m.group(2).strip() for m in FIELD.finditer(masked[match.end():end-1])}
+        return Item(data['instance'],file,'project',block,fields,0,len(block),'utf-8',data.get('editor_metadata',{}))
 
     def import_item(self, item:Item, instance=None, as_override=False):
         target=self._safe_id(instance or item.instance)
@@ -159,6 +158,7 @@ class PotionComponents:
         except Exception:
             if moved:destination.rename(item.path.parent)
             raise
+        return self.read_item(destination/'item.json')
 
     def delete(self,item):
         import shutil

@@ -131,11 +131,12 @@ class HierarchySection(Panel):
         badge.pack(side='left', padx=(0, 6))
         title = label(row, item.title, bg=color, anchor='w', font=('Arial', 10))
         title.pack(side='left', fill='x', expand=True)
+        row.item,row.title_label=item,title
         self.item_rows[self.owner.item_key(item)] = row
         for widget in (row, badge, title):
-            widget.bind('<Button-1>', lambda _, current=item: self.owner.select(current))
-            widget.bind('<Double-Button-1>', lambda _, current=item, r=row, t=title: self.owner.rename(current, r, t))
-            widget.bind('<Button-3>', lambda event, current=item: self.owner.context(event, current))
+            widget.bind('<Button-1>', lambda _, r=row: self.owner.select(r.item))
+            widget.bind('<Double-Button-1>', lambda _, r=row, t=title: self.owner.rename(r.item, r, t))
+            widget.bind('<Button-3>', lambda event, r=row: self.owner.context(event, r.item))
 
     def highlight(self):
         for key, row in self.item_rows.items():
@@ -190,6 +191,26 @@ class HierarchyPanel(Panel):
         for origin, section in self.sections.items():
             section.items = list(items)
         self.rebuild()
+
+    def update_item(self, previous, updated, items):
+        query=self.search.get().strip().casefold()
+        matches=lambda item:not query or query in item.instance.casefold() or query in item.title.casefold()
+        structural=(self.item_key(previous)!=self.item_key(updated) or classify(previous)!=classify(updated)
+                    or matches(previous)!=matches(updated))
+        self.items=items
+        for section in self.sections.values():
+            section.items=list(items)
+            if structural:
+                section.rebuild()
+                continue
+            row=section.item_rows.get(self.item_key(previous))
+            if row is not None:
+                row.item=updated
+                if previous.title!=updated.title:row.title_label.config(text=updated.title)
+            category=classify(updated)
+            if category in section.grouped:
+                section.grouped[category]=[updated if self.item_key(item)==self.item_key(previous) else item
+                                           for item in section.grouped[category]]
 
     def collapse_all(self):
         self.expanded.clear()

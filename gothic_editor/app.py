@@ -80,8 +80,15 @@ class EditorApp(tk.Tk):
         self.show_welcome()
         self.bind('<Control-o>',lambda e:self.open_project())
         self.bind('<Control-s>',lambda e:self.properties.save())
+        self.bind('<Control-KeyPress>',self._save_shortcut,add='+')
         self.bind('<Alt-F4>',lambda e:self.destroy())
         self.deiconify()
+
+    def _save_shortcut(self,event):
+        if (event.keysym.lower() in ('s','cyrillic_yeru') or
+                (event.keycode==83 and self.tk.call('tk','windowingsystem')=='win32')):
+            self.properties.save()
+            return 'break'
 
     def _build_menu(self):
         previous=getattr(self,'main_menu',None)
@@ -245,6 +252,7 @@ class EditorApp(tk.Tk):
         return True
 
     def create_project(self,beside_recent=False):
+        if not self.properties.save(automatic=True):return
         parent=self.recent_projects.parent_directory()
         dialog=NewProjectDialog(self,parent)
         self.wait_window(dialog)
@@ -264,6 +272,7 @@ class EditorApp(tk.Tk):
         self.open_project_path(Path(base))
 
     def open_project_path(self,path):
+        if not self.properties.save(automatic=True):return
         try:
             self.repo.open(Path(path),confirm_migration=lambda count:messagebox.askyesno(
                 tr('item_assets.migration_title'),tr('item_assets.migration_confirm',count=count),parent=self))
@@ -463,19 +472,28 @@ class EditorApp(tk.Tk):
                             if hasattr(entry,'set_expression'):entry.set_expression(value)
                             else:
                                 entry.delete(0,'end');entry.insert(0,value)
+                            self.properties.editor.changed(key)
                     self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom=camera
                     self.viewer.draw()
         elif showing_welcome:self.show_welcome()
 
     def refresh(self):
         if not self.need_project():return
+        if not self.properties.save(automatic=True):return
         self._cancel_model_load()
         try:
             self.repo.refresh();self.update_hierarchy()
-            if self.current is not None:self.select(self.current)
+            if self.current is not None:
+                updated=next((item for item in self.repo.items if item.instance.casefold()==self.current.instance.casefold()),None)
+                if updated is not None:self.select(updated)
+                else:
+                    self.current=None
+                    self.properties.show(None)
+                    self.resources.set_item(self.repo.root,None)
+                    self.viewer.set_mesh(caption=tr('app.select_item'))
         except Exception as exc:messagebox.showerror(tr('app.refresh_error'),str(exc))
 
-    def update_hierarchy(self):
+    def update_hierarchy(self,previous=None,updated=None):
         project_only=self.settings.get_value('project.hierarchy.display_mode')=='project_only'
         if project_only and self.current is not None and self.current.origin=='game':
             self.current=None
@@ -484,7 +502,9 @@ class EditorApp(tk.Tk):
             self.resources.set_item(self.repo.root,None)
             self._cancel_model_load()
             self.viewer.set_mesh(caption=tr('app.select_item'))
-        self.hierarchy.set_items(self.repo.project_items if project_only else self.repo.items)
+        items=self.repo.project_items if project_only else self.repo.items
+        if previous is not None and updated is not None:self.hierarchy.update_item(previous,updated,items)
+        else:self.hierarchy.set_items(items)
         project_count=sum(x.origin=='project' for x in self.repo.items)
         self.status.set(tr('messages.stats',total=len(self.repo.items),project=project_count,models=len(self.repo.mesh_index),archived=len(self.repo.archive_models.entries),errors=len(self.repo.errors)))
 
@@ -503,6 +523,7 @@ class EditorApp(tk.Tk):
         self.status.set(tr('model_export.converted' if converted else 'model_export.saved',path=destination))
 
     def select(self,item,camera=None):
+        if item is self.current and self.properties.current is item and camera is None:return
         previous=self.properties.current
         if previous is not None and item is not None and previous.path!=item.path:
             if not self.properties.save(automatic=True):
@@ -564,6 +585,7 @@ class EditorApp(tk.Tk):
         if self._tool_runner.running:
             self.show_terminal()
             return
+        if hasattr(self,'properties') and not self.properties.save(automatic=True):return
         self._tool_runner.close()
         if self._welcome_map_after is not None:
             self.after_cancel(self._welcome_map_after)
@@ -618,18 +640,15 @@ class EditorApp(tk.Tk):
     def save_fields(self,item,values,autosave=False,**options):
         if classify(item) not in EDITABLE_CATEGORIES:return
         if not autosave:return self._action(self.repo.edit,item,values,**options)
-        try:
-            result=self.repo.edit(item,values,**options)
-            self.current=result
-            self.hierarchy.selected=self.hierarchy.item_key(result)
-            self.update_hierarchy()
-            if result.path!=item.path:self.resources.set_item(self.repo.root,result)
-            else:self.resources.item=result
-            if result.visual!=item.visual:
-                self._show_model(result,(self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom))
-            return result
-        except (OSError,ValueError) as exc:
-            messagebox.showerror(tr('app.error'),str(exc),parent=self)
+        result=self.repo.edit(item,values,**options)
+        self.current=result
+        self.hierarchy.selected=self.hierarchy.item_key(result)
+        self.update_hierarchy(previous=item,updated=result)
+        if result.path!=item.path:self.resources.set_item(self.repo.root,result)
+        else:self.resources.item=result
+        if result.visual!=item.visual:
+            self._show_model(result,(self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom))
+        return result
 
 
 def main():EditorApp().mainloop()
