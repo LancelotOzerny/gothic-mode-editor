@@ -10,6 +10,13 @@ def property_key(key):
     return re.sub(r'\s+', '', key).casefold()
 
 
+def _tooltip(raw, path, key):
+    value=raw.get('tooltip')
+    if value is None:return ''
+    if not isinstance(value,str):raise ValueError(f'{path}: tooltip must be a string: {key}')
+    return value
+
+
 @dataclass(frozen=True)
 class PropertyField:
     key: str
@@ -29,6 +36,7 @@ class PropertyField:
     columns: tuple['PropertyField', ...] = ()
     reserved: tuple[tuple[str, str], ...] = ()
     options_source: str = ''
+    tooltip: str = ''
 
 
 @dataclass(frozen=True)
@@ -106,8 +114,9 @@ class PropertiesSchema:
                                             raw.get('export', True),raw['type'],raw.get('widget','input'),
                                             tuple((option['name'],option['value']) for option in option_lists.get(reference,[])),
                                             default, raw.get('prefix', ''), maximum, start,
-                                            tuple(PropertyField(c['variable'], c['label'], field_type=c['type']) for c in columns),
-                                            tuple(reserved.items()), raw.get('options_source', '')))
+                                            tuple(PropertyField(c['variable'], c['label'], field_type=c['type'],
+                                                                tooltip=_tooltip(c,path,c['variable'])) for c in columns),
+                                            tuple(reserved.items()), raw.get('options_source', ''), _tooltip(raw,path,key)))
             sections.append(PropertySection(section_key, section['title'], tuple(fields),
                                             section.get('description', '')))
         unknown = data.get('unknown_properties', {}).get('show_in_section')

@@ -1,9 +1,11 @@
 """UI reorganization checks using synthetic data, never the working property JSON."""
 import importlib
+import json
 from pathlib import Path
 import pkgutil
 from types import SimpleNamespace
 import tkinter as tk
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -11,9 +13,23 @@ from gothic_editor.core.properties_schema import PropertiesSchema, PropertyField
 from gothic_editor.ui.panels.properties import PropertiesPanel
 from gothic_editor.ui.widgets.choice_field import ExpressionChoiceField
 from gothic_editor.ui.widgets.icons import IconImages
+from gothic_editor.ui.widgets.field_label import FieldLabel
 
 
 class StructureTests(unittest.TestCase):
+    def test_explicit_tooltip_is_loaded_and_validated_from_temporary_schema(self):
+        data={'schema_version':3,'sections':[{'id':'main','title':'Main','fields':[
+            {'key':'caption','label':'Caption','type':'string','tooltip':'Field help'},
+        ]}]}
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'form.json'
+            path.write_text(json.dumps(data),encoding='utf-8')
+            schema=PropertiesSchema.load(path)
+            self.assertEqual(schema.sections[0].fields[0].tooltip,'Field help')
+            data['sections'][0]['fields'][0]['tooltip']=123
+            path.write_text(json.dumps(data),encoding='utf-8')
+            with self.assertRaisesRegex(ValueError,'tooltip'):PropertiesSchema.load(path)
+
     def test_all_ui_modules_import_and_icons_keep_the_asset_directory(self):
         import gothic_editor.ui
         for module in pkgutil.walk_packages(gothic_editor.ui.__path__,gothic_editor.ui.__name__+'.'):
@@ -35,6 +51,26 @@ class GenericFormTests(unittest.TestCase):
         self.addCleanup(self.root.destroy)
         self.root.geometry('800x600')
         self.root.update()
+
+    def test_help_is_shown_only_when_the_question_mark_is_hovered(self):
+        form=PropertiesPanel(self.root,lambda *_:None)
+        form.pack(fill='both',expand=True)
+        field=PropertyField('caption','Caption',tooltip='Explicit help')
+        form.render_field(form.inner,field,'')
+        self.root.update()
+        caption=next(child for child in form.inner.winfo_children() if isinstance(child,FieldLabel))
+        caption.label.event_generate('<Enter>')
+        form.inputs['caption'].event_generate('<Enter>')
+        self.assertIsNone(caption.tooltip.pending)
+        self.assertIsNone(caption.tooltip.window)
+        caption.help_icon.event_generate('<Enter>')
+        self.root.after(500,self.root.quit)
+        self.root.mainloop()
+        self.assertIsNotNone(caption.tooltip.window)
+        caption.help_icon.event_generate('<Leave>')
+        self.assertIsNone(caption.tooltip.window)
+        plain=FieldLabel(self.root,'No help')
+        self.assertIsNone(plain.help_icon)
 
     def test_fixed_scheme_source_replaces_extra_schema_options(self):
         from gothic_editor.core.item_options import item_options

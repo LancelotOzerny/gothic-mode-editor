@@ -3,6 +3,7 @@ from gothic_editor.core.property_lists import PropertyList, display_value, expre
 from .theme import PANEL, MUTED
 from .inputs import PropertyEntry
 from .buttons import PropertyButton
+from .field_label import FieldLabel
 
 class KeyValueList(tk.Frame):
     """Two schema-defined columns with stable array indices and responsive layout."""
@@ -17,7 +18,7 @@ class KeyValueList(tk.Frame):
         self.column_header.columnconfigure(0,weight=3,uniform='fields')
         self.column_header.columnconfigure(1,weight=1,uniform='fields')
         self.column_header.columnconfigure(2,minsize=44)
-        self.column_labels=[tk.Label(self.column_header,text=column.label,bg=PANEL,fg=MUTED,anchor='w')
+        self.column_labels=[FieldLabel(self.column_header,column.label,column.tooltip,font='TkDefaultFont')
                             for column in field.columns]
         self.column_header.bind('<Configure>',self.layout_header)
         footer=tk.Frame(self,bg=PANEL)
@@ -29,8 +30,10 @@ class KeyValueList(tk.Frame):
 
     def layout_header(self,event):
         narrow=event.width<300
-        self.column_labels[0].configure(text=' / '.join(c.label for c in self.model.field.columns)
-                                       if narrow else self.model.field.columns[0].label)
+        self.column_labels[0].set_text(' / '.join(c.label for c in self.model.field.columns)
+                                      if narrow else self.model.field.columns[0].label)
+        self.column_labels[0].set_tooltip('\n'.join(f'{c.label}: {c.tooltip}' for c in self.model.field.columns if c.tooltip)
+                                         if narrow else self.model.field.columns[0].tooltip)
         self.column_labels[0].grid(row=0,column=0,columnspan=2 if narrow else 1,sticky='ew',padx=(0,4))
         if narrow:self.column_labels[1].grid_remove()
         else:self.column_labels[1].grid(row=0,column=1,sticky='ew')

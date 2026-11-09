@@ -97,6 +97,7 @@
           "type": "string",
           "widget": "input",
           "source": "property",
+          "tooltip": "Если не указано, то\nвозьмет значение названия при подборе",
           "default": "name",
           "placeholder": "Новое зелье"
         }

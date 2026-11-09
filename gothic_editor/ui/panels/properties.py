@@ -10,6 +10,7 @@ from gothic_editor.ui.widgets.sections import PropertySectionFrame
 from gothic_editor.ui.widgets.key_value_list import KeyValueList
 from gothic_editor.ui.widgets.placeholders import add_placeholder
 from gothic_editor.ui.widgets.inputs import PropertyEntry
+from gothic_editor.ui.widgets.field_label import FieldLabel
 
 from gothic_editor.ui.controllers.property_editor import PropertyEditor
 
@@ -96,6 +97,8 @@ class PropertiesPanel(tk.Frame):
         generation=self._generation
         commit=lambda *_:self.commit_field(field.key,generation)
         if field.field_type=='key_value_list':
+            if field.tooltip:
+                FieldLabel(parent,field.label,field.tooltip).pack(fill='x',padx=8,pady=(6,2))
             entry=KeyValueList(parent,field,value,self.editable,on_commit=commit)
             entry.pack(fill='x',padx=8)
             self.inputs[field.key]=entry
@@ -104,7 +107,7 @@ class PropertiesPanel(tk.Frame):
             return
         if field.field_type=='string' and re.fullmatch(r'"(?:\\.|[^"\\])*"',value):
             value=re.sub(r'\\([\\"])',r'\1',value[1:-1])
-        label(parent,field.label,fg=MUTED,anchor='w',font=('Arial',9)).pack(fill='x',padx=8,pady=(6,2))
+        FieldLabel(parent,field.label,field.tooltip).pack(fill='x',padx=8,pady=(6,2))
         variable=tk.StringVar(self)
         if field.widget=='combobox':
             options=list(field.options)

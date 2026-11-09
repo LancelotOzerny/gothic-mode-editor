@@ -9,12 +9,11 @@ from .ui.widgets import BG,PANEL,TXT,MUTED,label,Tooltip
 from gothic_editor.ui.panels.hierarchy import HierarchyPanel
 from gothic_editor.ui.panels.properties import PropertiesPanel
 from gothic_editor.ui.panels.viewer import ModelViewer
-from .core.mesh import read_3ds, MeshFormatError
 from .core.localization import localization,tr
 from .core.settings import EditorSettings,SettingsStore,field_key
 from .core.settings_schema import all_fields
 from gothic_editor.ui.windows.settings import SettingsWindow
-from .core.archive_models import load_archive_model
+from .core.model_preview import load_model_preview
 from .core.model_export import export_model_3ds
 from .core.project_tools import ProjectTools
 from gothic_editor.ui.panels.terminal import TerminalPanel
@@ -522,19 +521,14 @@ class EditorApp(tk.Tk):
             if entry is None:
                 self.viewer.set_mesh(caption=tr('messages.no_mesh',visual=visual or tr('viewer.no_visual')))
                 return
-            self.viewer.set_mesh(caption=tr('viewer.loading',name=entry.name))
-            future=self._model_executor.submit(load_archive_model,entry)
-            self._model_future=future
-            self._model_poll=self.after(20,lambda:self._finish_archive_model(future,entry,camera))
-            return
-        try:
-            verts,faces=read_3ds(mesh)
-            self.viewer.set_mesh(verts,faces,caption=mesh.name)
-            if camera is not None:
-                self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom=camera
-                self.viewer.draw()
-        except (OSError,MeshFormatError,ValueError) as exc:
-            self.viewer.set_mesh(caption=tr('messages.mesh_error',error=str(exc)))
+        else:
+            entry=mesh
+        self.viewer.set_mesh(caption=tr('viewer.loading',name=entry.name))
+        future=self._model_executor.submit(load_model_preview,entry,self.repo.root,self.repo.game,
+            item.path.parent/'assets' if item.origin=='project' else None,
+            dict(self.repo.archive_models.texture_entries))
+        self._model_future=future
+        self._model_poll=self.after(20,lambda:self._finish_archive_model(future,entry,camera))
 
     def _finish_archive_model(self,future,entry,camera=None):
         if future is not self._model_future:return
@@ -544,8 +538,9 @@ class EditorApp(tk.Tk):
             return
         self._model_future=None
         try:
-            verts,faces=future.result()
-            self.viewer.set_mesh(verts,faces,caption=f'{entry.archive.name} / {entry.name}')
+            preview=future.result()
+            caption=entry.name if isinstance(entry,Path) else f'{entry.archive.name} / {entry.name}'
+            self.viewer.set_preview(preview,caption=caption)
             if camera is not None:
                 self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom=camera
                 self.viewer.draw()

@@ -230,6 +230,7 @@ class ModelViewerIntegrationTests(unittest.TestCase):
         source.write_bytes(source_3ds_bytes())
         self.app.repo.refresh()
         self.app.select(self.item)
+        self.finish_load()
         self.assertEqual(self.app.viewer.faces, [(0, 1, 2)])
         self.assertEqual(self.app.viewer.caption, 'POTION.3DS')
         source.unlink()  # File deleted since the last resource scan also falls back.
