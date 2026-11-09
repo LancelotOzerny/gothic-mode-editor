@@ -38,6 +38,8 @@ class EditorApp(tk.Tk):
         self.settings=self.settings_store.load()
         self.recent_projects=RecentProjects(self.settings_store.path.with_name('recent_projects.json'))
         self.welcome=None
+        self._welcome_map_after=None
+        self.bind('<Map>',self._welcome_mapped,add='+')
         localization.set_language(self.settings.get_value('interface.general.language'))
         self.settings_window=None
         self._dock_resize_after=None
@@ -76,6 +78,7 @@ class EditorApp(tk.Tk):
         self.show_welcome()
         self.bind('<Control-o>',lambda e:self.open_project())
         self.bind('<Control-s>',lambda e:self.properties.save())
+        self.bind('<Alt-F4>',lambda e:self.destroy())
         self.deiconify()
 
     def _build_menu(self):
@@ -200,6 +203,20 @@ class EditorApp(tk.Tk):
                                    self.open_project,self.open_project_path,self._update_recent_menu)
         self.welcome.pack(fill='both',expand=True)
 
+    def _welcome_mapped(self,event):
+        if event.widget is self and self.welcome is not None:
+            if self._welcome_map_after is not None:self.after_cancel(self._welcome_map_after)
+            self._welcome_map_after=self.after_idle(self._activate_welcome)
+
+    def _activate_welcome(self):
+        self._welcome_map_after=None
+        if self.welcome is None or not self.winfo_viewable():return
+        from .ui.window_helpers import show_in_taskbar
+        try:show_in_taskbar(self)
+        except OSError as exc:self.terminal.append(str(exc))
+        self.lift()
+        self.focus_force()
+
     def _show_editor(self):
         was_welcome=self.welcome is not None
         if self.welcome is not None and self.welcome.winfo_exists():self.welcome.destroy()
@@ -276,6 +293,7 @@ class EditorApp(tk.Tk):
         if self.repo.root is None:
             self.terminal.append(tr('app.need_project'))
             return
+        if not self.properties.save(automatic=True):return
         try:
             tools=ProjectTools(self.repo.root,self.repo.game,self.repo.compiler_path)
         except (OSError,ValueError) as exc:
@@ -483,6 +501,11 @@ class EditorApp(tk.Tk):
         self.status.set(tr('model_export.converted' if converted else 'model_export.saved',path=destination))
 
     def select(self,item,camera=None):
+        previous=self.properties.current
+        if previous is not None and item is not None and previous.path!=item.path:
+            if not self.properties.save(automatic=True):
+                self.hierarchy.choose(previous)
+                return
         self._cancel_model_load()
         self.current=item
         self.properties.show(item)
@@ -540,6 +563,9 @@ class EditorApp(tk.Tk):
             self.show_terminal()
             return
         self._tool_runner.close()
+        if self._welcome_map_after is not None:
+            self.after_cancel(self._welcome_map_after)
+            self._welcome_map_after=None
         self._cancel_dock_resize()
         if hasattr(self,'_model_executor'):
             self._cancel_model_load()
@@ -583,9 +609,19 @@ class EditorApp(tk.Tk):
         escaped=new_name.replace('\\','\\\\').replace('"','\\"')
         self.save_fields(item,{'name':'"'+escaped+'"'})
 
-    def save_fields(self,item,values,**options):
+    def save_fields(self,item,values,autosave=False,**options):
         if classify(item)!='potions':return
-        self._action(self.repo.edit,item,values,**options)
+        if not autosave:return self._action(self.repo.edit,item,values,**options)
+        try:
+            result=self.repo.edit(item,values,**options)
+            self.current=result
+            self.hierarchy.selected=self.hierarchy.item_key(result)
+            self.update_hierarchy()
+            if result.path!=item.path:self.resources.set_item(self.repo.root,result)
+            else:self.resources.item=result
+            return result
+        except (OSError,ValueError) as exc:
+            messagebox.showerror(tr('app.error'),str(exc),parent=self)
 
 
 def main():EditorApp().mainloop()

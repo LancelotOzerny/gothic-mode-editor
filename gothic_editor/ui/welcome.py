@@ -61,7 +61,7 @@ class WelcomeScreen(tk.Frame):
         content = tk.Frame(self, bg=BG)
         content.pack(fill='both', expand=True, padx=20, pady=12)
         self.title_bar = tk.Frame(content,bg=BG)
-        self.title_bar.pack(fill='x',pady=(0,10))
+        self.title_bar.pack(fill='x',pady=(0,25))
         title_label=label(self.title_bar, 'Gothic Editor', bg=BG, font=('Arial',20,'bold'))
         title_label.pack(side='left')
         self._drag_origin=None

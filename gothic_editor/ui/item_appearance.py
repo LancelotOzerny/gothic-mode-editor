@@ -7,6 +7,8 @@ from ..core.item_assets import ItemAssetManager
 from ..core.model_resolver import ModelResolver
 from ..core.localization import tr
 from .widgets import PANEL, MUTED, label
+from .property_widgets import PropertySectionFrame
+from .property_controls import PropertyButton
 
 
 class ItemAppearanceController:
@@ -14,13 +16,13 @@ class ItemAppearanceController:
         self.app = app
 
     def show(self, parent, item):
-        section = tk.LabelFrame(parent, text=tr('item_assets.appearance'), bg=PANEL, fg=MUTED)
-        section.pack(fill='x', padx=10, pady=(8,4))
-        label(section, item.visual or tr('viewer.no_visual'), wraplength=260,
+        section = PropertySectionFrame(parent, tr('item_assets.appearance'))
+        section.pack(fill='x', pady=(0,30))
+        label(section.body, item.visual or tr('viewer.no_visual'), wraplength=260,
               justify='left').pack(fill='x', padx=8, pady=8)
         for key, action in [('choose_model', self.choose), ('import_model', self.import_model),
                             ('import_textures', self.import_textures), ('remove_model', self.remove)]:
-            button = ttk.Button(section, text=tr('item_assets.' + key), command=lambda fn=action:fn(item))
+            button = PropertyButton(section.body,lambda fn=action:fn(self.app.current or item),text=tr('item_assets.'+key))
             button.pack(fill='x', padx=8, pady=(0,6))
             if key == 'remove_model' and not self._custom(item):button.config(state='disabled')
 

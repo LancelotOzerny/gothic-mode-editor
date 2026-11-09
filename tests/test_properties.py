@@ -93,7 +93,7 @@ class PropertiesTests(unittest.TestCase):
             item = self.repo.create_item(category)
             self.app.select(item)
             form = self.app.properties
-            self.assertEqual(form.save_btn['state'], 'disabled')
+            self.assertFalse(form.editable)
             self.assertTrue(all(entry['state'] == 'readonly' for entry in form.inputs.values()))
             before = item.path.read_bytes()
             with patch.object(self.repo, 'edit') as edit:
@@ -143,7 +143,7 @@ class PropertiesTests(unittest.TestCase):
     def test_invalid_schema_disables_save_with_an_explanation(self):
         with patch('gothic_editor.ui.properties.schema_for', side_effect=ValueError('bad schema')):
             self.app.select(self.item)
-        self.assertEqual(self.app.properties.save_btn['state'], 'disabled')
+        self.assertFalse(self.app.properties.editable)
         self.assertIn('bad schema', self.app.properties.info['text'])
 
     def test_renaming_copied_instance_keeps_original_and_builds_as_new_item(self):
@@ -271,10 +271,11 @@ class PropertiesTests(unittest.TestCase):
         index, frame, cells = widget.rows[0]
         cells[0][1].insert(0, 'Бонус')
         cells[1][1].insert(0, 'BONUS + 10')
+        self.app.update_idletasks()
         frame.event_generate('<Configure>', width=500)
-        self.assertEqual(cells[1][1].master.grid_info()['row'], 0)
+        self.assertEqual(cells[1][1].surface.master.grid_info()['row'], 0)
         frame.event_generate('<Configure>', width=200)
-        self.assertEqual(cells[1][1].master.grid_info()['row'], 1)
+        self.assertEqual(cells[1][1].surface.master.grid_info()['row'], 1)
         self.app._rebuild_translated_ui()
         widget = self.app.properties.inputs['inventory_rows']
         self.assertEqual(widget.get()[0], (index, ('"Бонус"', 'BONUS + 10')))
@@ -310,3 +311,241 @@ class PropertiesTests(unittest.TestCase):
         cells[1][1].insert(0, '2')
         self.app.properties.save()
         self.assertEqual(self.app.current.fields['count[0]'], '2')
+
+    def test_autosave_on_focus_out_preserves_widgets_and_other_drafts(self):
+        self.app.deiconify()
+        self.app.update()
+        form=self.app.properties
+        self.change('name','Незавершённое имя')
+        self.change('value','235')
+        entry=form.inputs['value']
+        with patch.object(self.repo,'edit',wraps=self.repo.edit) as edit:
+            entry.event_generate('<FocusOut>')
+            self.assertEqual(edit.call_count,1)
+            self.assertEqual(self.app.current.fields['value'],'235')
+            self.assertEqual(self.app.current.fields['name'],'"Новое зелье"')
+            self.assertIs(form.inputs['value'],entry)
+            self.assertEqual(form.inputs['name'].get(),'Незавершённое имя')
+            entry.event_generate('<FocusOut>')
+            self.assertEqual(edit.call_count,1)
+        self.assertEqual(form.info.cget('text'),self.app.current.instance)
+        self.assertFalse(hasattr(form,'save_btn'))
+
+    def test_combobox_and_enter_wait_for_focus_loss_before_saving(self):
+        self.app.deiconify()
+        self.app.update()
+        combo=self.app.properties.inputs['effect']
+        combo.current(0)
+        combo.event_generate('<<ComboboxSelected>>')
+        self.assertNotIn('effect',self.app.current.fields)
+        combo.event_generate('<FocusOut>')
+        self.assertEqual(self.app.current.fields['effect'],'""')
+        self.change('instance','AutosavedPotion')
+        entry=self.app.properties.inputs['instance']
+        entry.focus_force()
+        self.app.update()
+        entry.event_generate('<Return>')
+        self.assertEqual(self.app.current.instance,self.item.instance)
+        entry.event_generate('<FocusOut>')
+        self.assertEqual(self.app.current.instance,'ItPo_AutosavedPotion')
+        self.assertTrue(self.app.current.path.is_file())
+        self.change('name','После переименования')
+        self.app.properties.inputs['name'].event_generate('<FocusOut>')
+        self.assertEqual(self.repo.project_items[0].fields['name'],'"После переименования"')
+
+    def test_inventory_autosave_preserves_constants_and_removes_assignments(self):
+        item=self.repo.edit(self.item,{'text[0]':'NAME_Bonus','count[0]':'BASE'})
+        self.app.select(item)
+        self.app.deiconify()
+        self.app.update()
+        widget=self.app.properties.inputs['inventory_rows']
+        cells=widget.rows[0][2]
+        count=cells[1][1]
+        count.delete(0,'end')
+        count.insert(0,'BASE + 2')
+        count.event_generate('<FocusOut>')
+        self.assertEqual(self.app.current.fields['text[0]'],'NAME_Bonus')
+        self.assertEqual(self.app.current.fields['count[0]'],'BASE + 2')
+        before=self.app.current.path.read_bytes()
+        count.event_generate('<FocusOut>')
+        self.assertEqual(self.app.current.path.read_bytes(),before)
+        widget.remove_row(0)
+        self.assertNotIn('text[0]',self.app.current.fields)
+        self.assertNotIn('count[0]',self.app.current.fields)
+        self.assertEqual(self.app.current.fields['text[5]'],'NAME_Value')
+
+    def test_autosave_rejects_invalid_inventory_and_can_be_corrected(self):
+        self.app.deiconify()
+        self.app.update()
+        widget=self.app.properties.inputs['inventory_rows']
+        widget.add_row()
+        self.app.update_idletasks()
+        cells=widget.rows[0][2]
+        cells[0][1].insert(0,'Время')
+        cells[1][1].insert(0,'2 минуты')
+        before=self.app.current.path.read_bytes()
+        with patch('gothic_editor.ui.properties.messagebox.showerror') as error:
+            cells[1][1].event_generate('<FocusOut>')
+        error.assert_called_once()
+        self.assertEqual(self.app.current.path.read_bytes(),before)
+        cells[1][1].delete(0,'end')
+        cells[1][1].insert(0,'2')
+        cells[1][1].event_generate('<FocusOut>')
+        self.assertEqual(self.app.current.fields['count[0]'],'2')
+
+    def test_switching_items_flushes_drafts_and_rejects_invalid_required_value(self):
+        other=self.repo.create_item('potions')
+        self.change('value','321')
+        self.app.select(other)
+        stored=next(item for item in self.repo.project_items if item.instance==self.item.instance)
+        self.assertEqual(stored.fields['value'],'321')
+        self.assertEqual(self.app.current.instance,other.instance)
+        self.change('instance','')
+        with patch('gothic_editor.ui.properties.messagebox.showerror') as error:
+            self.app.select(stored)
+        error.assert_called_once()
+        self.assertEqual(self.app.current.instance,other.instance)
+
+    def test_build_flushes_focused_field_before_starting_tools(self):
+        self.change('value','543')
+        with patch('gothic_editor.app.ProjectTools') as factory:
+            factory.return_value.compile.return_value=None
+            with patch.object(self.app._tool_runner,'start') as start:
+                self.app.run_project_tool('compile')
+                self.assertEqual(self.app.current.fields['value'],'543')
+                start.assert_called_once()
+
+    def test_dropdown_selection_autosaves_and_escape_keeps_current_value(self):
+        self.app.deiconify()
+        self.app.update()
+        combo=self.app.properties.inputs['flags']
+        combo.event_generate('<ButtonPress-1>',x=10,y=8)
+        self.app.update()
+        self.assertIsNone(combo.popup)
+        combo.event_generate('<ButtonRelease-1>',x=10,y=8)
+        self.app.update()
+        self.assertIsNotNone(combo.popup)
+        self.assertFalse(combo.popup.overrideredirect())
+        self.assertEqual((combo.popup.winfo_width(),combo.popup.winfo_height()),(480,320))
+        self.assertAlmostEqual(combo.popup.winfo_x(),self.app.winfo_rootx()+(self.app.winfo_width()-480)//2,delta=3)
+        self.assertAlmostEqual(combo.popup.winfo_y(),self.app.winfo_rooty()+(self.app.winfo_height()-320)//2,delta=3)
+        self.assertTrue(all(button.winfo_height()==40 for button in combo.option_buttons))
+        self.assertTrue(combo.option_buttons[combo.current()].selected)
+        combo.option_buttons[2].event_generate('<ButtonRelease-1>',x=10,y=20)
+        self.app.update()
+        combo.option_buttons[2].event_generate('<Leave>')
+        self.assertTrue(combo.option_buttons[2].selected)
+        self.assertEqual(sum(button.selected for button in combo.option_buttons),1)
+        self.assertIsNotNone(combo.popup)
+        combo.choose_button.invoke()
+        self.app.update()
+        self.assertIsNone(combo.popup)
+        self.assertEqual(self.app.current.fields['flags'],'ITEM_MULTI')
+        combo.event_generate('<FocusOut>')
+        self.assertEqual(self.app.current.fields['flags'],'ITEM_MISSION')
+        combo.open_popup()
+        self.app.update()
+        combo.focus_option(0)
+        combo.popup.event_generate('<Escape>')
+        self.app.update()
+        self.assertIsNone(combo.popup)
+        self.assertEqual(self.app.current.fields['flags'],'ITEM_MISSION')
+
+    def test_inventory_headers_are_shared_and_create_icon_stays_visible(self):
+        self.app.deiconify()
+        self.app.update()
+        widget=self.app.properties.inputs['inventory_rows']
+        for _ in range(3):widget.add_row()
+        self.app.update()
+        self.assertEqual(len(widget.column_labels),2)
+        for _,frame,cells in widget.rows:
+            for _,entry,_,_ in cells:
+                holder=entry.surface.master
+                self.assertFalse(any(isinstance(child,tk.Label) for child in holder.winfo_children()))
+        picture=widget.add_button.image
+        self.assertIsNotNone(picture)
+        brightest=max(sum(picture.get(x,y)) for y in range(picture.height()) for x in range(picture.width()))
+        self.assertGreater(brightest,600)
+
+    def test_dropdown_disabled_and_long_lists_can_be_scrolled_and_closed(self):
+        self.app.deiconify()
+        self.app.update()
+        combo=self.app.properties.inputs['effect']
+        combo.options=tuple((str(i),f'"FX_{i}"') for i in range(20))
+        combo.open_popup()
+        self.app.update()
+        combo.focus_option(19)
+        self.app.update()
+        self.assertGreater(combo.option_buttons[-1].master.master.yview()[0],0)
+        combo.choose(19)
+        combo.event_generate('<FocusOut>')
+        self.assertEqual(self.app.current.fields['effect'],'"FX_19"')
+        combo.config(state='disabled')
+        combo.open_popup()
+        self.assertIsNone(combo.popup)
+
+    def test_clicking_field_padding_focuses_native_entry_and_accepts_typing(self):
+        self.app.deiconify()
+        self.app.update()
+        self.app.focus_force()
+        entry=self.app.properties.inputs['name']
+        entry.surface.event_generate('<ButtonPress-1>',x=5,y=20)
+        entry.surface.event_generate('<ButtonRelease-1>',x=5,y=20)
+        self.app.update()
+        self.assertIs(self.app.focus_get(),entry)
+        before=entry.get()
+        entry.event_generate('<KeyPress>',keysym='space')
+        self.app.update()
+        self.assertEqual(len(entry.get()),len(before)+1)
+        entry.event_generate('<FocusOut>')
+        self.assertIn(entry.get(),self.app.current.fields['name'])
+
+    def test_dropdown_opens_from_text_padding_and_arrow(self):
+        self.app.deiconify()
+        self.app.update()
+        combo=self.app.properties.inputs['flags']
+        for target in (combo,combo.surface,combo.arrow):
+            with self.subTest(target=str(target)):
+                target.event_generate('<ButtonPress-1>',x=3,y=3)
+                target.event_generate('<ButtonRelease-1>',x=3,y=3)
+                self.app.update()
+                self.assertIsNotNone(combo.popup)
+                self.assertTrue(combo.popup.winfo_viewable())
+                combo.close_popup()
+                self.app.update()
+
+    def test_repeated_selection_does_not_grab_mouse_or_block_text_input(self):
+        self.app.deiconify()
+        self.app.update()
+        combo=self.app.properties.inputs['flags']
+        entry=self.app.properties.inputs['name']
+        for option in (2,1,2):
+            combo.open_popup()
+            self.app.update()
+            self.assertIsNone(self.app.grab_current())
+            combo.choose(option)
+            self.app.update()
+            self.assertIsNone(self.app.grab_current())
+            entry.surface.event_generate('<ButtonPress-1>',x=5,y=20)
+            entry.surface.event_generate('<ButtonRelease-1>',x=5,y=20)
+            self.app.update()
+            self.assertIs(self.app.focus_get(),entry)
+            before=entry.get()
+            entry.event_generate('<KeyPress>',keysym='space')
+            self.app.update()
+            self.assertEqual(len(entry.get()),len(before)+1)
+            self.assertIsNone(combo.popup)
+
+    def test_selection_window_does_not_block_other_fields(self):
+        self.app.deiconify()
+        self.app.update()
+        combo=self.app.properties.inputs['flags']
+        entry=self.app.properties.inputs['value']
+        combo.open_popup()
+        self.app.update()
+        entry.surface.event_generate('<ButtonPress-1>',x=5,y=20)
+        entry.surface.event_generate('<ButtonRelease-1>',x=5,y=20)
+        self.app.update()
+        self.assertIsNotNone(combo.popup)
+        self.assertIsNone(self.app.grab_current())
+        self.assertIs(self.app.focus_get(),entry)

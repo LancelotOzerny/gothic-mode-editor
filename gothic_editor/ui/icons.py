@@ -11,8 +11,8 @@ class IconImages:
         self.cache = {}
         self.sources = {}
 
-    def frames(self, filename, size, foreground, background, steps=1):
-        key = (filename, size, foreground, background, steps)
+    def frames(self, filename, size, foreground, background, steps=1, normalize_alpha=False):
+        key = (filename, size, foreground, background, steps, normalize_alpha)
         if key in self.cache:
             return self.cache[key]
         path = self.directory / filename
@@ -47,13 +47,20 @@ class IconImages:
         for index in range(steps):
             angle = math.pi / 2 * index / (steps - 1) if steps > 1 else 0
             cosine, sine = math.cos(angle), math.sin(angle)
+
+            def frame_sample(x, y):
+                u, v = (x - (size - 1) / 2) * scale, (y - (size - 1) / 2) * scale
+                return sample(cosine * u + sine * v + (width - 1) / 2,
+                              -sine * u + cosine * v + (height - 1) / 2)
+
+            peak = 1
+            if normalize_alpha:
+                peak = max((frame_sample(x,y) for y in range(size) for x in range(size)),default=1) or 1
             rows = []
             for y in range(size):
                 row = []
                 for x in range(size):
-                    u, v = (x - (size - 1) / 2) * scale, (y - (size - 1) / 2) * scale
-                    opacity = sample(cosine * u + sine * v + (width - 1) / 2,
-                                     -sine * u + cosine * v + (height - 1) / 2)
+                    opacity = min(1,frame_sample(x,y)/peak)
                     rgb = [round(b + (f - b) * opacity) for f, b in zip(fg, bg)]
                     row.append('#%02x%02x%02x' % tuple(rgb))
                 rows.append('{' + ' '.join(row) + '}')

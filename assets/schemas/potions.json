@@ -164,7 +164,6 @@
     {
       "id": "inventory",
       "title": "Инвентарь",
-      "description": "До 6 строк, включая автоматическую строку стоимости.",
       "fields": [
         {
           "key": "inventory_rows",
