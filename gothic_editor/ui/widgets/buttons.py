@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import font as tkfont
 from .theme import PANEL, INPUT, TXT, MUTED, BORDER, ACCENT, FIELD_HEIGHT, FIELD_FONT, HOVER_BG, rounded_box, blend
 from .icons import IconImages
 from .tooltip import Tooltip
@@ -7,7 +8,8 @@ class PropertyButton(tk.Canvas):
     """Matching text/icon buttons, including lighter dropdown option rows."""
     def __init__(self, parent, command, text='', filename=None, caption='',
                  icons=None, background=INPUT, align='center'):
-        super().__init__(parent, bg=PANEL, height=FIELD_HEIGHT, width=FIELD_HEIGHT,
+        width = FIELD_HEIGHT if filename else max(FIELD_HEIGHT,tkfont.Font(root=parent,font=FIELD_FONT).measure(text)+20)
+        super().__init__(parent, bg=parent.cget('bg'), height=FIELD_HEIGHT, width=width,
                          bd=0, highlightthickness=0, takefocus=True, cursor='hand2')
         self.command, self.text, self.filename = command, text, filename
         self.icons = icons or IconImages(self)
@@ -62,6 +64,25 @@ class PropertyButton(tk.Canvas):
         else:self.create_text(10 if self.align=='left' else width/2,FIELD_HEIGHT/2,
                               text=self.text, fill=foreground, font=FIELD_FONT,
                               anchor='w' if self.align=='left' else 'center')
+
+
+class PropertyToggle(PropertyButton):
+    def __init__(self, parent, variable):
+        self.variable = variable
+        super().__init__(parent,self.toggle)
+        self.configure(width=FIELD_HEIGHT)
+        self._trace = variable.trace_add('write',lambda *_:self.refresh())
+        self.bind('<Destroy>',self._dispose,add='+')
+        self.refresh()
+
+    def toggle(self):self.variable.set(not self.variable.get())
+
+    def refresh(self):
+        self.text = '✓' if self.variable.get() else ''
+        self.set_selected(bool(self.variable.get()))
+
+    def _dispose(self, event):
+        if event.widget is self:self.variable.trace_remove('write',self._trace)
 
 class RoundedIconButton(tk.Canvas):
     """Sized hit target with configurable padding around the icon."""

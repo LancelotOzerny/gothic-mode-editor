@@ -1,10 +1,10 @@
 import tkinter as tk
-from .theme import BG, MUTED, BORDER
+from .theme import MUTED, BORDER
 
 class RoundedScrollbar(tk.Canvas):
     """Narrow rounded thumb with normal yscrollcommand and dragging support."""
     def __init__(self, parent, command):
-        super().__init__(parent, width=8, bg=BG, highlightthickness=0, bd=0)
+        super().__init__(parent, width=8, bg=parent.cget('bg'), highlightthickness=0, bd=0)
         self.command = command
         self.first, self.last = 0., 1.
         self.drag = None

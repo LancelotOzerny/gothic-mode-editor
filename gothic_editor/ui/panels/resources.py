@@ -5,9 +5,10 @@ from tkinter import messagebox, ttk
 from gothic_editor.core.localization import tr
 from gothic_editor.core.resources import item_resource_files, open_in_editor, open_in_folder
 from gothic_editor.ui.widgets import BG, PANEL, MUTED, label
+from gothic_editor.ui.widgets.panel import Panel, attach_scrollbar
 
 
-class ResourcesPanel(tk.Frame):
+class ResourcesPanel(Panel):
     def __init__(self, parent, get_editor, on_hide):
         super().__init__(parent, bg=BG)
         self.project = None
@@ -19,12 +20,11 @@ class ResourcesPanel(tk.Frame):
         header.pack(fill='x')
         self.location = label(header, tr('resources.select_item'), fg=MUTED, anchor='w')
         self.location.pack(side='left', fill='x', expand=True, padx=10)
-        ttk.Button(header, text='×', width=3, command=on_hide).pack(side='right')
-        ttk.Button(header, text=tr('resources.refresh'), command=self.refresh).pack(side='right', padx=6)
-        scroll = ttk.Scrollbar(self)
-        scroll.pack(side='right', fill='y')
+        self.add_button('×',on_hide,parent=header).pack(side='right')
+        self.add_button(tr('resources.refresh'),self.refresh,parent=header).pack(side='right',padx=6)
         self.tree = ttk.Treeview(self, columns=('type', 'size'), show='tree headings',
-                                 selectmode='browse', yscrollcommand=scroll.set, height=1)
+                                 selectmode='browse', height=1)
+        self.scrollbar=attach_scrollbar(self,self.tree)
         self.tree.heading('#0', text=tr('resources.file'))
         self.tree.heading('type', text=tr('resources.type'))
         self.tree.heading('size', text=tr('resources.size'))
@@ -32,7 +32,6 @@ class ResourcesPanel(tk.Frame):
         self.tree.column('type', width=90, stretch=False)
         self.tree.column('size', width=100, stretch=False, anchor='e')
         self.tree.pack(fill='both', expand=True)
-        scroll.config(command=self.tree.yview)
         self.tree.bind('<Double-Button-1>', self.double_click)
         self.tree.bind('<Return>', lambda _: self.open_selected())
         self.tree.bind('<Button-3>', self.context)

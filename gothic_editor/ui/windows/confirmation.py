@@ -1,9 +1,9 @@
 import tkinter as tk
-from tkinter import ttk
+from .dialog import EditorDialog
 from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets import BG, MUTED, label
 
-class ProjectConfirmationDialog(tk.Toplevel):
+class ProjectConfirmationDialog(EditorDialog):
     def __init__(self, parent, entry, action):
         super().__init__(parent, bg=BG)
         self.withdraw()
@@ -21,17 +21,11 @@ class ProjectConfirmationDialog(tk.Toplevel):
             label(content, tr('welcome.files_kept'), bg=BG, wraplength=420, justify='left').pack(fill='x')
         actions = tk.Frame(content, bg=BG)
         actions.pack(fill='x', pady=(20,0))
-        cancel = ttk.Button(actions, text=tr('settings.cancel'), command=self.destroy)
+        cancel = self.add_button(actions,tr('settings.cancel'),self.destroy)
         cancel.pack(side='right')
-        ttk.Button(actions, text=tr('welcome.'+action), command=self.confirm).pack(side='right', padx=8)
+        self.add_button(actions,tr('welcome.'+action),self.confirm).pack(side='right',padx=8)
         self.bind('<Escape>', lambda _:self.destroy())
-        self.update_idletasks()
-        x = owner.winfo_rootx() + (owner.winfo_width()-self.winfo_reqwidth())//2
-        y = owner.winfo_rooty() + (owner.winfo_height()-self.winfo_reqheight())//2
-        self.geometry(f'+{max(0,x)}+{max(0,y)}')
-        self.deiconify()
-        self.grab_set()
-        cancel.focus_set()
+        self.show_centered(modal=True,focus=cancel)
 
     def confirm(self):
         self.result = True

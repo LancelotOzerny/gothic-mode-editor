@@ -9,13 +9,13 @@ from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets.icons import IconImages
 from gothic_editor.ui.widgets import BG, PANEL, MUTED, TXT, ACCENT, label, make_entry
 from gothic_editor.ui.widgets.buttons import RoundedIconButton
-from gothic_editor.ui.widgets.scrollbar import RoundedScrollbar
+from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
 from gothic_editor.ui.widgets.theme import blend
 
 
 from gothic_editor.ui.windows.confirmation import ProjectConfirmationDialog
 
-class WelcomeScreen(tk.Frame):
+class WelcomeScreen(Panel):
     def __init__(self, parent, history, on_create, on_browse, on_open, on_history_change=lambda:None):
         super().__init__(parent, bg=BG)
         self.history = history
@@ -63,16 +63,10 @@ class WelcomeScreen(tk.Frame):
         label(content, tr('welcome.recent_title'), bg=BG, fg=MUTED).pack(anchor='w', pady=(0,10))
         table = tk.Frame(content, bg=BG)
         table.pack(fill='both', expand=True)
-        self.canvas = tk.Canvas(table, bg=BG, highlightthickness=0)
-        self.scrollbar = RoundedScrollbar(table, command=self.canvas.yview)
-        self.scrollbar.pack(side='right', fill='y',padx=(6,0))
-        self.canvas.pack(side='left', fill='both', expand=True)
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-        self.projects = tk.Frame(self.canvas, bg=BG)
-        self.window = self.canvas.create_window((0,0), window=self.projects, anchor='nw')
-        self.canvas.bind('<Configure>', lambda e:self.canvas.itemconfigure(self.window, width=e.width))
-        self.projects.bind('<Configure>', lambda _:self.canvas.configure(scrollregion=self.canvas.bbox('all')))
-        self.canvas.bind('<MouseWheel>', self.scroll)
+        self.scroll_area=ScrollableArea(table,bg=BG)
+        self.scroll_area.pack(fill='both',expand=True)
+        self.canvas,self.projects=self.scroll_area.canvas,self.scroll_area.content
+        self.scrollbar,self.window=self.scroll_area.scrollbar,self.scroll_area.window
         self.query.trace_add('write', lambda *_:self.render_projects())
         self.render_projects()
 
@@ -179,7 +173,6 @@ class WelcomeScreen(tk.Frame):
             widget.configure(cursor='hand2')
             widget.bind('<Enter>', hover, add='+')
             widget.bind('<Leave>', hover, add='+')
-            widget.bind('<MouseWheel>', self.scroll, add='+')
         for widget in (row,badge,name,path):
             widget.bind('<Button-1>', select)
             if available:widget.bind('<ButtonRelease-1>', lambda _, current=entry:self.open_entry(current))
@@ -217,8 +210,7 @@ class WelcomeScreen(tk.Frame):
         self._drag_origin=None
 
     def scroll(self, event):
-        self.canvas.yview_scroll(-int(event.delta/120), 'units')
-        return 'break'
+        return self.scroll_area.wheel(event)
 
     def open_selected(self):
         if self.selected:self.open_entry(self.selected)

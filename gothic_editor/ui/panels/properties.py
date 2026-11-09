@@ -6,15 +6,15 @@ from gothic_editor.core.localization import tr
 from gothic_editor.core.properties_schema import PropertyField, property_key, schema_for
 from gothic_editor.ui.widgets import PANEL, MUTED, BORDER, label
 from gothic_editor.ui.widgets.choice_field import ExpressionChoiceField
-from gothic_editor.ui.widgets.sections import PropertySectionFrame
+from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
+from gothic_editor.ui.widgets.form import create_field
 from gothic_editor.ui.widgets.key_value_list import KeyValueList
 from gothic_editor.ui.widgets.placeholders import add_placeholder
-from gothic_editor.ui.widgets.inputs import PropertyEntry
 from gothic_editor.ui.widgets.field_label import FieldLabel
 
 from gothic_editor.ui.controllers.property_editor import PropertyEditor
 
-class PropertiesPanel(tk.Frame):
+class PropertiesPanel(Panel):
     def __init__(self,parent,on_save,on_appearance=None,options_provider=None):
         super().__init__(parent,bg=PANEL)
         self.on_save=on_save;self.current=None;self.inputs={}
@@ -31,16 +31,9 @@ class PropertiesPanel(tk.Frame):
         separator=tk.Frame(self,bg=PANEL,height=1)
         separator.pack(fill='x',pady=(10,20))
         tk.Frame(separator,bg=BORDER).place(relx=.05,relwidth=.9,relheight=1)
-        self.canvas=tk.Canvas(self,bg=PANEL,highlightthickness=0)
-        scroll=tk.Scrollbar(self,orient='vertical',command=self.canvas.yview)
-        scroll.pack(side='right',fill='y')
-        self.canvas.pack(side='top',fill='both',expand=True)
-        self.canvas.configure(yscrollcommand=scroll.set)
-        self.inner=tk.Frame(self.canvas,bg=PANEL)
-        self.window=self.canvas.create_window((0,0),window=self.inner,anchor='nw')
-        self.canvas.bind('<Configure>',lambda e:self.canvas.itemconfigure(self.window,width=e.width))
-        self.inner.bind('<Configure>',lambda _:self.canvas.configure(scrollregion=self.canvas.bbox('all')))
-        self.canvas.bind('<MouseWheel>',lambda e:self.canvas.yview_scroll(-int(e.delta/120),'units'))
+        self.scroll_area=ScrollableArea(self)
+        self.scroll_area.pack(fill='both',expand=True)
+        self.canvas,self.inner,self.window=self.scroll_area.canvas,self.scroll_area.content,self.scroll_area.window
         self.show(None)
 
     def show(self,item):
@@ -68,10 +61,9 @@ class PropertiesPanel(tk.Frame):
             known={property_key(field.key) for section in schema.sections for field in section.fields
                    if field.source=='property'}
             for section in schema.sections:
-                frame=PropertySectionFrame(self.inner,section.title,self.collapsed.get(section.key,False),
-                    lambda closed,key=section.key:self.collapsed.__setitem__(key,closed))
+                frame=self.add_group(section.title,self.collapsed.get(section.key,False),
+                    lambda closed,key=section.key:self.collapsed.__setitem__(key,closed),parent=self.inner)
                 self.sections[section.key]=frame
-                frame.pack(fill='x',pady=(0,30))
                 if section.description:
                     label(frame.body,section.description,fg=MUTED,wraplength=250,justify='left').pack(fill='x',padx=8,pady=5)
                 for field in section.fields:
@@ -108,7 +100,7 @@ class PropertiesPanel(tk.Frame):
         if field.field_type in ('string','resource') and re.fullmatch(r'"(?:\\.|[^"\\])*"',value):
             value=re.sub(r'\\([\\"])',r'\1',value[1:-1])
         FieldLabel(parent,field.label,field.tooltip).pack(fill='x',padx=8,pady=(6,2))
-        variable=tk.StringVar(self)
+        variable=tk.StringVar(self,value=value)
         if field.widget=='combobox':
             options=list(field.options)
             if field.options_source and self.options_provider:
@@ -117,13 +109,10 @@ class PropertiesPanel(tk.Frame):
                 else:
                     for option in provided:
                         if option[1] not in {value for _,value in options}:options.append(option)
-            entry=ExpressionChoiceField(parent,options,textvariable=variable,state='readonly',caption=field.label)
-            entry.set_expression(value)
-            if not self.editable:entry.config(state='disabled')
+            entry=create_field(parent,'choice',options=options,value=value,enabled=self.editable,caption=field.label)
+            variable=entry.variable
         else:
-            entry=PropertyEntry(parent,textvariable=variable)
-            entry.insert(0,value)
-            if not self.editable:entry.config(state='readonly')
+            entry=create_field(parent,variable=variable,readonly=not self.editable)
         entry.pack(fill='x',padx=8,ipady=5)
         entry.value_variable=variable
         entry.bind('<FocusOut>',commit,add='+')

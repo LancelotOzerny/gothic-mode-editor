@@ -63,5 +63,5 @@ class ExpressionChoiceField(PropertyEntry):
         self.set(next((name for name, value in self.options if value == expression), expression))
 
     def get(self):
-        caption = super().get()
+        caption = self.variable.get()
         return next((value for name, value in self.options if name == caption), caption)

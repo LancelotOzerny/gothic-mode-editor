@@ -1,13 +1,14 @@
 """Project creation form: choose a name and a parent directory."""
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox
+from .dialog import EditorDialog
 
 from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets import BG, label, make_entry
 
 
-class NewProjectDialog(tk.Toplevel):
+class NewProjectDialog(EditorDialog):
     def __init__(self, parent, initial_directory=None):
         super().__init__(parent, bg=BG)
         self.withdraw()
@@ -26,7 +27,7 @@ class NewProjectDialog(tk.Toplevel):
         row = tk.Frame(content, bg=BG)
         row.pack(fill='x', pady=6)
         make_entry(row, textvariable=self.directory, width=55).pack(side='left', fill='x', expand=True)
-        ttk.Button(row, text=tr('settings.choose'), command=self.browse).pack(side='left', padx=(8, 0))
+        self.add_button(row,tr('settings.choose'),self.browse).pack(side='left',padx=(8,0))
         self.destination = tk.StringVar(self)
         label(content, textvariable=self.destination, bg=BG, wraplength=520).pack(anchor='w', pady=8)
         for variable in (self.name, self.directory):
@@ -34,17 +35,11 @@ class NewProjectDialog(tk.Toplevel):
         self.update_destination()
         actions = tk.Frame(content, bg=BG)
         actions.pack(fill='x', pady=(12, 0))
-        ttk.Button(actions, text=tr('settings.cancel'), command=self.destroy).pack(side='right')
-        ttk.Button(actions, text=tr('welcome.create'), command=self.submit).pack(side='right', padx=8)
+        self.add_button(actions,tr('settings.cancel'),self.destroy).pack(side='right')
+        self.add_button(actions,tr('welcome.create'),self.submit).pack(side='right',padx=8)
         self.bind('<Return>', lambda _: self.submit())
         self.bind('<Escape>', lambda _: self.destroy())
-        self.update_idletasks()
-        x = parent.winfo_rootx() + (parent.winfo_width() - self.winfo_reqwidth()) // 2
-        y = parent.winfo_rooty() + (parent.winfo_height() - self.winfo_reqheight()) // 2
-        self.geometry(f'+{max(0, x)}+{max(0, y)}')
-        self.deiconify()
-        self.grab_set()
-        self.name_entry.focus_set()
+        self.show_centered(modal=True,focus=self.name_entry)
         self.name_entry.selection_range(0, 'end')
 
     def browse(self):

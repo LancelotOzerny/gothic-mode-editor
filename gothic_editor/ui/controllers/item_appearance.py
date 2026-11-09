@@ -1,6 +1,6 @@
 """Model controls within the schema's appearance group; persistence stays in core."""
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox
 from pathlib import Path
 
 from gothic_editor.core.item_assets import ItemAssetManager
@@ -8,6 +8,9 @@ from gothic_editor.core.categories import classify
 from gothic_editor.core.model_resolver import ModelResolver
 from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets.buttons import PropertyButton
+from gothic_editor.ui.widgets.inputs import make_entry
+from gothic_editor.ui.widgets.choice_field import ExpressionChoiceField
+from gothic_editor.ui.windows.dialog import EditorDialog
 
 
 class ItemAppearanceController:
@@ -69,18 +72,19 @@ class ItemAppearanceController:
         names = {path.name for path in repo.mesh_index.values() if path.name.casefold() != 'model.3ds'}
         names.update(str(Path(entry.name).with_suffix('.3ds')) for entry in repo.archive_models.entries.values())
         names = sorted((name for name in names if name.casefold() not in custom), key=str.casefold)
-        window = tk.Toplevel(self.app)
+        window = EditorDialog(self.app)
         window.title(tr('item_assets.choose_model'))
-        window.transient(self.app)
+        window.geometry('480x230')
         query = tk.StringVar(window)
-        ttk.Entry(window, textvariable=query, width=45).pack(fill='x', padx=12, pady=12)
-        choice = ttk.Combobox(window, values=names, state='readonly', width=45)
+        make_entry(window, textvariable=query, width=45).pack(fill='x', padx=12, pady=12)
+        choice = ExpressionChoiceField(window,tuple((name,name) for name in names),state='readonly',
+                                       caption=tr('item_assets.choose_model'))
         choice.pack(fill='x', padx=12, pady=(0,12))
         if names:choice.current(0)
 
         def filter_names(*_):
             matches = [name for name in names if query.get().casefold() in name.casefold()]
-            choice.config(values=matches)
+            choice.options=tuple((name,name) for name in matches)
             choice.set(matches[0] if matches else '')
         query.trace_add('write', filter_names)
 
@@ -95,5 +99,6 @@ class ItemAppearanceController:
                 if self._custom(current):manager.remove_model(current)
                 repo.edit(current, {'visual':'"' + value.replace('\\','\\\\').replace('"','\\"') + '"'})
             self._run(item, operation)
-        ttk.Button(window, text=tr('settings.choose'), command=select).pack(pady=(0,12))
-        window.grab_set()
+        window.add_button(window,tr('settings.choose'),select).pack(fill='x',padx=12,pady=(0,12))
+        window.bind('<Escape>',lambda _:window.destroy())
+        window.show_centered(modal=True)

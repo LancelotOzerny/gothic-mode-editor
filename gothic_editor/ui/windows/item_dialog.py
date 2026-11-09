@@ -5,9 +5,11 @@ from tkinter import ttk
 from gothic_editor.core.categories import classify, get_category, walk_categories, EDITABLE_CATEGORIES
 from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets import BG, MUTED, label, make_entry
+from gothic_editor.ui.widgets.panel import attach_scrollbar
+from .dialog import EditorDialog
 
 
-class AddItemDialog(tk.Toplevel):
+class AddItemDialog(EditorDialog):
     def __init__(self, parent, category_key, originals):
         super().__init__(parent, bg=BG)
         self.withdraw()
@@ -29,20 +31,25 @@ class AddItemDialog(tk.Toplevel):
         row.pack(fill='x', pady=(6, 18))
         self.name_entry = make_entry(row, textvariable=self.name)
         self.name_entry.pack(side='left', fill='x', expand=True)
-        self.create_button = ttk.Button(row, text=tr('welcome.create'), command=self.create, state='disabled')
+        self.create_button = self.add_button(row,tr('welcome.create'),self.create)
+        self.create_button.config(state='disabled')
         self.create_button.pack(side='left', padx=(10, 0))
         label(content, tr('items.originals'), bg=BG).pack(anchor='w')
         self.search_entry = make_entry(content, textvariable=self.search)
         self.search_entry.pack(fill='x', pady=6)
-        self.projects = ttk.Treeview(content, columns=('item',), show='', selectmode='browse', height=10)
+        table=tk.Frame(content,bg=BG)
+        table.pack(fill='both',expand=True)
+        self.projects = ttk.Treeview(table, columns=('item',), show='', selectmode='browse', height=10)
+        self.scrollbar=attach_scrollbar(table,self.projects)
         self.projects.column('item', width=600)
         self.projects.pack(fill='both', expand=True)
         self.status = tk.StringVar(self)
         label(content, textvariable=self.status, bg=BG, fg=MUTED).pack(anchor='w', pady=6)
         actions = tk.Frame(content, bg=BG)
         actions.pack(fill='x', pady=(8, 0))
-        ttk.Button(actions, text=tr('settings.cancel'), command=self.destroy).pack(side='right')
-        self.copy_button = ttk.Button(actions, text=tr('hierarchy.copy_to_project'), command=self.copy, state='disabled')
+        self.add_button(actions,tr('settings.cancel'),self.destroy).pack(side='right')
+        self.copy_button = self.add_button(actions,tr('hierarchy.copy_to_project'),self.copy)
+        self.copy_button.config(state='disabled')
         self.copy_button.pack(side='right', padx=8)
         self.search.trace_add('write', self.refresh)
         self.name.trace_add('write', lambda *_: self.create_button.config(
@@ -54,13 +61,7 @@ class AddItemDialog(tk.Toplevel):
         self.name_entry.bind('<Return>', lambda _: self.create())
         self.bind('<Escape>', lambda _: self.destroy())
         self.refresh()
-        self.update_idletasks()
-        x = parent.winfo_rootx() + (parent.winfo_width() - self.winfo_width()) // 2
-        y = parent.winfo_rooty() + (parent.winfo_height() - self.winfo_height()) // 2
-        self.geometry(f'+{max(0, x)}+{max(0, y)}')
-        self.deiconify()
-        self.grab_set()
-        self.name_entry.focus_set()
+        self.show_centered(modal=True,focus=self.name_entry)
 
     def refresh(self, *_):
         self.projects.delete(*self.projects.get_children())

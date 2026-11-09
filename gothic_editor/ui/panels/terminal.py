@@ -1,23 +1,21 @@
 import tkinter as tk
-from tkinter import ttk
+from gothic_editor.ui.widgets.panel import Panel, attach_scrollbar
 from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets import BG, PANEL, INPUT, TXT, label
 
-class TerminalPanel(tk.Frame):
+class TerminalPanel(Panel):
     def __init__(self, parent, on_hide):
         super().__init__(parent, bg=BG)
         header = tk.Frame(self, bg=PANEL)
         header.pack(fill='x')
         label(header, tr('terminal.title')).pack(side='left', padx=10, pady=4)
-        ttk.Button(header, text='×', width=3, command=on_hide).pack(side='right')
-        ttk.Button(header, text=tr('terminal.clear'), command=self.clear).pack(side='right', padx=6)
-        scroll = ttk.Scrollbar(self)
-        scroll.pack(side='right', fill='y')
+        self.add_button('×',on_hide,parent=header).pack(side='right')
+        self.add_button(tr('terminal.clear'),self.clear,parent=header).pack(side='right',padx=6)
         self.log = tk.Text(self, bg=INPUT, fg=TXT, insertbackground=TXT, wrap='word',
                            font=('Consolas', 10), state='disabled', relief='flat',
-                           yscrollcommand=scroll.set, height=1)
+                           height=1)
+        self.scrollbar=attach_scrollbar(self,self.log)
         self.log.pack(fill='both', expand=True)
-        scroll.config(command=self.log.yview)
         self.log.bind('<Button-1>',lambda _:self.log.focus_set(),add='+')
         self.log.bind('<Control-KeyPress>',self._copy_shortcut)
         self.log.bind('<<Copy>>',self.copy_selection)

@@ -6,6 +6,7 @@ from pathlib import Path
 from tkinter import filedialog,messagebox,ttk
 from .core.project import ProjectRepository
 from .ui.widgets import BG,PANEL,TXT,MUTED,label,Tooltip
+from .ui.widgets.form import create_field
 from gothic_editor.ui.panels.hierarchy import HierarchyPanel
 from gothic_editor.ui.panels.properties import PropertiesPanel
 from gothic_editor.ui.panels.viewer import ModelViewer
@@ -121,7 +122,7 @@ class EditorApp(tk.Tk):
         header.columnconfigure(2,weight=1,uniform='header_side')
         mode_frame=tk.Frame(header,bg=BG);mode_frame.grid(row=0,column=0,sticky='w')
         label(mode_frame,tr('app.mode'),bg=BG,font=('Arial',11)).pack(side='left',padx=(0,10))
-        self.mode=ttk.Combobox(mode_frame,values=[tr('app.items')],state='readonly',width=19)
+        self.mode=create_field(mode_frame,'choice',options=((tr('app.items'),tr('app.items')),),caption=tr('app.mode'))
         self.mode.current(0);self.mode.pack(side='left')
         actions=tk.Frame(header,bg=BG);actions.grid(row=0,column=1,padx=16)
         self.play_button=tk.Button(actions,image=self.icons.frames('build.png',26,'#62d785',BG)[0],bg=BG,

@@ -5,10 +5,11 @@ from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets import PANEL
 from gothic_editor.ui.widgets.buttons import PropertyButton
 from gothic_editor.ui.widgets.theme import OPTION_BG
-from gothic_editor.ui.widgets.scrollbar import RoundedScrollbar
+from gothic_editor.ui.widgets.panel import ScrollableArea
+from .dialog import EditorDialog
 
 
-class ValueChoiceWindow(tk.Toplevel):
+class ValueChoiceWindow(EditorDialog):
     def __init__(self, owner, options, current, title, on_choose, on_cancel):
         super().__init__(owner, bg=PANEL)
         self.withdraw()
@@ -34,30 +35,22 @@ class ValueChoiceWindow(tk.Toplevel):
         if not options:self.choose_button.config(state='disabled')
         table = tk.Frame(self, bg=PANEL)
         table.pack(fill='both', expand=True, padx=12, pady=(12,0))
-        self.canvas = tk.Canvas(table, bg=OPTION_BG, highlightthickness=0, bd=0)
-        scroll = RoundedScrollbar(table, self.canvas.yview)
-        scroll.pack(side='right', fill='y', padx=(6,0))
-        self.canvas.pack(fill='both', expand=True)
-        self.canvas.configure(yscrollcommand=scroll.set)
-        body = tk.Frame(self.canvas, bg=OPTION_BG)
-        window = self.canvas.create_window((0,0), window=body, anchor='nw')
-        self.canvas.bind('<Configure>', lambda e:self.canvas.itemconfigure(window,width=e.width))
-        body.bind('<Configure>', lambda _:self.canvas.configure(scrollregion=self.canvas.bbox('all')))
+        self.scroll_area=ScrollableArea(table,bg=OPTION_BG)
+        self.scroll_area.pack(fill='both',expand=True)
+        self.canvas,body=self.scroll_area.canvas,self.scroll_area.content
         self.option_buttons = []
         for index,(name,_) in enumerate(options):
             button = PropertyButton(body, lambda i=index:self.focus_option(i), text=name,
                                     background=OPTION_BG, align='left')
             button.pack(fill='x')
             self.option_buttons.append(button)
-            button.bind('<MouseWheel>', self.scroll)
             button.bind('<Down>', lambda _,i=index:self.focus_option(i+1))
             button.bind('<Up>', lambda _,i=index:self.focus_option(i-1))
         self.bind('<Escape>', lambda _:on_cancel())
         self.bind('<Return>', lambda _:self.apply())
 
     def show(self):
-        self.deiconify()
-        self.update_idletasks()
+        self.show_centered()
         self.lift()
         self.focus_option(max(0,self.current))
 
@@ -72,5 +65,4 @@ class ValueChoiceWindow(tk.Toplevel):
         if self.options:self.on_choose(self.current if index is None else index)
 
     def scroll(self, event):
-        self.canvas.yview_scroll(-int(event.delta/120),'units')
-        return 'break'
+        return self.scroll_area.wheel(event)

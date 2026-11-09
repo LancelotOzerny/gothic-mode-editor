@@ -172,15 +172,17 @@ class SettingsWindowTests(unittest.TestCase):
         window.navigation.selection_clear(0,'end')
         window.navigation.selection_set(index)
         window.show_category()
-        frame=next(child for child in window.content.winfo_children() if isinstance(child,tk.LabelFrame))
-        self.assertEqual(frame.cget('text'),'Окно иерархии')
+        from gothic_editor.ui.widgets.form import FormGroup
+        from gothic_editor.ui.widgets.choice_field import ExpressionChoiceField
+        frame=next(child for child in window.content.winfo_children() if isinstance(child,FormGroup))
+        self.assertEqual(frame.title,'Окно иерархии')
         def descendants(widget):
             for child in widget.winfo_children():
                 yield child
                 yield from descendants(child)
-        combo=next(child for child in descendants(frame) if isinstance(child,ttk.Combobox))
+        combo=next(child for child in descendants(frame) if isinstance(child,ExpressionChoiceField))
         self.assertEqual(str(combo['state']),'readonly')
-        self.assertEqual(tuple(combo['values']),('Только проект','Проект поверх оригинала'))
+        self.assertEqual(tuple(name for name,_ in combo.options),('Только проект','Проект поверх оригинала'))
         combo.current(0)
         combo.event_generate('<<ComboboxSelected>>')
         window.save()

@@ -7,6 +7,7 @@ from time import monotonic
 from gothic_editor.core.categories import CATEGORIES, classify, EDITABLE_CATEGORIES
 from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets.icons import IconImages
+from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
 from gothic_editor.ui.widgets import BG, PANEL, INPUT, TXT, MUTED, ACCENT, label, make_entry
 
 
@@ -85,7 +86,7 @@ class CategoryRow(tk.Frame):
             self.animation = None
 
 
-class HierarchySection(tk.Frame):
+class HierarchySection(Panel):
     def __init__(self, owner, parent, origin):
         super().__init__(parent, bg=PANEL)
         self.owner = owner
@@ -95,15 +96,9 @@ class HierarchySection(tk.Frame):
         self.item_rows = {}
         self.heading = label(self, '', fg=ACCENT, anchor='w', font=('Arial', 10, 'bold'))
         self.heading.pack(fill='x', padx=10, pady=8)
-        scroll = tk.Scrollbar(self, orient='vertical')
-        scroll.pack(side='right', fill='y')
-        self.canvas = tk.Canvas(self, bg=PANEL, highlightthickness=0, yscrollcommand=scroll.set)
-        self.canvas.pack(fill='both', expand=True)
-        scroll.config(command=self.canvas.yview)
-        self.inner = tk.Frame(self.canvas, bg=PANEL)
-        item = self.canvas.create_window((0, 0), window=self.inner, anchor='nw')
-        self.inner.bind('<Configure>', lambda _: self.canvas.config(scrollregion=self.canvas.bbox('all')))
-        self.canvas.bind('<Configure>', lambda event: self.canvas.itemconfigure(item, width=event.width))
+        self.scroll_area = ScrollableArea(self)
+        self.scroll_area.pack(fill='both', expand=True)
+        self.canvas, self.inner = self.scroll_area.canvas, self.scroll_area.content
 
     def count(self, category):
         return len(self.grouped.get(category.key, [])) + sum(self.count(child) for child in category.children)
@@ -150,7 +145,7 @@ class HierarchySection(tk.Frame):
                 widget.config(bg=color)
 
 
-class HierarchyPanel(tk.Frame):
+class HierarchyPanel(Panel):
     def __init__(self, parent, on_select, on_create, on_duplicate, on_delete, on_rename, on_copy=None, on_export_model=None):
         super().__init__(parent, bg=PANEL)
         self.on_select = on_select
@@ -180,11 +175,6 @@ class HierarchyPanel(tk.Frame):
             section = HierarchySection(self, self.panes, origin)
             self.sections[origin] = section
             self.panes.add(section, minsize=90, stretch='always')
-        self.bind('<MouseWheel>', self.wheel)
-        # Descendants inherit the root bind tag, so scope wheel events to this panel.
-        self.root = self.winfo_toplevel()
-        self._wheel_binding = self.root.bind('<MouseWheel>', self.wheel, add='+')
-        self.bind('<Destroy>', self._destroy, add='+')
         self.rebuild()
 
     @staticmethod
@@ -193,16 +183,7 @@ class HierarchyPanel(tk.Frame):
 
     def wheel(self, event):
         for section in self.sections.values():
-            canvas = section.canvas
-            if (canvas.winfo_rootx() <= event.x_root < canvas.winfo_rootx() + canvas.winfo_width()
-                    and canvas.winfo_rooty() <= event.y_root < canvas.winfo_rooty() + canvas.winfo_height()):
-                canvas.yview_scroll(-int(event.delta / 120), 'units')
-                return 'break'
-
-    def _destroy(self, event):
-        # The root callback must not retain a destroyed panel after language changes.
-        if event.widget is self and self._wheel_binding:
-            self.root.unbind('<MouseWheel>', self._wheel_binding)
+            if section.scroll_area.wheel(event)=='break':return 'break'
 
     def set_items(self, items):
         self.items = items
