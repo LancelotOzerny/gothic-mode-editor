@@ -19,6 +19,20 @@ backups/
 dist/
 logs/
 *.egg-info/
+*.spec
+
+# Temporary files and local logs
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+*~
+
+# Test coverage reports
+.coverage
+.coverage.*
+htmlcov/
 
 # Editor and operating system files
 .idea/
