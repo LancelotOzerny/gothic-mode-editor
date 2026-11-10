@@ -222,6 +222,17 @@ class ProjectRepository:
         self._replace_project_file(path,parse_items(path,'project'))
         return next(x for x in self.items if x.instance==instance)
 
+    def create_item_from_fields(self,instance,fields,metadata=None):
+        """Create one explicitly named item through the existing storage mechanisms."""
+        self.components._safe_id(instance)
+        if self.exists(instance):raise ValueError(tr('project.file_exists'))
+        code=f'INSTANCE {instance} (C_Item)\n{{\n'+''.join(
+            f'    {key} = {value};\n' for key,value in fields.items() if value.strip())+'};'
+        code.encode('cp1251')
+        item=Item(instance,self.root/'__new__','project',code,dict(fields),0,len(code),editor_metadata=metadata or {})
+        if classify(item)=='potions':return self._import_component(item)
+        return self._write_new(instance,code)
+
     def create_item(self,category_key,name=None):
         title=(name or tr('items.default_name')).replace('\\','\\\\').replace('"','\\"')
         schema=schema_for(category_key)

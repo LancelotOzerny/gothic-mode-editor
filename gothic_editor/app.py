@@ -17,6 +17,7 @@ from gothic_editor.ui.windows.settings import SettingsWindow
 from .core.model_preview import ModelPreviewCache
 from .core.model_export import export_model_3ds,resolve_model_source,export_texture
 from .ui.windows.value_choice import ValueChoiceWindow
+from .ui.windows.spreadsheet import SpreadsheetWindow
 from .core.project_tools import ProjectTools
 from gothic_editor.ui.panels.terminal import TerminalPanel
 from gothic_editor.ui.controllers.tool_runner import ToolRunner
@@ -45,6 +46,7 @@ class EditorApp(tk.Tk):
         self.bind('<Map>',self._welcome_mapped,add='+')
         localization.set_language(self.settings.get_value('interface.general.language'))
         self.settings_window=None
+        self.spreadsheet_window=None
         self._dock_resize_after=None
         self._bottom_tab_specs={}
         self._bottom_tab_variables={}
@@ -106,6 +108,10 @@ class EditorApp(tk.Tk):
         menu.add_cascade(label=tr('app.file'),menu=file)
         project=tk.Menu(menu,tearoff=False)
         project.add_command(label=tr('menu.settings'),command=self.show_settings)
+        for title,operation in (('Импорт','import'),('Экспорт','export')):
+            submenu=tk.Menu(project,tearoff=False)
+            submenu.add_command(label='xlsx',command=lambda current=operation:self.show_spreadsheet(current))
+            project.add_cascade(label=title,menu=submenu)
         menu.add_cascade(label=tr('app.project'),menu=project)
         view=tk.Menu(menu,tearoff=False)
         windows=tk.Menu(view,tearoff=False)
@@ -122,6 +128,33 @@ class EditorApp(tk.Tk):
         self.config(menu=menu)
         self.main_menu=menu
         if previous is not None:previous.destroy()
+
+    def show_spreadsheet(self,operation):
+        if not self.need_project():return
+        if self._tool_runner.running:
+            self.show_terminal()
+            return
+        window=self.spreadsheet_window
+        if window is not None and window.winfo_exists():
+            window.lift()
+            return
+        if not self.properties.save(automatic=True):return
+        self.spreadsheet_window=SpreadsheetWindow(self,self.repo,operation,self._spreadsheet_imported)
+
+    def _spreadsheet_imported(self):
+        instance=self.current.instance if self.current is not None else None
+        self._cancel_model_load()
+        self.properties.editor.reset()
+        self.properties.show(None)
+        self.current=None
+        self.update_hierarchy()
+        item=next((item for item in self.repo.items if item.instance==instance),None)
+        if item is not None:
+            self.hierarchy.choose(item)
+            self.select(item)
+        else:
+            self.resources.set_item(self.repo.root,None)
+            self.viewer.set_mesh(caption=tr('app.select_item'))
 
     def _build_layout(self):
         self.editor_frame=tk.Frame(self,bg=BG)
@@ -636,6 +669,10 @@ class EditorApp(tk.Tk):
             self._model_future=None
 
     def destroy(self):
+        window=getattr(self,'spreadsheet_window',None)
+        if window is not None and window.winfo_exists() and window.runner.running:
+            window.lift()
+            return
         if self._tool_runner.running:
             self.show_terminal()
             return
