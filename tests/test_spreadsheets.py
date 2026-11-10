@@ -150,7 +150,7 @@ class ItemExchangeTests(TemporarySpreadsheetCase):
         self.assertTrue(list((self.repo.root/'backups').glob('xlsx-import-*')))
 
     def test_scroll_updates_keep_neighbor_instances_and_functions_in_shared_script(self):
-        folder=self.repo.root/'Scripts/Content/Items'
+        folder=self.repo._project_content()/'Items'
         path=folder/'scrolls.d'
         path.write_text('func void Helper() {};\nINSTANCE ItSc_A(C_Item) {mainflag=ITEM_KAT_RUNE; name="A";};\n'
             'INSTANCE ItSc_B(C_Item) {mainflag=ITEM_KAT_RUNE; name="B";};',encoding='cp1251')

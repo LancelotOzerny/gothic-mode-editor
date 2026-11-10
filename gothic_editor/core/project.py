@@ -10,6 +10,7 @@ from .potion_components import PotionComponents
 from .properties_schema import schema_for
 from .potion_schemes import DEFAULT_POTION_SCHEME
 from .item_migration import ItemMigrationService
+from .item_layout import project_scripts
 from .model_resolver import ModelResolver
 from .settings import field_key, validate_value
 from .settings_schema import all_fields
@@ -36,7 +37,8 @@ class ProjectRepository:
         root=root.resolve();root.mkdir(parents=True,exist_ok=True)
         config=root/'project.json'
         if config.exists():raise ValueError(tr('project.already_exists'))
-        (root/'Scripts'/'Content'/'Items').mkdir(parents=True,exist_ok=True)
+        (root/'Assets'/'Scripts'/'Content'/'Items').mkdir(parents=True,exist_ok=True)
+        (root/'Assets'/'Items'/'Potions').mkdir(parents=True,exist_ok=True)
         (root/'Assets'/'Models').mkdir(parents=True,exist_ok=True)
         config.write_text(json.dumps({'name':name,'game_path':''},ensure_ascii=False,indent=2),encoding='utf-8')
         self.open(root)
@@ -141,7 +143,7 @@ class ProjectRepository:
             if candidate.is_dir() and (candidate/'Items').is_dir():return candidate
         return self.game
 
-    def _project_content(self):return self.root/'Scripts'/'Content'
+    def _project_content(self):return project_scripts(self.root)/'Content'
 
     def refresh(self):
         if not self.root:return
@@ -175,7 +177,7 @@ class ProjectRepository:
         self.project_items=sorted(by_origin['project'].values(),key=lambda i:(i.title.casefold(),i.instance.casefold()))
         self.game_items=sorted(by_origin['game'].values(),key=lambda i:(i.title.casefold(),i.instance.casefold()))
         self.mesh_index={}
-        for base in (self.root/'Assets',self.root/'Scripts',self.game/'_work'/'data'/'Meshes' if self.game else None):
+        for base in (self.root/'Assets',project_scripts(self.root),self.game/'_work'/'data'/'Meshes' if self.game else None):
             if base and base.exists():
                 for directory,_,names in os.walk(base):
                     for name in names:

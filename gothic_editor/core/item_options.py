@@ -3,6 +3,7 @@ import re
 
 from .scripts import load_text, mask_comments, unquote
 from .potion_schemes import POTION_SCHEMES
+from .item_layout import project_scripts
 
 
 def item_options(repo, source):
@@ -19,7 +20,7 @@ def item_options(repo, source):
         discovered=set()
         roots = []
         if repo.game:roots.append(repo.game/'_work'/'Data'/'Scripts'/'System')
-        if repo.root:roots.append(repo.root/'Scripts')
+        if repo.root:roots.append(project_scripts(repo.root))
         for root in roots:
             if not root.is_dir():continue
             for path in root.rglob('*'):

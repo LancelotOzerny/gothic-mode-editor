@@ -8,7 +8,10 @@ class ItemLayout:
 
     def __init__(self, project, category='potions'):
         self.project = Path(project).resolve()
-        self.items = self.project / 'Items'
+        self.items = self.project / 'Assets' / 'Items'
+        # Read old projects in place; new projects and manually moved items use Assets.
+        if not self.items.exists() and (self.project / 'Items').is_dir():
+            self.items = self.project / 'Items'
         self.root = self.items / self.CATEGORIES[category]
 
     def checked(self, path):
@@ -53,3 +56,10 @@ class ItemLayout:
                 if folder.name.casefold() == instance.casefold() and (folder/'item.json').is_file():
                     return self.checked(folder)
         return target
+
+
+def project_scripts(project):
+    project = Path(project)
+    scripts = project / 'Assets' / 'Scripts'
+    legacy = project / 'Scripts'
+    return scripts if scripts.exists() or not legacy.is_dir() else legacy

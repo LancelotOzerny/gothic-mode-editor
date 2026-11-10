@@ -12,6 +12,7 @@ from .localization import tr
 from .scripts import load_text
 from .daedalus_merge import merge_project_scripts,target_path
 from .potion_build import apply_potions
+from .item_layout import project_scripts
 from .compiler_sources import prepare_compiler_sources
 from .compiler_runner import run_compiler
 from .mod_config import ModConfiguration
@@ -38,7 +39,7 @@ class ProjectTools:
         self.game = Path(game).resolve()
         if self.project == self.game or self.project in self.game.parents or self.game in self.project.parents:
             raise ValueError(tr('project.overlapping_roots'))
-        self.source = self.project / 'Scripts' / 'Content'
+        self.source = project_scripts(self.project) / 'Content'
         self.target = self.game / '_work' / 'Data' / 'Scripts' / 'Content'
         self.dist_dir = self.project / 'dist'
         self.logs_dir = self.project / 'logs'

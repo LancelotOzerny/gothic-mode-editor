@@ -52,7 +52,8 @@ class EditorApp(tk.Tk):
         self._bottom_tab_variables={}
         self.register_bottom_tab('terminal','terminal.title',lambda parent:TerminalPanel(parent,self.hide_terminal))
         self.register_bottom_tab('resources','resources.title',lambda parent:ResourcesPanel(
-            parent,lambda:self.repo.resource_editor_path,lambda:self.hide_bottom_tab('resources')))
+            parent,lambda:self.repo.resource_editor_path,lambda:self.hide_bottom_tab('resources'),
+            on_changed=self.refresh,before_change=lambda:self.properties.save(automatic=True)))
         self.terminal_visible=self._bottom_tab_variables['terminal']
         self.resources_visible=self._bottom_tab_variables['resources']
         self.terminal_visible.set(True)

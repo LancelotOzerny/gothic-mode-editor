@@ -10,6 +10,7 @@ from unittest.mock import patch
 from gothic_editor.app import EditorApp
 from gothic_editor.core.resources import item_resource_files, open_in_editor, open_in_folder
 from gothic_editor.core.settings import SettingsStore
+from test_editor_responsiveness import schema, temporary_item
 
 
 class ResourceFilesTests(unittest.TestCase):
@@ -71,7 +72,10 @@ class ResourceDockTests(unittest.TestCase):
         self.addCleanup(self.app.destroy)
         self.app.withdraw()
         self.app.repo.create(self.root/'project','Test')
-        self.item = self.app.repo.create_item('potions')
+        schema_patch=patch('gothic_editor.ui.panels.properties.schema_for',return_value=schema())
+        schema_patch.start()
+        self.addCleanup(schema_patch.stop)
+        self.item = temporary_item(self.app.repo)
         self.app.show_project(reset_hierarchy=True)
         self.app.select(self.item)
         self.app.update_idletasks()
@@ -98,20 +102,19 @@ class ResourceDockTests(unittest.TestCase):
             self.app.hide_bottom_tab(key)
         self.assertEqual(len(self.app.workspace.panes()),1)
 
-    def test_resources_follow_selected_item_and_clear_on_project_change(self):
+    def test_resources_stay_in_current_folder_on_item_change(self):
         resources = self.app.resources
-        self.assertEqual({path.name for path in resources.paths.values()},
-                         {'item.json','params.json','functions.json','functions.d'})
-        first_folder = self.item.path.parent
-        self.assertTrue(all(path.parent==first_folder for path in resources.paths.values()))
-        second = self.app.repo.create_item('potions')
+        self.assertEqual({path.name for path in resources.paths.values()},{'Items','Models','Scripts'})
+        resources.open_folder(self.item.path.parent)
+        second = temporary_item(self.app.repo,'ItPo_Second')
         self.app.select(second)
-        self.assertTrue(all(path.parent==second.path.parent for path in resources.paths.values()))
+        self.assertTrue(all(path.parent==self.item.path.parent for path in resources.paths.values()))
         self.app.show_project()
-        self.assertEqual(resources.paths,{})
+        self.assertEqual(resources.folder,self.item.path.parent)
 
     def test_double_click_and_context_menu_open_editor_and_folder(self):
         resources = self.app.resources
+        resources.open_folder(self.item.path.parent)
         path = next(path for path in resources.paths.values() if path.name=='item.json')
         event = SimpleNamespace(y=1,x_root=0,y_root=0)
         resources.select_file(path)
@@ -123,7 +126,7 @@ class ResourceDockTests(unittest.TestCase):
         self.assertTrue(resources.menu.winfo_exists())
         with patch('gothic_editor.ui.panels.resources.open_in_editor') as launch, \
                 patch('gothic_editor.ui.panels.resources.open_in_folder') as reveal:
-            resources.menu.invoke(0)
+            resources.menu.invoke(3)
             resources.menu.invoke(1)
         launch.assert_called_once()
         reveal.assert_called_once_with(self.item.path)
@@ -142,6 +145,21 @@ class ResourceDockTests(unittest.TestCase):
         self.assertNotIn('resource_editor_path',data)
         self.assertEqual(self.app.settings_store.load().get_value('resources.editor.path'),str(editor))
 
+    def test_resource_deletion_flushes_draft_and_clears_deleted_item(self):
+        resources=self.app.resources
+        folder=self.item.path.parent
+        resources.open_folder(folder.parent)
+        resources.select_file(folder)
+        entry=self.app.properties.inputs['name']
+        entry.delete(0,'end')
+        entry.insert(0,'Saved before deletion')
+        with patch('gothic_editor.ui.panels.resources.messagebox.askyesno',return_value=True):
+            resources.delete_selected()
+        self.app.update_idletasks()
+        self.assertFalse(folder.exists())
+        self.assertIsNone(self.app.current)
+        self.assertFalse(self.app.repo.project_items)
+
     def test_language_rebuild_keeps_selected_tab_terminal_and_resource_files(self):
         self.app.show_terminal()
         self.app.terminal.append('Compiler output')
@@ -151,7 +169,7 @@ class ResourceDockTests(unittest.TestCase):
         self.assertEqual(self.app.bottom_dock.visible_keys(),['terminal','resources'])
         self.assertEqual(self.app.bottom_dock.selected_key(),'resources')
         self.assertIn('Compiler output',self.app.terminal.log.get('1.0','end'))
-        self.assertEqual(len(self.app.resources.paths),4)
+        self.assertEqual({path.name for path in self.app.resources.paths.values()},{'Items','Models','Scripts'})
 
 
 if __name__=='__main__':
