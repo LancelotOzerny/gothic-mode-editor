@@ -42,8 +42,14 @@ class ItemLayout:
                 and self.checked(path) == path)
 
     def find_folder(self, instance):
-        self.folder(instance)  # Validate even when the item does not exist yet.
-        for path in self.files():
-            if path.parent.name.casefold() == instance.casefold():
-                return path.parent
-        return self.folder(instance)
+        target = self.folder(instance)
+        for folder in (target, self.items / instance):
+            if (folder / 'item.json').is_file():
+                return self.checked(folder)
+        # On case-sensitive filesystems preserve Daedalus' case-insensitive IDs.
+        for parent in (self.root, self.items):
+            if not parent.is_dir():continue
+            for folder in parent.iterdir():
+                if folder.name.casefold() == instance.casefold() and (folder/'item.json').is_file():
+                    return self.checked(folder)
+        return target

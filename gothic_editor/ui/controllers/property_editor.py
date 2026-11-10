@@ -36,7 +36,7 @@ class PropertyEditor:
 
     def changed(self, key):
         form = self.form
-        if self._saving or not form.editable or key not in form.inputs:return
+        if self._saving or getattr(form,'_loading',False) or not form.editable or key not in form.inputs:return
         entry = form.inputs[key]
         # A Tk variable trace can precede the native Entry's content update.
         value = entry.get() if form.fields[key].field_type=='key_value_list' else entry.value_variable.get()

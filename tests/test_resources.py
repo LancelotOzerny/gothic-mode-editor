@@ -112,13 +112,13 @@ class ResourceDockTests(unittest.TestCase):
 
     def test_double_click_and_context_menu_open_editor_and_folder(self):
         resources = self.app.resources
-        row = next(key for key,path in resources.paths.items() if path.name=='item.json')
+        path = next(path for path in resources.paths.values() if path.name=='item.json')
         event = SimpleNamespace(y=1,x_root=0,y_root=0)
-        with patch.object(resources.tree,'identify_row',return_value=row), \
-                patch('gothic_editor.ui.panels.resources.open_in_editor') as launch:
-            resources.double_click(event)
+        resources.select_file(path)
+        with patch('gothic_editor.ui.panels.resources.open_in_editor') as launch:
+            resources.open_selected()
             launch.assert_called_once_with(self.item.path,self.app.repo.resource_editor_path,self.app.repo.root)
-        with patch.object(resources.tree,'identify_row',return_value=row), patch('tkinter.Menu.tk_popup'):
+        with patch('tkinter.Menu.tk_popup'):
             resources.context(event)
         self.assertTrue(resources.menu.winfo_exists())
         with patch('gothic_editor.ui.panels.resources.open_in_editor') as launch, \

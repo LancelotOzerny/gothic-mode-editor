@@ -211,9 +211,10 @@ class ModelViewerIntegrationTests(unittest.TestCase):
         with patch('tkinter.Menu.tk_popup'):
             self.app.hierarchy.context(SimpleNamespace(x_root=0,y_root=0),self.item)
         menu=self.app.hierarchy._context_menu
-        self.assertEqual(menu.entrycget(2,'label'),'Скачать модель → 3DS')
+        self.assertEqual(menu.entrycget(2,'label'),'Скачать')
+        downloads=menu.nametowidget(menu.entrycget(2,'menu'))
         with patch('gothic_editor.app.filedialog.asksaveasfilename',return_value=str(output)):
-            menu.invoke(2)
+            downloads.invoke(0)
         self.assertEqual(read_3ds_bytes(output.read_bytes()),(VERTICES,[(2,0,1)]))
         self.assertIn(str(output),self.app.status.get())
         with patch('gothic_editor.app.filedialog.asksaveasfilename',return_value=''), \

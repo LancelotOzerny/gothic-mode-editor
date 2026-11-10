@@ -1,103 +1,90 @@
-"""Files belonging to the selected item's category directory."""
+"""Responsive dark file tiles for resources of the selected item."""
 import tkinter as tk
-from tkinter import messagebox, ttk
-
+from tkinter import messagebox
 from gothic_editor.core.localization import tr
 from gothic_editor.core.resources import item_resource_files, open_in_editor, open_in_folder
-from gothic_editor.ui.widgets import BG, PANEL, MUTED, label
-from gothic_editor.ui.widgets.panel import Panel, attach_scrollbar
+from gothic_editor.ui.widgets import BG, PANEL, MUTED, INPUT, TXT, label
+from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
+from gothic_editor.ui.widgets.file_tile import FileTile
 
 
 class ResourcesPanel(Panel):
-    def __init__(self, parent, get_editor, on_hide):
-        super().__init__(parent, bg=BG)
-        self.project = None
-        self.item = None
-        self.paths = {}
-        self.get_editor = get_editor
-        self.menu = None
-        header = tk.Frame(self, bg=PANEL)
+    def __init__(self,parent,get_editor,on_hide):
+        super().__init__(parent,bg=BG)
+        self.project=self.item=self.menu=self._selected=None
+        self.paths={}
+        self.tiles={}
+        self.columns=0
+        self.get_editor=get_editor
+        header=tk.Frame(self,bg=PANEL)
         header.pack(fill='x')
-        self.location = label(header, tr('resources.select_item'), fg=MUTED, anchor='w')
-        self.location.pack(side='left', fill='x', expand=True, padx=10)
+        self.location=label(header,tr('resources.select_item'),fg=MUTED,anchor='w')
+        self.location.pack(side='left',fill='x',expand=True,padx=10)
         self.add_button('×',on_hide,parent=header).pack(side='right')
         self.add_button(tr('resources.refresh'),self.refresh,parent=header).pack(side='right',padx=6)
-        self.tree = ttk.Treeview(self, columns=('type', 'size'), show='tree headings',
-                                 selectmode='browse', height=1)
-        self.scrollbar=attach_scrollbar(self,self.tree)
-        self.tree.heading('#0', text=tr('resources.file'))
-        self.tree.heading('type', text=tr('resources.type'))
-        self.tree.heading('size', text=tr('resources.size'))
-        self.tree.column('#0', width=450, minwidth=120)
-        self.tree.column('type', width=90, stretch=False)
-        self.tree.column('size', width=100, stretch=False, anchor='e')
-        self.tree.pack(fill='both', expand=True)
-        self.tree.bind('<Double-Button-1>', self.double_click)
-        self.tree.bind('<Return>', lambda _: self.open_selected())
-        self.tree.bind('<Button-3>', self.context)
+        self.scroll_area=ScrollableArea(self)
+        self.scrollbar=self.scroll_area.scrollbar
+        self.scroll_area.pack(fill='both',expand=True)
+        self.scroll_area.content.bind('<Configure>',self.layout,add='+')
 
-    def set_item(self, project, item):
-        self.project, self.item = project, item
+    def set_item(self,project,item):
+        self.project,self.item=project,item
         self.refresh()
 
     def refresh(self):
-        selected = self.selected_file()
-        self.tree.delete(*self.tree.get_children())
-        self.paths = {}
+        selected=self._selected
+        for tile in self.tiles.values():tile.destroy()
+        self.paths={}
+        self.tiles={}
+        self._selected=None
+        self.columns=0
         if self.project is None or self.item is None:
             self.location.config(text=tr('resources.select_item'))
             return
         try:
-            folder, files = item_resource_files(self.project, self.item.instance)
-            self.location.config(text=str(folder) if files else tr('resources.empty', path=str(folder)))
-            for index, path in enumerate(files):
-                row = str(index)
-                self.paths[row] = path
-                self.tree.insert('', 'end', iid=row, text=path.relative_to(folder).as_posix(),
-                                 values=(path.suffix.lstrip('.').upper(), path.stat().st_size))
-                if path == selected:
-                    self.tree.selection_set(row)
-        except (OSError, ValueError) as exc:
-            self.location.config(text=str(exc))
+            folder,files=item_resource_files(self.project,self.item.instance)
+            if not files and self.item.path.is_file():
+                folder,files=self.item.path.parent,[self.item.path]
+            self.location.config(text=str(folder) if files else tr('resources.empty',path=str(folder)))
+            for index,path in enumerate(files):
+                self.paths[str(index)]=path
+                self.tiles[path]=FileTile(self.scroll_area.content,path,path.relative_to(folder).as_posix(),
+                                         self.select_file,self.open_selected,self.context)
+            self.layout()
+            if selected in self.tiles:self.select_file(selected)
+        except (OSError,ValueError) as exc:self.location.config(text=str(exc))
 
-    def selected_file(self):
-        selection = self.tree.selection()
-        return self.paths.get(selection[0]) if selection else None
+    def layout(self,_event=None):
+        columns=max(1,self.scroll_area.content.winfo_width()//122)
+        if columns==self.columns:return
+        self.columns=columns
+        for index,tile in enumerate(self.tiles.values()):
+            tile.grid(row=index//columns,column=index%columns,padx=5,pady=5,sticky='nw')
 
-    def double_click(self, event):
-        row = self.tree.identify_row(event.y)
-        if row:
-            self.tree.selection_set(row)
-            self.open_selected()
-        return 'break'
+    def select_file(self,path):
+        previous=self.tiles.get(self._selected)
+        if previous is not None:previous.set_selected(False)
+        self._selected=path if path in self.tiles else None
+        if self._selected is not None:self.tiles[path].set_selected(True)
+
+    def selected_file(self):return self._selected
 
     def open_selected(self):
-        path = self.selected_file()
-        if path is not None:
-            try:
-                open_in_editor(path, self.get_editor(), self.project)
-            except (OSError, ValueError) as exc:
-                messagebox.showerror(tr('resources.title'), str(exc), parent=self.winfo_toplevel())
+        if self._selected is None:return
+        try:open_in_editor(self._selected,self.get_editor(),self.project)
+        except (OSError,ValueError) as exc:
+            messagebox.showerror(tr('resources.title'),str(exc),parent=self.winfo_toplevel())
 
     def reveal_selected(self):
-        path = self.selected_file()
-        if path is not None:
-            try:
-                open_in_folder(path)
-            except OSError as exc:
-                messagebox.showerror(tr('resources.title'), str(exc), parent=self.winfo_toplevel())
+        if self._selected is None:return
+        try:open_in_folder(self._selected)
+        except OSError as exc:
+            messagebox.showerror(tr('resources.title'),str(exc),parent=self.winfo_toplevel())
 
-    def context(self, event):
-        row = self.tree.identify_row(event.y)
-        if not row:
-            return
-        self.tree.selection_set(row)
-        if self.menu is not None:
-            self.menu.destroy()
-        self.menu = tk.Menu(self, tearoff=False)
-        self.menu.add_command(label=tr('resources.open'), command=self.open_selected)
-        self.menu.add_command(label=tr('resources.reveal'), command=self.reveal_selected)
-        try:
-            self.menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            self.menu.grab_release()
+    def context(self,event):
+        if self.menu is not None:self.menu.destroy()
+        self.menu=tk.Menu(self,tearoff=False,bg=INPUT,fg=TXT)
+        self.menu.add_command(label=tr('resources.open'),command=self.open_selected)
+        self.menu.add_command(label=tr('resources.reveal'),command=self.reveal_selected)
+        try:self.menu.tk_popup(event.x_root,event.y_root)
+        finally:self.menu.grab_release()

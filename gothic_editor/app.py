@@ -14,8 +14,9 @@ from .core.localization import localization,tr
 from .core.settings import EditorSettings,SettingsStore,field_key
 from .core.settings_schema import all_fields
 from gothic_editor.ui.windows.settings import SettingsWindow
-from .core.model_preview import load_model_preview
-from .core.model_export import export_model_3ds
+from .core.model_preview import ModelPreviewCache
+from .core.model_export import export_model_3ds,resolve_model_source,export_texture
+from .ui.windows.value_choice import ValueChoiceWindow
 from .core.project_tools import ProjectTools
 from gothic_editor.ui.panels.terminal import TerminalPanel
 from gothic_editor.ui.controllers.tool_runner import ToolRunner
@@ -76,6 +77,7 @@ class EditorApp(tk.Tk):
         self._model_executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix='model-loader')
         self._model_future=None
         self._model_poll=None
+        self._preview_cache=ModelPreviewCache()
         self._build_menu();self._build_layout()
         self.show_welcome()
         self.bind('<Control-o>',lambda e:self.open_project())
@@ -144,11 +146,13 @@ class EditorApp(tk.Tk):
         self.workspace.pack(fill='both',expand=True,padx=9,pady=(0,8))
         panes=tk.PanedWindow(self.workspace,orient='horizontal',bg=BG,bd=0,sashwidth=7)
         self.workspace.add(panes,minsize=160,stretch='always')
-        self.hierarchy=HierarchyPanel(panes,self.select,self.create_item,self.duplicate,self.delete,self.rename,on_copy=self.copy_to_project,on_export_model=self.export_model)
+        self.hierarchy=HierarchyPanel(panes,self.select,self.create_item,self.duplicate,self.delete,self.rename,on_copy=self.copy_to_project,on_export_model=self.export_model,on_export_texture=self.export_item_texture)
         panes.add(self.hierarchy,width=300,minsize=225)
         middle=tk.Frame(panes,bg='#191e29')
         panes.add(middle,width=550,minsize=250)
         self.viewer=ModelViewer(middle)
+        self.viewer.on_texture_mode=lambda:self._show_model(self.current,
+            (self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom)) if self.current else None
         self.viewer.pack(fill='both',expand=True)
         from .core.item_options import item_options
         self.properties=PropertiesPanel(panes,self.save_fields,on_appearance=self.appearance.show,
@@ -290,6 +294,7 @@ class EditorApp(tk.Tk):
         self.viewer.set_mesh(caption=tr('app.select_item'))
         self.properties.show(None)
         self.resources.set_item(self.repo.root,None)
+        self.terminal.set_project(self.repo.root)
         self._update_tool_buttons()
 
     def _update_tool_buttons(self):
@@ -449,10 +454,12 @@ class EditorApp(tk.Tk):
         query=self.hierarchy.search.get()
         camera=(self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom)
         terminal_text=self.terminal.log.get('1.0','end-1c')
+        terminal_state=self.terminal.detach()
         selected_tab=self.bottom_dock.selected_key()
         for child in self.winfo_children():
             if not isinstance(child,(tk.Menu,tk.Toplevel)):child.destroy()
         self._build_menu();self._build_layout()
+        self.terminal.adopt(terminal_state)
         self.properties.collapsed=collapsed
         if terminal_text:self.terminal.append(terminal_text.rstrip('\n'))
         if selected_tab in self.bottom_dock.visible_keys():
@@ -493,7 +500,7 @@ class EditorApp(tk.Tk):
                     self.viewer.set_mesh(caption=tr('app.select_item'))
         except Exception as exc:messagebox.showerror(tr('app.refresh_error'),str(exc))
 
-    def update_hierarchy(self,previous=None,updated=None):
+    def update_hierarchy(self,previous=None,updated=None,inserted=None):
         project_only=self.settings.get_value('project.hierarchy.display_mode')=='project_only'
         if project_only and self.current is not None and self.current.origin=='game':
             self.current=None
@@ -503,7 +510,8 @@ class EditorApp(tk.Tk):
             self._cancel_model_load()
             self.viewer.set_mesh(caption=tr('app.select_item'))
         items=self.repo.project_items if project_only else self.repo.items
-        if previous is not None and updated is not None:self.hierarchy.update_item(previous,updated,items)
+        if inserted is not None:self.hierarchy.insert_item(inserted,items)
+        elif previous is not None and updated is not None:self.hierarchy.update_item(previous,updated,items)
         else:self.hierarchy.set_items(items)
         project_count=sum(x.origin=='project' for x in self.repo.items)
         self.status.set(tr('messages.stats',total=len(self.repo.items),project=project_count,models=len(self.repo.mesh_index),archived=len(self.repo.archive_models.entries),errors=len(self.repo.errors)))
@@ -521,6 +529,47 @@ class EditorApp(tk.Tk):
             messagebox.showerror(tr('app.error'),str(exc),parent=self)
             return
         self.status.set(tr('model_export.converted' if converted else 'model_export.saved',path=destination))
+
+    def export_item_texture(self,item):
+        try:
+            source=resolve_model_source(item.visual,self.repo.mesh_index,self.repo.archive_models)
+            assets=item.path.parent/'assets' if item.origin=='project' else None
+            key=self._preview_cache.key(source,(self.repo.root,self.repo.resource_revision),True,assets)
+            future=self._model_executor.submit(self._preview_cache.load,key,source,self.repo.root,self.repo.game,
+                assets,dict(self.repo.archive_models.texture_entries),with_textures=True)
+        except (OSError,ValueError) as exc:
+            messagebox.showerror(tr('app.error'),str(exc),parent=self)
+            return
+        def finish():
+            if not future.done():
+                self.after(30,finish)
+                return
+            try:
+                preview=future.result()
+                names=list(preview.textures)
+                if not names:raise ValueError('Текстуры модели не найдены')
+            except (OSError,ValueError) as exc:
+                messagebox.showerror(tr('app.error'),str(exc),parent=self)
+                return
+            def save(name):
+                source=preview.texture_sources.get(name)
+                types=[('TGA (*.tga)','*.tga')]
+                if source and Path(source.name).suffix.lower()=='.tex':types.append(('Gothic TEX (*.tex)','*.tex'))
+                destination=filedialog.asksaveasfilename(parent=self,title='Скачать текстуру',
+                    initialfile=Path(name.replace('\\','/')).with_suffix('.tga').name,
+                    defaultextension='.tga',filetypes=types)
+                if not destination:return
+                try:export_texture(preview.textures[name],source,destination)
+                except (OSError,ValueError) as exc:messagebox.showerror(tr('app.error'),str(exc),parent=self)
+            if len(names)==1:save(names[0])
+            else:
+                def choose(index):
+                    window.destroy()
+                    save(names[index])
+                window=ValueChoiceWindow(self,[(name,name) for name in names],0,'Выберите текстуру',
+                    choose,lambda:window.destroy())
+                window.show()
+        self.after(30,finish)
 
     def select(self,item,camera=None):
         if item is self.current and self.properties.current is item and camera is None:return
@@ -549,10 +598,18 @@ class EditorApp(tk.Tk):
                 return
         else:
             entry=mesh
-        self.viewer.set_mesh(caption=tr('viewer.loading',name=entry.name))
-        future=self._model_executor.submit(load_model_preview,entry,self.repo.root,self.repo.game,
-            item.path.parent/'assets' if item.origin=='project' else None,
-            dict(self.repo.archive_models.texture_entries))
+        assets=item.path.parent/'assets' if item.origin=='project' else None
+        try:key=self._preview_cache.key(entry,(self.repo.root,self.repo.resource_revision),self.viewer.textured,assets)
+        except OSError as exc:
+            self.viewer.set_mesh(caption=str(exc))
+            return
+        cached=self._preview_cache.get(key)
+        if cached is not None:
+            self.viewer.set_preview(cached,caption=entry.name,camera=camera)
+            return
+        if camera is None:self.viewer.set_mesh(caption=tr('viewer.loading',name=entry.name))
+        future=self._model_executor.submit(self._preview_cache.load,key,entry,self.repo.root,self.repo.game,
+            assets,dict(self.repo.archive_models.texture_entries),with_textures=self.viewer.textured)
         self._model_future=future
         self._model_poll=self.after(20,lambda:self._finish_archive_model(future,entry,camera))
 
@@ -566,10 +623,7 @@ class EditorApp(tk.Tk):
         try:
             preview=future.result()
             caption=entry.name if isinstance(entry,Path) else f'{entry.archive.name} / {entry.name}'
-            self.viewer.set_preview(preview,caption=caption)
-            if camera is not None:
-                self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom=camera
-                self.viewer.draw()
+            self.viewer.set_preview(preview,caption=caption,camera=camera)
         except (OSError,ValueError) as exc:
             self.viewer.set_mesh(caption=tr('messages.mesh_error',error=str(exc)))
 
@@ -599,8 +653,18 @@ class EditorApp(tk.Tk):
     def _action(self,method,*args,**kwargs):
         if not self.need_project():return
         try:
+            selected_before=self.properties.current
+            if not self.properties.save(automatic=True):return
+            if args and hasattr(args[0],'instance'):
+                if (selected_before is not None and args[0].instance.casefold()==selected_before.instance.casefold()
+                        and args[0].origin==selected_before.origin):
+                    first=self.properties.current
+                else:first=next((item for item in self.repo.items if item.instance.casefold()==args[0].instance.casefold()),args[0])
+                args=(first,)+args[1:]
+            before={self.hierarchy.item_key(item) for item in self.repo.items}
             result=method(*args,**kwargs)
-            self.update_hierarchy()
+            inserted=result if result is not None and self.hierarchy.item_key(result) not in before else None
+            self.update_hierarchy(inserted=inserted)
             if result is not None:
                 self.hierarchy.choose(result);self.select(result)
             return result

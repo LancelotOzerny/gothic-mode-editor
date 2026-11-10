@@ -12,7 +12,7 @@ class PropertyButton(tk.Canvas):
         super().__init__(parent, bg=parent.cget('bg'), height=FIELD_HEIGHT, width=width,
                          bd=0, highlightthickness=0, takefocus=True, cursor='hand2')
         self.command, self.text, self.filename = command, text, filename
-        self.icons = icons or IconImages(self)
+        self.icons = icons or IconImages.shared(self)
         self.background, self.align = background, align
         self.hovered = False
         self.image = None

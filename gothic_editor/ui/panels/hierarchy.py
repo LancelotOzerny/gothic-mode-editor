@@ -16,6 +16,7 @@ class CategoryRow(tk.Frame):
         super().__init__(parent, bg=PANEL)
         self.section = section
         self.category = category
+        section.category_rows[category.key]=self
         self.level = level
         self.key = (section.origin, category.key)
         self.frames = section.owner.arrow_frames
@@ -35,6 +36,7 @@ class CategoryRow(tk.Frame):
         title = label(row, tr('categories.' + category.key) + f' [{section.count(category)}]',
                       font=('Arial', 10, 'bold'), anchor='w')
         title.pack(side='left', fill='x', expand=True)
+        self.title_label=title
         title.bind('<Button-1>', lambda _: self.toggle())
         if section.origin == 'project' and category.key in EDITABLE_CATEGORIES:
             plus = tk.Label(row, text='+', bg=INPUT, fg=ACCENT, font=('Arial', 14, 'bold'),
@@ -49,7 +51,8 @@ class CategoryRow(tk.Frame):
     def show_content(self):
         if not self.built:
             for child in self.category.children:
-                CategoryRow(self.section, self.content, child, self.level + 1)
+                if not self.section.owner.search.get().strip() or self.section.count(child):
+                    CategoryRow(self.section, self.content, child, self.level + 1)
             for item in self.section.grouped.get(self.category.key, []):
                 self.section.row_item(self.content, item, self.level + 1)
             self.built = True
@@ -94,6 +97,8 @@ class HierarchySection(Panel):
         self.items = []
         self.grouped = {}
         self.item_rows = {}
+        self.category_rows = {}
+        self.highlighted = None
         self.heading = label(self, '', fg=ACCENT, anchor='w', font=('Arial', 10, 'bold'))
         self.heading.pack(fill='x', padx=10, pady=8)
         self.scroll_area = ScrollableArea(self)
@@ -108,6 +113,8 @@ class HierarchySection(Panel):
         for child in self.inner.winfo_children():
             child.destroy()
         self.item_rows = {}
+        self.category_rows = {}
+        self.highlighted = None
         self.grouped = {}
         query = self.owner.search.get().strip().casefold()
         for item in self.items:
@@ -116,7 +123,9 @@ class HierarchySection(Panel):
         count = sum(len(items) for items in self.grouped.values())
         self.heading.config(text=tr('app.items') + f' [{count}]')
         for category in CATEGORIES:
-            CategoryRow(self, self.inner, category, 0)
+            if not query or self.count(category):CategoryRow(self, self.inner, category, 0)
+        if query and not count:
+            label(self.inner,'Ничего не найдено',fg=MUTED).pack(padx=12,pady=15)
         self.canvas.yview_moveto(position[0] if position else 0)
 
     def row_item(self, parent, item, level):
@@ -133,21 +142,26 @@ class HierarchySection(Panel):
         title.pack(side='left', fill='x', expand=True)
         row.item,row.title_label=item,title
         self.item_rows[self.owner.item_key(item)] = row
+        if selected:self.highlighted=self.owner.item_key(item)
         for widget in (row, badge, title):
-            widget.bind('<Button-1>', lambda _, r=row: self.owner.select(r.item))
+            widget.bind('<Button-1>', lambda _, r=row: (r.focus_set(),self.owner.select(r.item)))
             widget.bind('<Double-Button-1>', lambda _, r=row, t=title: self.owner.rename(r.item, r, t))
             widget.bind('<Button-3>', lambda event, r=row: self.owner.context(event, r.item))
+        return row
 
     def highlight(self):
-        for key, row in self.item_rows.items():
+        for key in {self.highlighted,self.owner.selected}:
+            row=self.item_rows.get(key)
+            if row is None:continue
             color = '#3a4d66' if key == self.owner.selected else PANEL
             row.config(bg=color)
             for widget in row.winfo_children():
                 widget.config(bg=color)
+        self.highlighted=self.owner.selected
 
 
 class HierarchyPanel(Panel):
-    def __init__(self, parent, on_select, on_create, on_duplicate, on_delete, on_rename, on_copy=None, on_export_model=None):
+    def __init__(self, parent, on_select, on_create, on_duplicate, on_delete, on_rename, on_copy=None, on_export_model=None, on_export_texture=None):
         super().__init__(parent, bg=PANEL)
         self.on_select = on_select
         self.on_create = on_create
@@ -156,11 +170,12 @@ class HierarchyPanel(Panel):
         self.on_rename = on_rename
         self.on_copy = on_copy or on_duplicate
         self.on_export_model = on_export_model
+        self.on_export_texture = on_export_texture
         self.items = []
         self.selected = None
         self._context_menu = None
         self.expanded = {}
-        self.icons = IconImages(self)
+        self.icons = IconImages.shared(self)
         self.arrow_frames = self.icons.frames('arrow_right.png', 18, MUTED, PANEL, steps=13)
         self.search = tk.StringVar(self)
         top = tk.Frame(self, bg=PANEL)
@@ -177,6 +192,27 @@ class HierarchyPanel(Panel):
             self.sections[origin] = section
             self.panes.add(section, minsize=90, stretch='always')
         self.rebuild()
+        owner=self.winfo_toplevel()
+        self._shortcuts=[(sequence,owner.bind(sequence,self.shortcut,add='+'))
+                         for sequence in ('<Control-KeyPress>','<Delete>')]
+        self.bind('<Destroy>',self.dispose,add='+')
+
+    def dispose(self,event):
+        if event.widget is self:
+            for sequence,binding in self._shortcuts:self.winfo_toplevel().unbind(sequence,binding)
+
+    def shortcut(self,event):
+        focused=self.focus_get()
+        if focused is None or isinstance(focused,(tk.Entry,tk.Text,tk.Spinbox)):return
+        if focused is not self and not str(focused).startswith(str(self)+'.'):return
+        item=next((item for item in self.items if self.item_key(item)==self.selected),None)
+        if item is None or item.origin!='project' or classify(item) not in EDITABLE_CATEGORIES:return
+        if event.keysym=='Delete':self.on_delete(item)
+        elif (event.keysym.lower() in ('d','cyrillic_ve') or
+              (event.keycode==68 and self.tk.call('tk','windowingsystem')=='win32')):
+            self.on_duplicate(item)
+        else:return
+        return 'break'
 
     @staticmethod
     def item_key(item):
@@ -212,6 +248,32 @@ class HierarchyPanel(Panel):
                 section.grouped[category]=[updated if self.item_key(item)==self.item_key(previous) else item
                                            for item in section.grouped[category]]
 
+    def insert_item(self,item,items):
+        """Insert a new row without rebuilding unrelated categories or items."""
+        self.items=items
+        query=self.search.get().strip().casefold()
+        category=classify(item)
+        for section in self.sections.values():
+            section.items=list(items)
+            if query and query not in item.title.casefold() and query not in item.instance.casefold():continue
+            group=section.category_rows.get(category)
+            if group is None:
+                section.rebuild()
+                continue
+            siblings=section.grouped.setdefault(category,[])
+            siblings.append(item)
+            siblings.sort(key=lambda value:(value.title.casefold(),value.instance.casefold()))
+            if group.built:
+                row=section.row_item(group.content,item,group.level+1)
+                index=siblings.index(item)
+                if index+1<len(siblings):
+                    following=section.item_rows.get(self.item_key(siblings[index+1]))
+                    if following is not None:row.pack_configure(before=following)
+            count=sum(len(values) for values in section.grouped.values())
+            section.heading.config(text=tr('app.items')+f' [{count}]')
+            for row in section.category_rows.values():
+                row.title_label.config(text=tr('categories.'+row.category.key)+f' [{section.count(row.category)}]')
+
     def collapse_all(self):
         self.expanded.clear()
         self.selected = None
@@ -219,16 +281,25 @@ class HierarchyPanel(Panel):
 
     def choose(self, item):
         self.selected = self.item_key(item) if item else None
+        changed=self.reveal(item)
+        if changed:self.rebuild()
+        else:
+            for section in self.sections.values():section.highlight()
+
+    def reveal(self,item):
+        changed=False
         if item:
             category = classify(item)
             def reveal(nodes):
+                nonlocal changed
                 for node in nodes:
                     if node.key == category or reveal(node.children):
+                        if not self.expanded.get(('project',node.key)):changed=True
                         self.expanded[('project', node.key)] = True
                         return True
                 return False
             reveal(CATEGORIES)
-        self.rebuild()
+        return changed
 
     def rebuild(self):
         if hasattr(self, 'sections'):
@@ -268,18 +339,25 @@ class HierarchyPanel(Panel):
         entry.bind('<Escape>', cancel)
 
     def context(self, event, item):
+        self.focus_set()
+        self.selected=self.item_key(item)
+        for section in self.sections.values():section.highlight()
         if self._context_menu is not None:
             self._context_menu.destroy()
         menu = tk.Menu(self, tearoff=False, bg=INPUT, fg=TXT)
         self._context_menu = menu
         state='normal' if classify(item) in EDITABLE_CATEGORIES else 'disabled'
         if item.origin == 'project':
-            menu.add_command(label=tr('hierarchy.duplicate'), state=state, command=lambda: self.on_duplicate(item))
-            menu.add_command(label=tr('hierarchy.delete'), state=state, command=lambda: self.on_delete(item))
+            menu.add_command(label=tr('hierarchy.duplicate'), accelerator='Ctrl+D',state=state, command=lambda: self.on_duplicate(item))
+            menu.add_command(label=tr('hierarchy.delete'), accelerator='Delete',state=state, command=lambda: self.on_delete(item))
         else:
             menu.add_command(label=tr('hierarchy.copy_to_project'), state=state, command=lambda: self.on_copy(item))
         if self.on_export_model is not None:
-            menu.add_command(label=tr('hierarchy.download_model_3ds'), command=lambda: self.on_export_model(item))
+            downloads=tk.Menu(menu,tearoff=False,bg=INPUT,fg=TXT)
+            downloads.add_command(label='Модель 3DS',command=lambda:self.on_export_model(item))
+            if self.on_export_texture is not None:
+                downloads.add_command(label='Текстура',command=lambda:self.on_export_texture(item))
+            menu.add_cascade(label='Скачать',menu=downloads)
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:

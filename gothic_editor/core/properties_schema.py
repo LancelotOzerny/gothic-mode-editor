@@ -56,10 +56,12 @@ class PropertiesSchema:
     instance_prefix: str = ''
     instance_pattern: str = 'Potion{n}'
     numbering_start: int = 1
+    dependencies: tuple = field(default=(),compare=False,repr=False)
 
     @classmethod
     def load(cls, path):
-        data = load_property_data(path)
+        dependencies=[]
+        data = load_property_data(path,dependencies)
         if data.get('schema_version') not in (1, 2, 3) or not isinstance(data.get('sections'), list):
             raise ValueError(f'{path}: unsupported properties schema')
         option_lists = data.get('option_lists', {})
@@ -135,8 +137,13 @@ class PropertiesSchema:
                 or not re.fullmatch(r'[A-Za-z_]\w*', prefix + pattern.replace('{n}', str(start)), re.ASCII)):
             raise ValueError(f'{path}: invalid instance numbering')
         return cls(tuple(sections), unknown, data.get('missing_properties', {}).get('show_empty', True),
-                   defaults, prefix, pattern, start)
+                   defaults, prefix, pattern, start, tuple(dependencies))
 
+
+_SCHEMA_CACHE={}
+
+def _dependency_stamp(paths):
+    return tuple((path.stat().st_mtime_ns,path.stat().st_size) for path in paths)
 
 def schema_for(category):
     # Additional item types can be registered here when their forms are ready.
@@ -147,4 +154,11 @@ def schema_for(category):
     roots = (Path(sys.executable).resolve().parent,Path(__file__).resolve().parents[2])
     paths = [root / 'assets' / 'properties' / 'categories' / filename for root in roots]
     path = next((path for path in paths if path.is_file()),paths[-1])
-    return PropertiesSchema.load(path)
+    cached=_SCHEMA_CACHE.get(path)
+    if cached is not None:
+        schema,stamp=cached
+        if _dependency_stamp(schema.dependencies)==stamp:return schema
+    schema=PropertiesSchema.load(path)
+    if isinstance(schema,PropertiesSchema):
+        _SCHEMA_CACHE[path]=(schema,_dependency_stamp(schema.dependencies))
+    return schema

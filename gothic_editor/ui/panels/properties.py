@@ -23,6 +23,9 @@ class PropertiesPanel(Panel):
         self.fields={};self.initial={};self.editable=False
         self.collapsed={}
         self.sections={}
+        self._schema=None
+        self._loading=False
+        self.appearance_holder=None
         self.error_labels={}
         self.editor=PropertyEditor(self)
         self.bind('<Destroy>',lambda event:self.editor.reset() if event.widget is self else None,add='+')
@@ -40,6 +43,13 @@ class PropertiesPanel(Panel):
         self.show(None)
 
     def show(self,item):
+        if item is not None and self.current is not None:
+            try:schema=schema_for(classify(item))
+            except (OSError,ValueError,KeyError,TypeError):schema=None
+            if (schema is not None and schema is self._schema and schema.show_missing and
+                    not schema.unknown_section and self.editable==(classify(item) in EDITABLE_CATEGORIES and item.origin=='project')):
+                self._reuse(item)
+                return
         self.editor.reset()
         self.error_labels={}
         self.save_status.config(text='')
@@ -48,6 +58,8 @@ class PropertiesPanel(Panel):
         self.inputs={}
         self.fields={};self.initial={};self.editable=False
         self.sections={}
+        self._schema=None
+        self.appearance_holder=None
         if item is None:
             self.info.config(text=tr('properties.select_in_hierarchy'))
             return
@@ -65,6 +77,7 @@ class PropertiesPanel(Panel):
             label(self.inner,tr('properties.readonly'),fg=MUTED,wraplength=260).pack(fill='x',padx=13,pady=8)
             for key in sorted(item.fields):self.render_field(self.inner,PropertyField(key,key),item.fields[key])
         else:
+            self._schema=schema
             known={property_key(field.key) for section in schema.sections for field in section.fields
                    if field.source=='property'}
             for section in schema.sections:
@@ -89,8 +102,49 @@ class PropertiesPanel(Panel):
                         if property_key(key) not in known:
                             self.render_field(frame.body,PropertyField(key,key),item.fields[key])
         if self.on_appearance is not None and classify(item) in EDITABLE_CATEGORIES and 'appearance' in self.sections:
-            self.on_appearance(self.sections['appearance'].body,item)
+            self.appearance_holder=tk.Frame(self.sections['appearance'].body,bg=PANEL)
+            self.appearance_holder.pack(fill='x')
+            self.on_appearance(self.appearance_holder,item)
         self.canvas.yview_moveto(0)
+
+    def _reuse(self,item):
+        self.editor.reset()
+        self._loading=True
+        try:
+            self.current=item
+            self.info.config(text=item.instance)
+            for key,entry in self.inputs.items():
+                self.clear_field_error(key)
+                field=self.fields[key]
+                if field.field_type=='key_value_list':
+                    from gothic_editor.core.property_lists import PropertyList
+                    entry.model=PropertyList(field,item.fields)
+                    entry.set_expression(entry.model.rows)
+                    self.initial[key]=entry.get()
+                    continue
+                if field.source=='instance_id':
+                    value=item.instance
+                    if field.prefix and value.casefold().startswith(field.prefix.casefold()):value=value[len(field.prefix):]
+                elif field.source=='editor_metadata':value=item.editor_metadata.get(key,'')
+                else:value=item.fields.get(property_key(key),'')
+                if field.field_type in ('string','resource') and re.fullmatch(r'"(?:\\.|[^"\\])*"',value):
+                    value=re.sub(r'\\([\\"])',r'\1',value[1:-1])
+                if field.widget=='combobox':
+                    entry.close_choices(restore_focus=False)
+                    if field.options_source and self.options_provider:
+                        provided=list(self.options_provider(field.options_source))
+                        entry.options=tuple(provided if field.options_source=='item_schemes' else
+                            list(field.options)+[option for option in provided if option[1] not in dict(field.options).values()])
+                    entry.set_expression(value)
+                else:entry.value_variable.set(value)
+                self.initial[key]=value
+                self.editor.watch(key,entry.value_variable)
+            if self.appearance_holder is not None:
+                for child in self.appearance_holder.winfo_children():child.destroy()
+                self.on_appearance(self.appearance_holder,item)
+            if self.editable:self.set_save_status('properties.saved')
+            else:self.save_status.config(text='')
+        finally:self._loading=False
 
     def render_field(self,parent,field,value):
         if field.field_type=='key_value_list':

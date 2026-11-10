@@ -16,7 +16,8 @@ class ModelViewer(tk.Canvas):
         self.mesh = PreviewMesh([], [])
         self.textures = {}
         self.missing = []
-        self.textured = True
+        self.textured = False
+        self.on_texture_mode = None
         self.image = None
         self._scene_revision = 0
         self._frames = OrderedDict()
@@ -33,7 +34,7 @@ class ModelViewer(tk.Canvas):
         for button in (self.texture_button, self.solid_button):
             button.configure(bg='#191e29')
             button.pack(side='left', padx=3)
-        self.texture_button.set_selected(True)
+        self.solid_button.set_selected(True)
         self.bind('<Configure>', lambda _: self.request_draw())
         self.bind('<ButtonPress-1>', self.start_drag)
         self.bind('<B1-Motion>', self.drag)
@@ -53,24 +54,24 @@ class ModelViewer(tk.Canvas):
         self.angle_x, self.angle_y, self.zoom = -0.38, 0.45, 1.0
         self.draw()
 
-    def set_preview(self, preview, caption=''):
-        self._invalidate_scene()
+    def set_preview(self, preview, caption='', camera=None):
+        self._invalidate_scene(preview.render_token)
         self.mesh = preview.mesh
         self.vertices, self.faces = self.mesh.vertices, self.mesh.faces
         self.textures, self.missing = preview.textures, preview.missing
         self.caption = caption
-        self.angle_x, self.angle_y, self.zoom = -0.38, 0.45, 1.0
+        self.angle_x, self.angle_y, self.zoom = camera or (-0.38, 0.45, 1.0)
         self.draw()
 
     def set_textured(self, enabled):
         self.textured = enabled
         self.texture_button.set_selected(enabled)
         self.solid_button.set_selected(not enabled)
+        if self.on_texture_mode is not None:self.on_texture_mode()
         self.draw()
 
-    def _invalidate_scene(self):
-        self._scene_revision += 1
-        self._frames.clear()
+    def _invalidate_scene(self,token=None):
+        self._scene_revision = token if token is not None else object()
         self._wanted_key = None
         self.image = None
         self.delete('model')

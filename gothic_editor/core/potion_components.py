@@ -63,7 +63,7 @@ class PotionComponents:
     def import_item(self, item:Item, instance=None, as_override=False):
         target=self._safe_id(instance or item.instance)
         folder=self.folder(target)
-        if folder.exists() or any(file.parent.name.casefold()==target.casefold() for file in self.files()):
+        if folder.exists() or (self.layout.find_folder(target)/'item.json').is_file():
             raise ValueError('Предмет уже существует: '+target)
         source=replace_instance(item.text,item.instance,target) if target!=item.instance else item.text
         original=self._read(item.path) if self.owns(item.path) else None
@@ -78,9 +78,10 @@ class PotionComponents:
         folder.mkdir(parents=True,exist_ok=False)
         try:
             self._atomic_json(folder/'item.json',data)
-            self._atomic_json(folder/'params.json',{'variables':[], 'source_constants':self._related_constants(item)})
-            self._atomic_json(folder/'functions.json', {'source_functions':self._related_functions(item)})
-            (folder/'functions.d').write_text('// Дополнительные функции именно этого зелья.\n// Не копируйте сюда уже определённые в Gothic функции.\n',encoding='utf-8')
+            if not original:
+                self._atomic_json(folder/'params.json',{'variables':[], 'source_constants':self._related_constants(item)})
+                self._atomic_json(folder/'functions.json', {'source_functions':self._related_functions(item)})
+                (folder/'functions.d').write_text('// Дополнительные функции именно этого зелья.\n// Не копируйте сюда уже определённые в Gothic функции.\n',encoding='utf-8')
             if original:
                 import shutil
                 for path in item.path.parent.iterdir():

@@ -7,13 +7,16 @@ from uuid import uuid4
 
 from .item_layout import ItemLayout
 from .mesh import MeshFormatError, read_3ds_bytes
+from .texture_names import texture_candidates
+
+
+_TEXTURE_CONTAINERS = {0x4D4D, 0x3D3D, 0xAFFF, 0xA200, 0xA204, 0xA210, 0xA220,
+                       0xA230, 0xA33A, 0xA33C, 0xA33D, 0xA33E, 0xA340, 0xA342, 0xA344, 0xA346, 0xA348}
 
 
 def texture_references(data):
     """Read 3DS material map filenames, preserving their original spelling."""
     result = []
-    containers = {0x4D4D, 0x3D3D, 0xAFFF, 0xA200, 0xA204, 0xA210, 0xA220,
-                  0xA230, 0xA33A, 0xA33C, 0xA33D, 0xA33E, 0xA340, 0xA342, 0xA344, 0xA346, 0xA348}
 
     def visit(start, end, depth=0):
         if depth > 32:raise MeshFormatError('Слишком глубокая структура 3DS')
@@ -22,13 +25,40 @@ def texture_references(data):
             kind, size = struct.unpack_from('<HI', data, start)
             stop = start + size
             if size < 6 or stop > end:raise MeshFormatError('Повреждённый блок 3DS')
-            if kind in containers:visit(start + 6, stop, depth + 1)
+            if kind in _TEXTURE_CONTAINERS:visit(start + 6, stop, depth + 1)
             elif kind == 0xA300:
                 value = data[start + 6:stop].split(b'\0', 1)[0].decode('cp1251')
                 if value:result.append(value)
             start = stop
     visit(0, len(data))
     return tuple(dict.fromkeys(result))
+
+
+def replace_texture_references(data, replacements):
+    """Change only material filename chunks, updating their enclosing chunk sizes."""
+    if not replacements:return data
+
+    def visit(start, end, depth=0):
+        if depth > 32:raise MeshFormatError('Слишком глубокая структура 3DS')
+        chunks = []
+        while start < end:
+            if start + 6 > end:raise MeshFormatError('Повреждённый блок 3DS')
+            kind, size = struct.unpack_from('<HI', data, start)
+            stop = start + size
+            if size < 6 or stop > end:raise MeshFormatError('Повреждённый блок 3DS')
+            payload = data[start + 6:stop]
+            if kind in _TEXTURE_CONTAINERS:
+                payload = visit(start + 6, stop, depth + 1)
+            elif kind == 0xA300:
+                value, separator, trailing = payload.partition(b'\0')
+                replacement = replacements.get(value.decode('cp1251'))
+                if replacement is not None:
+                    payload = replacement.encode('cp1251') + (separator or b'\0') + trailing
+            chunks.append(struct.pack('<HI', kind, len(payload) + 6) + payload)
+            start = stop
+        return b''.join(chunks)
+
+    return visit(0, len(data))
 
 
 class ItemAssetManager:
@@ -75,13 +105,13 @@ class ItemAssetManager:
 
         def operation(folder):
             (folder / 'model.3ds').write_bytes(data)
+            textures={path.name.casefold():path for path in source.parent.iterdir() if path.is_file()}
             for reference in references:
-                name = Path(reference.replace('\\', '/')).name
                 # Never follow absolute or parent paths embedded in a model.
-                texture = next((path for path in source.parent.iterdir()
-                                if path.name.casefold() == name.casefold() and path.is_file()), None)
-                if texture is not None and name.casefold() != 'model.3ds':
-                    (folder / name).write_bytes(texture.read_bytes())
+                texture = next((textures[name] for name in texture_candidates(reference)
+                                if name in textures and textures[name].suffix.lower() in ('.tga','.tex')), None)
+                if texture is not None:
+                    (folder / texture.name).write_bytes(texture.read_bytes())
         return self._change(item, operation)
 
     def import_textures(self, item, sources):

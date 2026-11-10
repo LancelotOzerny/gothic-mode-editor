@@ -224,8 +224,8 @@ class PreviewWidgetTests(unittest.TestCase):
         preview = ModelPreview(read_3ds_bytes(textured_3ds(), preview=True), {'Bottle.TGA': read_tga(tga())}, [])
         viewer.set_preview(preview)
         self.finish_frame(root,viewer)
-        self.assertTrue(viewer.textured)
-        self.assertTrue(viewer.texture_button.selected)
+        self.assertFalse(viewer.textured)
+        self.assertTrue(viewer.solid_button.selected)
         self.assertIsNotNone(viewer.image)
         with patch.object(viewer.renderer,'request',wraps=viewer.renderer.request) as request:
             viewer.draw()
@@ -306,6 +306,7 @@ class PreviewWidgetTests(unittest.TestCase):
 
                 # Isolate the preview path from property schemas being edited by the user.
                 with patch.object(app.properties, 'show'):
+                    app.viewer.set_textured(True)
                     app.select(item)
                     finish()
                     self.assertEqual(app.viewer.textures['Bottle.TGA'].pixels[:4], bytes((255, 0, 0, 255)))
@@ -317,11 +318,15 @@ class PreviewWidgetTests(unittest.TestCase):
                     app.repo.archive_models.refresh(root / 'project', None)
                     app.select(item, camera=(.2, .3, 2))
                     finish()
-                    self.assertEqual(app.viewer.textures['Bottle.TGA'].pixels[:4], bytes((0, 255, 0, 255)))
+                    self.assertEqual(app.viewer.textures,{})
                     self.assertIn('models.vdf', app.viewer.caption)
                     self.assertFalse(app.viewer.textured)
                     self.assertEqual((app.viewer.angle_x, app.viewer.angle_y, app.viewer.zoom), (.2, .3, 2))
+                    app.viewer.set_textured(True)
+                    finish()
+                    self.assertEqual(app.viewer.textures['Bottle.TGA'].pixels[:4], bytes((0,255,0,255)))
                     future = Future()
+                    app._preview_cache.entries.clear()
                     with patch.object(app._model_executor, 'submit', return_value=future):
                         app.select(item)
                     entry = app.repo.archive_models.find(item.visual)

@@ -5,6 +5,13 @@ from pathlib import Path
 
 
 class IconImages:
+    @classmethod
+    def shared(cls, widget):
+        root = widget._root()
+        if not hasattr(root, '_shared_icons'):
+            root._shared_icons = cls(root)
+        return root._shared_icons
+
     def __init__(self, master):
         self.master = master
         self.directory = Path(__file__).resolve().parents[3] / 'assets' / 'icons'

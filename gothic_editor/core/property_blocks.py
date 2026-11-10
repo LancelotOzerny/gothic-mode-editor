@@ -3,8 +3,9 @@ import json
 from pathlib import Path
 
 
-def load_property_data(path):
+def load_property_data(path, dependencies=None):
     path = Path(path)
+    if dependencies is not None:dependencies.append(path)
     data = json.loads(path.read_text('utf-8-sig'))
     if not isinstance(data, dict):
         raise ValueError(f'{path}: properties must be an object')
@@ -24,6 +25,7 @@ def load_property_data(path):
         if block_path in visited:
             raise ValueError(f'{path}: duplicate block {reference}')
         visited.add(block_path)
+        if dependencies is not None:dependencies.append(block_path)
         block = json.loads(block_path.read_text('utf-8-sig'))
         if not isinstance(block, dict) or 'blocks' in block or 'schema_version' in block:
             raise ValueError(f'{block_path}: invalid property block')

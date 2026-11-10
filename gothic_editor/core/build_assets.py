@@ -1,7 +1,8 @@
 """Prepare owned item resources and detect Gothic's global filename conflicts."""
 from pathlib import Path
 
-from .item_assets import texture_references
+from .item_assets import texture_references, replace_texture_references
+from .texture_names import texture_candidates, material_texture_name
 from .mesh import read_3ds_bytes
 from .model_resolver import ModelResolver
 from .potion_components import PotionComponents
@@ -37,8 +38,9 @@ class BuildAssetService:
             else:
                 source = model.read_bytes()
                 read_3ds_bytes(source)
-                models.append((file, texture_references(source)))
-                add('_work/data/Meshes/' + ModelResolver.generated_name(data['instance']), model, str(file))
+                packed_name='_work/data/Meshes/' + ModelResolver.generated_name(data['instance'])
+                models.append((file, texture_references(source), packed_name))
+                add(packed_name, model, str(file))
             for path in sorted(assets.rglob('*')):
                 if not path.is_file() or path == model:continue
                 suffix = path.suffix.casefold()
@@ -58,7 +60,7 @@ class BuildAssetService:
                 if suffix=='.3ds':
                     source=path.read_bytes()
                     read_3ds_bytes(source)
-                    models.append((path,texture_references(source)))
+                    models.append((path,texture_references(source),directory+path.name))
             elif suffix in ('.tga','.tex'):
                 directory='_work/data/Textures/'+('_compiled/' if suffix=='.tex' else '')
             else:
@@ -72,12 +74,19 @@ class BuildAssetService:
                 add(directory+'/'.join(relative.parts[1:]),path,str(path))
                 continue
             add(directory+path.name,path,str(path))
-        for file, references in models:
+        textures={Path(name).name.casefold():Path(name).name for name in files
+                  if Path(name).suffix.lower() in ('.tga','.tex')}
+        for file, references, packed_name in models:
+            replacements={}
             for reference in references:
                 name = Path(reference.replace('\\', '/')).name
-                compiled = str(Path(name).with_suffix('')) + '-C.TEX'
-                if name.casefold() not in names and compiled.casefold() not in names:
+                matched=next((textures[candidate] for candidate in texture_candidates(reference)
+                              if candidate in textures),None)
+                if matched is None:
                     raise ValueError(f'{file.parent.name}: отсутствует текстура {name}. Добавьте её в assets.')
+                logical_name=material_texture_name(matched)
+                if reference.casefold()!=logical_name.casefold():replacements[reference]=logical_name
+            files[packed_name]=replace_texture_references(files[packed_name],replacements)
         return files
 
     def package(self, output, compiled, files):

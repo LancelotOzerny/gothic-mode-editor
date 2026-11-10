@@ -7,6 +7,31 @@ from .localization import tr
 from .mesh import MeshFormatError, read_mrm
 
 
+def resolve_model_source(visual,mesh_index,archives):
+    name=Path(visual.replace('\\','/')).name.lower()
+    source_name=str(Path(name).with_suffix('.3ds')) if Path(name).suffix=='.mrm' else name
+    source=mesh_index.get(source_name)
+    if source is not None and source.is_file():return source
+    entry=archives.find(visual) if visual else None
+    if entry is None:raise ValueError(tr('messages.no_mesh',visual=visual or tr('viewer.no_visual')))
+    return entry
+
+
+def export_texture(texture,source,destination):
+    """Keep original texture bytes, or export decoded Gothic textures as TGA."""
+    destination=Path(destination)
+    if source is not None and Path(source.name).suffix.lower()==destination.suffix.lower():
+        destination.write_bytes(source.read_bytes())
+        return
+    if destination.suffix.lower()!='.tga':raise ValueError('Для конвертации текстуры выберите формат TGA')
+    header=struct.pack('<BBBHHBHHHHBB',0,0,2,0,0,0,0,0,texture.width,texture.height,32,40)
+    rgba=texture.pixels
+    bgra=bytearray(rgba)
+    bgra[0::4]=rgba[2::4]
+    bgra[2::4]=rgba[0::4]
+    destination.write_bytes(header+bgra)
+
+
 def geometry_3ds(vertices, faces):
     if not vertices or not faces:
         raise MeshFormatError(tr('viewer.no_triangles'))
