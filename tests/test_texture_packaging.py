@@ -34,6 +34,7 @@ class TexturePackagingTests(unittest.TestCase):
         source=self.root/'source.3ds'
         source.write_bytes(replace_texture_references(textured_3ds(),{'Bottle.TGA':reference}))
         self.manager.import_model(self.item,source)
+        self.item=self.repo.components.read_item(self.item.path)
         return source
 
     def test_separate_import_of_uuid_tga_matches_preview_and_packages_fixed_model(self):
@@ -43,15 +44,16 @@ class TexturePackagingTests(unittest.TestCase):
         texture=self.root/(self.REFERENCE+'.TGA')
         texture.write_bytes(tga())
         self.manager.import_textures(self.item,[texture])
-        owned=self.item.path.parent/'assets/model.3ds'
+        owned=self.repo.root/'Assets/Models/source/model.3ds'
         preview=load_model_preview(owned,self.repo.root,item_assets=owned.parent)
         self.assertFalse(preview.missing)
         self.assertIn(self.REFERENCE,preview.textures)
         files=self.service.collect()
-        model_key='_work/data/Meshes/model_ItPo_Skill_02.3ds'
-        self.assertEqual(texture_references(files[model_key]),(texture.name,))
+        model_key='_work/data/Meshes/source.3ds'
+        packed_texture='source_'+texture.name
+        self.assertEqual(texture_references(files[model_key]),(packed_texture,))
         self.assertEqual(read_3ds_bytes(files[model_key]),read_3ds_bytes(original))
-        self.assertEqual(files['_work/data/Textures/'+texture.name],texture.read_bytes())
+        self.assertEqual(files['_work/data/Textures/'+packed_texture],texture.read_bytes())
         self.assertEqual(source.read_bytes(),original)
         self.assertEqual(owned.read_bytes(),original)
         self.assertEqual(files,self.service.collect())
@@ -60,14 +62,14 @@ class TexturePackagingTests(unittest.TestCase):
         output=self.root/'Test.mod'
         self.service.package(output,compiled,files)
         packed=read_mod(output)
-        self.assertEqual(texture_references(packed[model_key.lower()]),(texture.name,))
-        self.assertEqual(packed[('_work/data/Textures/'+texture.name).lower()],texture.read_bytes())
+        self.assertEqual(texture_references(packed[model_key.lower()]),(packed_texture,))
+        self.assertEqual(packed[('_work/data/Textures/'+packed_texture).lower()],texture.read_bytes())
 
     def test_model_import_auto_finds_extensionless_texture_next_to_source(self):
         texture=self.root/(self.REFERENCE+'.tga')
         texture.write_bytes(tga())
         self.model(self.REFERENCE)
-        self.assertEqual((self.item.path.parent/'assets'/texture.name).read_bytes(),texture.read_bytes())
+        self.assertEqual((self.repo.root/'Assets/Models/source'/texture.name).read_bytes(),texture.read_bytes())
         self.service.collect()
 
     def test_extensionless_reference_accepts_compiled_texture_and_keeps_tex_bytes(self):
@@ -76,29 +78,32 @@ class TexturePackagingTests(unittest.TestCase):
         texture.write_bytes(ztex(1,bytes((1,2,3,255))*16))
         self.manager.import_textures(self.item,[texture])
         files=self.service.collect()
-        self.assertEqual(texture_references(files['_work/data/Meshes/model_ItPo_Skill_02.3ds']),
-                         (self.REFERENCE+'.TGA',))
-        self.assertEqual(files['_work/data/Textures/_compiled/'+texture.name],texture.read_bytes())
+        self.assertEqual(texture_references(files['_work/data/Meshes/source.3ds']),
+                         ('source_'+self.REFERENCE+'.TGA',))
+        self.assertEqual(files['_work/data/Textures/_compiled/source_'+texture.name],texture.read_bytes())
 
     def test_global_assets_case_and_embedded_paths_use_the_same_lookup(self):
-        source=self.repo.root/'Assets/Models/custom.3ds'
+        folder=self.repo.root/'Assets/Models/custom'
+        folder.mkdir()
+        source=folder/'model.3ds'
         reference=r'C:\Export\Bottle'
         source.write_bytes(replace_texture_references(textured_3ds(),{'Bottle.TGA':reference}))
-        textures=self.repo.root/'Assets/Textures'
-        textures.mkdir()
+        textures=folder
         (textures/'bOtTlE.TgA').write_bytes(tga())
         files=self.service.collect()
-        self.assertEqual(texture_references(files['_work/data/Meshes/custom.3ds']),('bOtTlE.TgA',))
+        self.assertEqual(texture_references(files['_work/data/Meshes/custom.3ds']),('custom_bOtTlE.TgA',))
         self.assertEqual(texture_references(source.read_bytes()),(reference,))
 
-    def test_exact_reference_preserves_model_bytes_and_missing_unrelated_texture_fails(self):
+    def test_packaging_preserves_source_bytes_and_missing_unrelated_texture_fails(self):
         source=self.model('Bottle.TGA')
         texture=self.root/'BOTTLE.tga'
         texture.write_bytes(tga())
         self.manager.import_textures(self.item,[texture])
         files=self.service.collect()
-        self.assertEqual(files['_work/data/Meshes/model_ItPo_Skill_02.3ds'],source.read_bytes())
-        (self.item.path.parent/'assets'/texture.name).rename(self.item.path.parent/'assets/Other.tga')
+        self.assertEqual(texture_references(files['_work/data/Meshes/source.3ds']),('source_'+texture.name,))
+        folder=self.repo.root/'Assets/Models/source'
+        self.assertEqual((folder/'model.3ds').read_bytes(),source.read_bytes())
+        (folder/texture.name).rename(folder/'Other.tga')
         with self.assertRaisesRegex(ValueError,'отсутствует текстура Bottle.TGA'):self.service.collect()
 
     def test_rewrite_updates_nested_chunk_sizes_and_preserves_uvs_and_unknown_chunks(self):

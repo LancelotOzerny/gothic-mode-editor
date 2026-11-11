@@ -7,6 +7,7 @@ import tempfile
 from .artifact_transaction import publish_files
 from .mod_package import validate_build
 from .localization import tr
+from .mesh_cache import MeshCache
 
 
 def digest(path):
@@ -37,7 +38,7 @@ class ModInstallerService:
         try:
             source_mod=self.project/'dist'/self.config.filename
             source_ini=self.project/'dist'/self.config.ini_name
-            validate_build(source_mod,source_ini,self.config)
+            files=validate_build(source_mod,source_ini,self.config)
             archive,ini=self.paths()
             cfg=self.project/'project.json'
             data=json.loads(cfg.read_text('utf-8'))
@@ -51,6 +52,7 @@ class ModInstallerService:
                     raise ValueError(tr('pipeline.install_conflict',path=str(target)))
             pairs=[(source_mod,archive),(source_ini,ini)]
             changes=[pair for pair in pairs if not pair[1].is_file() or digest(pair[0])!=digest(pair[1])]
+            cache_pairs=MeshCache(self.project,self.game).plan(files)
             receipts[key]={'project':str(self.project.resolve()),'files':{
                 target.relative_to(self.game).as_posix():digest(source) for source,target in pairs}}
             # Receipt update participates in the same rollback as the two installed files.
@@ -61,7 +63,8 @@ class ModInstallerService:
                     validate_build(archive,ini,self.config)
                     if any(digest(source)!=digest(target) for source,target in pairs):
                         raise ValueError('Установленные файлы не совпадают со сборкой')
-                publish_files(changes+[(updated,cfg)],commit=verify)
+                publish_files(changes+cache_pairs+[(updated,cfg)],commit=verify)
+            MeshCache.report(cache_pairs,log)
             log(tr('tools.sync_success',path=str(archive),count=len(changes)))
             return ToolResult(archive,files=len(changes),archive=archive,operation='sync')
         except Exception as exc:

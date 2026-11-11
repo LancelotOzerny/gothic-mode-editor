@@ -7,6 +7,7 @@ import subprocess
 from .mod_install import ModInstallerService
 from .mod_package import validate_build
 from .localization import tr
+from .mesh_cache import MeshCache
 
 
 def starter_supports_direct(path):
@@ -42,10 +43,11 @@ class ModLauncherService:
             report(message)
         try:
             archive,ini=ModInstallerService(self.project,self.game,self.config).paths()
-            validate_build(archive,ini,self.config)
+            files=validate_build(archive,ini,self.config)
             starter=Path(self.config.starter_path).expanduser() if self.config.starter_path.strip() else self.game/'System/GothicStarter.exe'
             if not starter.is_absolute():starter=self.project/starter
             if not starter.is_file():raise ValueError(tr('pipeline.starter_missing',path=str(starter)))
+            MeshCache(self.project,self.game).invalidate(files,log)
             direct=starter_supports_direct(starter)
             command=[str(starter.resolve())]
             if direct:command+=['-start','-game:'+ini.name]

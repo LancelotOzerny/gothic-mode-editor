@@ -12,6 +12,7 @@ from .potion_schemes import DEFAULT_POTION_SCHEME
 from .item_migration import ItemMigrationService
 from .item_layout import project_scripts
 from .model_resolver import ModelResolver
+from .model_library import ModelLibrary
 from .settings import field_key, validate_value
 from .settings_schema import all_fields
 
@@ -64,6 +65,7 @@ class ProjectRepository:
         self.root=root
         self.project_settings=dict(project_settings)
         self.components=PotionComponents(root)
+        ModelLibrary(root).migrate(self.components)
         self.game=game
         self.compiler_path=resources.get('compiler_path','')
         self.resource_editor_path=resources.get('resource_editor_path','')
@@ -177,7 +179,7 @@ class ProjectRepository:
         self.project_items=sorted(by_origin['project'].values(),key=lambda i:(i.title.casefold(),i.instance.casefold()))
         self.game_items=sorted(by_origin['game'].values(),key=lambda i:(i.title.casefold(),i.instance.casefold()))
         self.mesh_index={}
-        for base in (self.root/'Assets',project_scripts(self.root),self.game/'_work'/'data'/'Meshes' if self.game else None):
+        for base in (self.game/'_work'/'data'/'Meshes' if self.game else None,):
             if base and base.exists():
                 for directory,_,names in os.walk(base):
                     for name in names:
@@ -185,6 +187,7 @@ class ProjectRepository:
                             self.mesh_index.setdefault(name.lower(),Path(directory)/name)
         self.errors.extend(self.archive_models.refresh(self.root,self.game))
         self.mesh_index.update(ModelResolver.index(self.components))
+        self.mesh_index.update(ModelLibrary(self.root).index())
 
     def exists(self,instance):return any(it.instance.casefold()==instance.casefold() for it in self.items)
 

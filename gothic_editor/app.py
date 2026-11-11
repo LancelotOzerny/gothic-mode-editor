@@ -567,7 +567,7 @@ class EditorApp(tk.Tk):
     def export_item_texture(self,item):
         try:
             source=resolve_model_source(item.visual,self.repo.mesh_index,self.repo.archive_models)
-            assets=item.path.parent/'assets' if item.origin=='project' else None
+            assets=source.parent if isinstance(source,Path) else None
             key=self._preview_cache.key(source,(self.repo.root,self.repo.resource_revision),True,assets)
             future=self._model_executor.submit(self._preview_cache.load,key,source,self.repo.root,self.repo.game,
                 assets,dict(self.repo.archive_models.texture_entries),with_textures=True)
@@ -632,7 +632,7 @@ class EditorApp(tk.Tk):
                 return
         else:
             entry=mesh
-        assets=item.path.parent/'assets' if item.origin=='project' else None
+        assets=entry.parent if isinstance(entry,Path) else None
         try:key=self._preview_cache.key(entry,(self.repo.root,self.repo.resource_revision),self.viewer.textured,assets)
         except OSError as exc:
             self.viewer.set_mesh(caption=str(exc))

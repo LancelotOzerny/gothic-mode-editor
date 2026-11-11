@@ -143,8 +143,9 @@ class ProjectTools:
         return manifest
 
     def _prepare(self, staging, report):
-        for path in (self.source, self.target):
-            if not path.is_dir():raise ValueError(tr('tools.missing', path=str(path)))
+        if not self.target.is_dir():raise ValueError(tr('tools.missing', path=str(self.target)))
+        if self.source.exists() and not self.source.is_dir():
+            raise ValueError(tr('tools.missing', path=str(self.source)))
         content = staging / 'Content'
         content.mkdir()
         report(tr('tools.preparing'))
@@ -152,8 +153,10 @@ class ProjectTools:
             destination = content / source.relative_to(self.target)
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
-        self._files(self.source)  # Validate project paths before reading overlay files.
-        project_files = merge_project_scripts(content,self.source)
+        project_files = []
+        if self.source.is_dir():
+            self._files(self.source)  # Validate paths before reading overlay files.
+            project_files = merge_project_scripts(content,self.source)
         for generated in apply_potions(self.project,content):
             if generated not in project_files:project_files.append(generated)
         manifest = self._include_project_scripts(content, project_files)

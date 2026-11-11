@@ -62,4 +62,6 @@ def project_scripts(project):
     project = Path(project)
     scripts = project / 'Assets' / 'Scripts'
     legacy = project / 'Scripts'
+    if (scripts / 'Content').is_dir():return scripts
+    if (legacy / 'Content').is_dir():return legacy
     return scripts if scripts.exists() or not legacy.is_dir() else legacy

@@ -7,6 +7,7 @@ from .mesh import read_3ds_bytes
 from .model_resolver import ModelResolver
 from .potion_components import PotionComponents
 from .mod_archive import write_mod
+from .model_library import ModelLibrary
 
 
 class BuildAssetService:
@@ -15,6 +16,8 @@ class BuildAssetService:
 
     def collect(self):
         files, names, models = {}, {}, []
+        library=ModelLibrary(self.store.layout.project)
+        shared=library.index()
 
         def add(name, path, label):
             key = Path(name).name.casefold()
@@ -23,6 +26,32 @@ class BuildAssetService:
                 raise ValueError(f'Конфликт имени ресурса {name}: {names[key]} / {label}')
             names[key] = label
             files[name] = data
+
+        def add_model(model,visual):
+            source=model.read_bytes()
+            read_3ds_bytes(source)
+            textures={}
+            for path in sorted(model.parent.iterdir()):
+                if not path.is_file() or path.suffix.lower() not in ('.tga','.tex'):continue
+                self.store.layout.checked(path)
+                suffix=path.suffix.lower()
+                packed_texture=Path(visual).stem+'_'+path.name
+                directory='_work/data/Textures/'+('_compiled/' if suffix=='.tex' else '')
+                add(directory+packed_texture,path,str(model.parent))
+                textures[path.name.casefold()]=packed_texture
+            replacements={}
+            for reference in texture_references(source):
+                matched=next((textures[name] for name in texture_candidates(reference) if name in textures),None)
+                if matched is None:
+                    raise ValueError(f'{model.parent.name}: отсутствует текстура {reference}. Добавьте её в {model.parent}.')
+                replacements[reference]=material_texture_name(matched)
+            packed_name='_work/data/Meshes/'+visual
+            add(packed_name,model,str(model))
+            files[packed_name]=replace_texture_references(source,replacements)
+
+        # Every library folder is a shared bundle. Gothic needs unique basenames,
+        # while the editable disk files remain model.3ds and their original textures.
+        for model in shared.values():add_model(model,library.name(model))
 
         for file in self.store.files():
             data = self.store._read(file)
@@ -33,26 +62,19 @@ class BuildAssetService:
             if not model.exists():
                 # A generated visual without its owned file must never silently build.
                 visual = data.get('fields', {}).get('visual', '').strip('"')
-                if visual.casefold().startswith('model_') and visual.casefold().endswith('.3ds'):
+                if visual.casefold().startswith('model_') and visual.casefold().endswith('.3ds') and visual.casefold() not in shared:
                     raise ValueError(f'Не найдена собственная модель {visual}: {model}')
             else:
-                source = model.read_bytes()
-                read_3ds_bytes(source)
-                packed_name='_work/data/Meshes/' + ModelResolver.generated_name(data['instance'])
-                models.append((file, texture_references(source), packed_name))
-                add(packed_name, model, str(file))
-            for path in sorted(assets.rglob('*')):
-                if not path.is_file() or path == model:continue
-                suffix = path.suffix.casefold()
-                if suffix not in ('.tga', '.tex'):
-                    raise ValueError(f'Нельзя упаковать ресурс: {path}. Поддерживаются model.3ds, TGA и TEX.')
-                directory = '_work/data/Textures/' + ('_compiled/' if suffix == '.tex' else '')
-                add(directory + path.name, path, str(file))
+                add_model(model,ModelResolver.generated_name(data['instance']))
+            # Old texture-only directories are not independent MOD resources:
+            # after model migration the library already owns the required copies.
         # Existing project-wide models/textures are also mod resources, even when
         # the visual was selected from Assets rather than imported into an item.
         global_assets=self.store.layout.project/'Assets'
         for path in sorted(global_assets.rglob('*')):
             if not path.is_file():continue
+            relative=path.relative_to(global_assets)
+            if relative.parts[0].casefold() in ('items','scripts','models'):continue
             self.store.layout.checked(path)
             suffix=path.suffix.casefold()
             if suffix in ('.3ds','.mrm','.msh'):

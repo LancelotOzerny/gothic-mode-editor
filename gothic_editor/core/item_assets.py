@@ -1,4 +1,4 @@
-"""Transactional imports and backups of resources owned by one item."""
+"""Import shared project models and back up changes to their textures."""
 import shutil
 import struct
 import tempfile
@@ -8,6 +8,8 @@ from uuid import uuid4
 from .item_layout import ItemLayout
 from .mesh import MeshFormatError, read_3ds_bytes
 from .texture_names import texture_candidates
+from .model_library import ModelLibrary
+from .potion_components import PotionComponents
 
 
 _TEXTURE_CONTAINERS = {0x4D4D, 0x3D3D, 0xAFFF, 0xA200, 0xA204, 0xA210, 0xA220,
@@ -64,17 +66,19 @@ def replace_texture_references(data, replacements):
 class ItemAssetManager:
     def __init__(self, project):
         self.layout = ItemLayout(project)
+        self.library = ModelLibrary(project)
+        self.store = PotionComponents(project)
 
     def _folder(self, item):
         if item.origin != 'project' or not self.layout.owns(item.path):
             raise ValueError('Сначала скопируйте зелье в проект')
-        return self.layout.checked(item.path.parent / 'assets')
+        return self.library.folder_for(item.visual)
 
     def _change(self, item, operation):
         assets = self._folder(item)
         for path in assets.rglob('*'):
             self.layout.checked(path)
-        temporary = Path(tempfile.mkdtemp(prefix='.assets-', dir=item.path.parent))
+        temporary = Path(tempfile.mkdtemp(prefix='.assets-', dir=self.layout.project))
         backup = None
         moved = False
         try:
@@ -83,7 +87,7 @@ class ItemAssetManager:
             else:staged.mkdir()
             operation(staged)
             if assets.exists():
-                backup = self.layout.project / 'backups' / ('item-assets-' + uuid4().hex) / item.instance / 'assets'
+                backup = self.layout.project / 'backups' / ('model-assets-' + uuid4().hex) / assets.name
                 backup.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copytree(assets, backup)
                 assets.rename(temporary / 'previous')
@@ -103,16 +107,23 @@ class ItemAssetManager:
         read_3ds_bytes(data)
         references = texture_references(data)
 
-        def operation(folder):
-            (folder / 'model.3ds').write_bytes(data)
-            textures={path.name.casefold():path for path in source.parent.iterdir() if path.is_file()}
-            for reference in references:
-                # Never follow absolute or parent paths embedded in a model.
-                texture = next((textures[name] for name in texture_candidates(reference)
-                                if name in textures and textures[name].suffix.lower() in ('.tga','.tex')), None)
-                if texture is not None:
-                    (folder / texture.name).write_bytes(texture.read_bytes())
-        return self._change(item, operation)
+        existing=next((path for path in self.library.index().values()
+                       if path.resolve()==source.resolve()),None)
+        if existing is not None:
+            self.store.edit(item,{'visual':'"'+self.library.name(existing)+'"'})
+            return existing
+        textures={path.name.casefold():path for path in source.parent.iterdir() if path.is_file()}
+        selected=[]
+        for reference in references:
+            texture=next((textures[name] for name in texture_candidates(reference)
+                          if name in textures and textures[name].suffix.lower() in ('.tga','.tex')),None)
+            if texture is not None and texture not in selected:selected.append(texture)
+        model=self.library.create(source.stem,data,selected)
+        try:self.store.edit(item,{'visual':'"'+self.library.name(model)+'"'})
+        except Exception:
+            shutil.rmtree(model.parent)
+            raise
+        return model
 
     def import_textures(self, item, sources):
         sources = [Path(path) for path in sources]
@@ -123,6 +134,5 @@ class ItemAssetManager:
         return self._change(item, operation)
 
     def remove_model(self, item):
-        def operation(folder):
-            (folder / 'model.3ds').unlink(missing_ok=True)
-        return self._change(item, operation)
+        # Detach this item; other items can still use the shared resource.
+        return self.store.edit(item,{'visual':'""'})

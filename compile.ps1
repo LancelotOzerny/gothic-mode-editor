@@ -43,10 +43,14 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller is not installed for '$Python'. Install it in that environment before building."
     }
+    & $Python -c "import tkinter; tkinter.Tcl().eval('info library')"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Tcl/Tk is unavailable for '$Python'. Build from an environment with a working Tkinter installation."
+    }
 
     $buildArguments = @(
         '-m', 'PyInstaller',
-        '--onefile', '--windowed', '--noconfirm',
+        '--onefile', '--windowed', '--noconfirm', '--clean',
         '--name', 'GothicEditor',
         '--distpath', $distPath,
         '--workpath', $buildPath,

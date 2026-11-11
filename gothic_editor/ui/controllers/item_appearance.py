@@ -5,7 +5,7 @@ from pathlib import Path
 
 from gothic_editor.core.item_assets import ItemAssetManager
 from gothic_editor.core.categories import classify
-from gothic_editor.core.model_resolver import ModelResolver
+from gothic_editor.core.model_library import ModelLibrary
 from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets.buttons import PropertyButton
 from gothic_editor.ui.widgets.inputs import make_entry
@@ -26,7 +26,7 @@ class ItemAppearanceController:
             if key == 'remove_model' and not self._custom(item):button.config(state='disabled')
 
     def _custom(self, item):
-        return self.app.repo.components.owns(item.path) and ModelResolver.custom_model(item.path.parent).is_file()
+        return item.visual.casefold() in ModelLibrary(self.app.repo.root).index()
 
     def _confirm_replace(self, item):
         return not self._custom(item) or messagebox.askyesno(tr('item_assets.appearance'),
@@ -40,6 +40,9 @@ class ItemAppearanceController:
 
     def _run(self, item, operation):
         try:
+            if not self.app.properties.save(automatic=True):return
+            item=next((current for current in self.app.repo.items
+                       if current.instance.casefold()==item.instance.casefold()),item)
             item = self._component(item)
             operation(item, ItemAssetManager(self.app.repo.root))
             self.app.repo.refresh()
@@ -48,6 +51,7 @@ class ItemAppearanceController:
             self.app.update_hierarchy()
             self.app.hierarchy.choose(updated)
             self.app.select(updated)
+            self.app.resources.refresh()
         except (OSError, ValueError) as exc:
             messagebox.showerror(tr('item_assets.appearance'), str(exc), parent=self.app)
 
@@ -66,26 +70,39 @@ class ItemAppearanceController:
         if self._confirm_replace(item):
             self._run(item, lambda current, manager:manager.remove_model(current))
 
-    def choose(self, item):
+    def model_options(self):
         repo = self.app.repo
-        custom = {ModelResolver.generated_name(current.instance).casefold() for current in repo.project_items}
-        names = {path.name for path in repo.mesh_index.values() if path.name.casefold() != 'model.3ds'}
-        names.update(str(Path(entry.name).with_suffix('.3ds')) for entry in repo.archive_models.entries.values())
-        names = sorted((name for name in names if name.casefold() not in custom), key=str.casefold)
+        library=ModelLibrary(repo.root).index()
+        choices={name:(f'Проект / {path.parent.name}',ModelLibrary.name(path)) for name,path in library.items()}
+        for name,path in repo.mesh_index.items():
+            if repo.game and repo.game in path.resolve().parents:
+                choices.setdefault(name,(f'Gothic / {path.name}',path.name))
+        for entry in repo.archive_models.entries.values():
+            if repo.game is None or repo.game not in entry.archive.resolve().parents:continue
+            name=str(Path(entry.name).with_suffix('.3ds'))
+            choices.setdefault(name.casefold(),(f'Gothic / {name}',name))
+        return sorted(choices.values(),key=lambda pair:pair[0].casefold())
+
+    def choose(self, item):
+        repo=self.app.repo
+        options=self.model_options()
         window = EditorDialog(self.app)
         window.title(tr('item_assets.choose_model'))
         window.geometry('480x230')
         query = tk.StringVar(window)
         make_entry(window, textvariable=query, width=45).pack(fill='x', padx=12, pady=12)
-        choice = ExpressionChoiceField(window,tuple((name,name) for name in names),state='readonly',
+        choice = ExpressionChoiceField(window,tuple(options),state='readonly',
                                        caption=tr('item_assets.choose_model'))
         choice.pack(fill='x', padx=12, pady=(0,12))
-        if names:choice.current(0)
+        if options:
+            current=next((value for _,value in options if value.casefold()==item.visual.casefold()),None)
+            if current is not None:choice.set_expression(current)
+            else:choice.current(0)
 
         def filter_names(*_):
-            matches = [name for name in names if query.get().casefold() in name.casefold()]
-            choice.options=tuple((name,name) for name in matches)
-            choice.set(matches[0] if matches else '')
+            matches = [pair for pair in options if query.get().casefold() in pair[0].casefold()]
+            choice.options=tuple(matches)
+            choice.set_expression(matches[0][1] if matches else '')
         query.trace_add('write', filter_names)
 
         def select():
@@ -96,7 +113,6 @@ class ItemAppearanceController:
                 self.app.save_fields(item, {'visual':'"' + value.replace('\\','\\\\').replace('"','\\"') + '"'})
                 return
             def operation(current, manager):
-                if self._custom(current):manager.remove_model(current)
                 repo.edit(current, {'visual':'"' + value.replace('\\','\\\\').replace('"','\\"') + '"'})
             self._run(item, operation)
         window.add_button(window,tr('settings.choose'),select).pack(fill='x',padx=12,pady=(0,12))
