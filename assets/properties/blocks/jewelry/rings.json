@@ -1,0 +1,45 @@
+{
+  "id": "rings",
+  "title": "Кольца",
+  "instance": {
+    "prefix": "ItRi_",
+    "suffix_default_pattern": "Ring{n}"
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_MAGIC"
+  },
+  "field_overrides": {
+    "instance": {
+      "prefix": "ItRi_",
+      "default": "Ring{n}",
+      "placeholder": ""
+    },
+    "name": {
+      "default": "\"Новый предмет\""
+    },
+    "flags": {
+      "default": "ITEM_RING",
+      "options_ref": "ringsFlags"
+    }
+  },
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  },
+  "option_lists": {
+    "ringsFlags": [
+      {
+        "name": "Обычный",
+        "value": "ITEM_RING"
+      },
+      {
+        "name": "Квестовый",
+        "value": "ITEM_RING | ITEM_MISSION"
+      }
+    ]
+  }
+}

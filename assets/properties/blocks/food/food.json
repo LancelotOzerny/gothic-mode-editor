@@ -1,0 +1,32 @@
+{
+  "id": "food",
+  "title": "Еда и напитки",
+  "instance": {
+    "prefix": "ItFo_",
+    "suffix_default_pattern": "Food{n}"
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_FOOD"
+  },
+  "field_overrides": {
+    "instance": {
+      "prefix": "ItFo_",
+      "default": "Food{n}",
+      "placeholder": ""
+    },
+    "name": {
+      "default": "\"Новый предмет\""
+    },
+    "flags": {
+      "default": "ITEM_MULTI"
+    }
+  },
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "id": "twoaxe",
+  "title": "Двуручные топоры",
+  "instance": {
+    "prefix": "ItMw_",
+    "suffix_default_pattern": "TwoHandAxe{n}"
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_NF"
+  },
+  "field_overrides": {
+    "instance": {
+      "prefix": "ItMw_",
+      "default": "TwoHandAxe{n}",
+      "placeholder": ""
+    },
+    "name": {
+      "default": "\"Новый предмет\""
+    },
+    "flags": {
+      "default": "ITEM_2HD_AXE",
+      "options_ref": "twoaxeFlags"
+    }
+  },
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  },
+  "option_lists": {
+    "twoaxeFlags": [
+      {
+        "name": "Обычный",
+        "value": "ITEM_2HD_AXE"
+      },
+      {
+        "name": "Квестовый",
+        "value": "ITEM_2HD_AXE | ITEM_MISSION"
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "sections": [
+    {
+      "id": "use",
+      "title": "Использование",
+      "fields": [
+        {
+          "key": "scemeName",
+          "label": "Анимация использования",
+          "type": "string",
+          "default": "\"FOOD\""
+        },
+        {
+          "key": "on_state[0]",
+          "label": "Функция использования",
+          "type": "expression"
+        }
+      ]
+    }
+  ]
+}

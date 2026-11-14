@@ -1,0 +1,51 @@
+{
+  "id": "crossbows",
+  "title": "Арбалеты",
+  "instance": {
+    "prefix": "ItRw_",
+    "suffix_default_pattern": "Crossbow{n}"
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_FF"
+  },
+  "field_overrides": {
+    "instance": {
+      "prefix": "ItRw_",
+      "default": "Crossbow{n}",
+      "placeholder": ""
+    },
+    "name": {
+      "default": "\"Новый предмет\""
+    },
+    "flags": {
+      "default": "ITEM_CROSSBOW",
+      "options_ref": "crossbowsFlags"
+    },
+    "munition": {
+      "default": "ItRw_Bolt"
+    },
+    "damagetype": {
+      "default": "DAM_POINT"
+    }
+  },
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  },
+  "option_lists": {
+    "crossbowsFlags": [
+      {
+        "name": "Обычный",
+        "value": "ITEM_CROSSBOW"
+      },
+      {
+        "name": "Квестовый",
+        "value": "ITEM_CROSSBOW | ITEM_MISSION"
+      }
+    ]
+  }
+}

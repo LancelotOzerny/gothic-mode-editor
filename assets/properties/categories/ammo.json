@@ -1,0 +1,10 @@
+{
+  "blocks": [
+    "general/main.json",
+    "general/parameters.json",
+    "ammo/combat.json",
+    "general/appearance.json",
+    "general/inventory.json",
+    "ammo/ammo.json"
+  ]
+}

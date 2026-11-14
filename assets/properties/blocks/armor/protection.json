@@ -1,0 +1,46 @@
+{
+  "sections": [
+    {
+      "id": "protection",
+      "title": "Защита",
+      "fields": [
+        {
+          "key": "protection[PROT_EDGE]",
+          "label": "От режущего оружия",
+          "type": "expression",
+          "default": "0"
+        },
+        {
+          "key": "protection[PROT_BLUNT]",
+          "label": "От дробящего оружия",
+          "type": "expression",
+          "default": "0"
+        },
+        {
+          "key": "protection[PROT_POINT]",
+          "label": "От стрел",
+          "type": "expression",
+          "default": "0"
+        },
+        {
+          "key": "protection[PROT_FIRE]",
+          "label": "От огня",
+          "type": "expression",
+          "default": "0"
+        },
+        {
+          "key": "protection[PROT_MAGIC]",
+          "label": "От магии",
+          "type": "expression",
+          "default": "0"
+        },
+        {
+          "key": "protection[PROT_FALL]",
+          "label": "От падения",
+          "type": "expression",
+          "default": "0"
+        }
+      ]
+    }
+  ]
+}

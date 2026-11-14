@@ -1,0 +1,21 @@
+{
+  "sections": [
+    {
+      "id": "combat",
+      "title": "Боевые характеристики",
+      "fields": [
+        {
+          "key": "damageTotal",
+          "label": "Урон",
+          "type": "expression"
+        },
+        {
+          "key": "damagetype",
+          "label": "Тип урона",
+          "type": "expression",
+          "default": "DAM_POINT"
+        }
+      ]
+    }
+  ]
+}

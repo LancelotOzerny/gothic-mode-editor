@@ -1,0 +1,9 @@
+{
+  "blocks": [
+    "general/main.json",
+    "general/parameters.json",
+    "general/appearance.json",
+    "general/inventory.json",
+    "misc/misc.json"
+  ]
+}

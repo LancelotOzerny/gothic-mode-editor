@@ -1,0 +1,45 @@
+{
+  "id": "oneaxe",
+  "title": "Одноручные топоры и булавы",
+  "instance": {
+    "prefix": "ItMw_",
+    "suffix_default_pattern": "Axe{n}"
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_NF"
+  },
+  "field_overrides": {
+    "instance": {
+      "prefix": "ItMw_",
+      "default": "Axe{n}",
+      "placeholder": ""
+    },
+    "name": {
+      "default": "\"Новый предмет\""
+    },
+    "flags": {
+      "default": "ITEM_AXE",
+      "options_ref": "oneaxeFlags"
+    }
+  },
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  },
+  "option_lists": {
+    "oneaxeFlags": [
+      {
+        "name": "Обычный",
+        "value": "ITEM_AXE"
+      },
+      {
+        "name": "Квестовый",
+        "value": "ITEM_AXE | ITEM_MISSION"
+      }
+    ]
+  }
+}

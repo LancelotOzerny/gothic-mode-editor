@@ -1,13 +1,14 @@
-"""Attach scroll actions to native spell casting in the temporary script tree."""
+"""Attach scroll and rune actions to spell casting in the temporary script tree."""
 import re
 
 from .daedalus_merge import declaration_text
 from .scripts import mask_comments,replace_field
+from .categories import classify
 
 
 def _definition(tree,name,kind=None):
     location=tree.unique(name,kind)
-    if location is None:raise ValueError(f'Для магических действий свитков требуется {name}.')
+    if location is None:raise ValueError(f'Для магических действий требуется {name}.')
     path,definition=location
     return path,definition,declaration_text(tree.documents[path].text,definition)
 
@@ -51,7 +52,7 @@ def configure_scroll_cast(items,handlers,tree,changes):
         if len(re.findall(r'\b'+re.escape(symbol)+r'\b',code,re.I))!=1:continue
         if number in used_ids:continue
         free.append(number)
-    if len(free)<len(custom):raise ValueError('Недостаточно свободных SPL_Reserved для свитков с действиями; существующие заклинания не заменены.')
+    if len(free)<len(custom):raise ValueError('Недостаточно свободных SPL_Reserved для свитков и рун с действиями; существующие заклинания не заменены.')
     for item,slot in zip(sorted(custom,key=lambda value:value.instance.casefold()),free):
         custom_slots[item.instance.casefold()]=slot
         changes[names_path].append((names_def.start+names[slot].start(),names_def.start+names[slot].end(),'"GE_ItemActions"'))
@@ -79,18 +80,18 @@ GE_DispatchScrollActions();
 self.aivar[AIV_SelectSpell] += 1;
 };''')
     dispatch=['func void GE_DispatchScrollActions()','{',
-              '    if (!Npc_GetActiveSpellIsScroll(self)) { return; };',
               '    var int GE_SpellId;',
               '    GE_SpellId = Npc_GetActiveSpell(self);']
     for item in active:
         handler=handlers[item.instance.casefold()]
         path,definition,block=_definition(tree,item.instance,'instance')
-        flags=item.fields.get('flags','').strip()
-        block=replace_field(block,'flags',f'({flags}) | ITEM_MULTI' if flags else 'ITEM_MULTI')
+        if classify(item)=='scrolls':
+            flags=item.fields.get('flags','').strip()
+            block=replace_field(block,'flags',f'({flags}) | ITEM_MULTI' if flags else 'ITEM_MULTI')
         slot=custom_slots[item.instance.casefold()]
         dispatch.append(f'    if (GE_SpellId == {slot}) {{ {handler}(); return; }};')
         block=replace_field(block,'spell',str(slot))
-        block=replace_field(block,'mag_circle','0')
+        if classify(item)=='scrolls':block=replace_field(block,'mag_circle','0')
         changes[path].append((definition.start,definition.end,block))
     dispatch.append('};')
     generated.append('\n'.join(dispatch))

@@ -11,6 +11,7 @@ from gothic_editor.core.item_spreadsheet import export_items,ItemSpreadsheetServ
 from gothic_editor.core.project import ProjectRepository
 from gothic_editor.core.properties_schema import PropertiesSchema,PropertySection,PropertyField
 from gothic_editor.core.scripts import parse_items
+from gothic_editor.core.categories import classify
 
 
 def synthetic_schema(category):
@@ -162,12 +163,16 @@ class ItemExchangeTests(TemporarySpreadsheetCase):
         self.assertEqual([item.fields['name'] for item in parse_items(path,'project')],['"Changed A"','"Changed B"'])
         self.assertIn('func void Helper()',path.read_text('cp1251'))
 
-    def test_readonly_categories_are_skipped_and_blank_cells_preserve_fields(self):
+    def test_new_categories_import_and_blank_cells_preserve_fields(self):
+        from gothic_editor.core.properties_schema import schema_for
         item=self.item()
         path=self.table([['ItPo_Existing','potions','',''],['ItMw_Weapon','onehand','"Weapon"','1']])
-        result=self.service.import_file(path,'replace')
-        self.assertEqual(result.readonly,1)
-        self.assertEqual(self.repo.items[0].fields,item.fields)
+        with patch('gothic_editor.core.item_spreadsheet.schema_for',side_effect=schema_for):
+            result=self.service.import_file(path,'replace')
+        self.assertEqual(result.readonly,0)
+        self.assertEqual(result.created,1)
+        self.assertEqual(next(value for value in self.repo.items if value.instance==item.instance).fields,item.fields)
+        self.assertEqual(classify(next(value for value in self.repo.items if value.instance=='ItMw_Weapon')),'onehand')
 
     def test_game_item_update_creates_project_override_without_touching_original(self):
         content=self.root/'game/_work/data/Scripts/Content/Items'

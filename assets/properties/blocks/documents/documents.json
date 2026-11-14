@@ -1,0 +1,32 @@
+{
+  "id": "documents",
+  "title": "Документы и книги",
+  "instance": {
+    "prefix": "ItWr_",
+    "suffix_default_pattern": "Document{n}"
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_DOCS"
+  },
+  "field_overrides": {
+    "instance": {
+      "prefix": "ItWr_",
+      "default": "Document{n}",
+      "placeholder": ""
+    },
+    "name": {
+      "default": "\"Новый предмет\""
+    },
+    "flags": {
+      "default": "0"
+    }
+  },
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  }
+}

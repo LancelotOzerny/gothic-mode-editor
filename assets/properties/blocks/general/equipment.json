@@ -1,0 +1,20 @@
+{
+  "sections": [
+    {
+      "id": "equipment",
+      "title": "Экипировка",
+      "fields": [
+        {
+          "key": "on_equip",
+          "label": "Функция при надевании",
+          "type": "expression"
+        },
+        {
+          "key": "on_unequip",
+          "label": "Функция при снятии",
+          "type": "expression"
+        }
+      ]
+    }
+  ]
+}

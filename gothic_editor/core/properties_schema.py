@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import sys
 from .property_blocks import load_property_data
+from .categories import EDITABLE_CATEGORIES
 
 
 def property_key(key):
@@ -149,11 +150,9 @@ def _dependency_stamp(paths):
     return tuple((path.stat().st_mtime_ns,path.stat().st_size) for path in paths)
 
 def schema_for(category):
-    # Additional item types can be registered here when their forms are ready.
-    files = {'potions': 'potions.json', 'scrolls': 'scrolls.json'}
-    filename = files.get(category)
-    if filename is None:
+    if category not in EDITABLE_CATEGORIES:
         return None
+    filename = category + '.json'
     roots = (Path(sys.executable).resolve().parent,Path(__file__).resolve().parents[2])
     paths = [root / 'assets' / 'properties' / 'categories' / filename for root in roots]
     path = next((path for path in paths if path.is_file()),paths[-1])

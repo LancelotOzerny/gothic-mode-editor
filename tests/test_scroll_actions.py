@@ -161,12 +161,35 @@ func void Spell_Cast_Light() { TotalExp += 1; };
         with self.assertRaisesRegex(ValueError,'Недостаточно свободных'):self.prepare()
         self.assertEqual(self.magic.read_bytes(),original)
 
+    def test_rune_cast_keeps_reusable_flags_circle_and_source_spell(self):
+        rune=self.repo._write_new('ItRu_Test', '''INSTANCE ItRu_Test(C_Item) {
+            mainflag=ITEM_KAT_RUNE; flags=0; mag_circle=3; spell=18;
+        };''')
+        rune=self.assign(rune,500)
+        original=rune.path.read_bytes()
+        content,_,_=self.prepare()
+        staged=parse_items(content/rune.path.relative_to(self.repo._project_content()),'project')[0]
+        self.assertEqual(staged.fields['flags'],'0')
+        self.assertEqual(staged.fields['mag_circle'],'3')
+        self.assertEqual(staged.fields['spell'],'99')
+        self.assertNotIn('on_state[0]',staged.fields)
+        code=(content/'Items/GE_ComponentPotions.d').read_text('cp1251')
+        self.assertIn('if (GE_SpellId == 99) { GE_ItemActions_ItRu_Test(); return; }',code)
+        self.assertNotIn('Npc_GetActiveSpellIsScroll',code)
+        self.assertIn('AddExperience(500);',code)
+        self.assertEqual(rune.path.read_bytes(),original)
+        self.repo.edit(rune,{},metadata={'item_actions':'[]'})
+        content,_,_=self.prepare()
+        staged=parse_items(content/rune.path.relative_to(self.repo._project_content()),'project')[0]
+        self.assertEqual(staged.fields['spell'],'18')
+
+
     @unittest.skipUnless(os.environ.get('GOTHIC_TEST_COMPILER'),'Optional real GDC')
     def test_real_compiler_accepts_scroll_and_potion_callbacks(self):
         from gothic_editor.core.compiler_runner import run_compiler
         self.assign(self.item,100)
         self.assign(self.scroll(),500)
-        self.assign(self.repo.edit(self.scroll('ItSc_Existing'),{'spell':'18'}),1000)
+        self.assign(self.repo._write_new('ItRu_Existing', 'INSTANCE ItRu_Existing(C_Item) { mainflag=ITEM_KAT_RUNE; flags=0; spell=18; mag_circle=2; };'),1000)
         content,manifest,_=self.prepare()
         output=content.parent/'Gothic.dat'
         log=content.parent/'compiler.log'

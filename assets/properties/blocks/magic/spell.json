@@ -1,0 +1,21 @@
+{
+  "sections": [
+    {
+      "id": "spell",
+      "title": "Заклинание",
+      "fields": [
+        {
+          "key": "spell",
+          "label": "Заклинание",
+          "type": "expression"
+        },
+        {
+          "key": "mag_circle",
+          "label": "Круг магии",
+          "type": "expression",
+          "default": "0"
+        }
+      ]
+    }
+  ]
+}

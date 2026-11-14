@@ -1,0 +1,40 @@
+{
+  "sections": [
+    {
+      "id": "requirements",
+      "title": "Требования",
+      "fields": [
+        {
+          "key": "cond_atr[0]",
+          "label": "Характеристика 1",
+          "type": "expression"
+        },
+        {
+          "key": "cond_value[0]",
+          "label": "Требуемое значение 1",
+          "type": "expression"
+        },
+        {
+          "key": "cond_atr[1]",
+          "label": "Характеристика 2",
+          "type": "expression"
+        },
+        {
+          "key": "cond_value[1]",
+          "label": "Требуемое значение 2",
+          "type": "expression"
+        },
+        {
+          "key": "cond_atr[2]",
+          "label": "Характеристика 3",
+          "type": "expression"
+        },
+        {
+          "key": "cond_value[2]",
+          "label": "Требуемое значение 3",
+          "type": "expression"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "blocks": [
+    "general/main.json",
+    "general/parameters.json",
+    "food/use.json",
+    "general/appearance.json",
+    "general/inventory.json",
+    "food/food.json"
+  ]
+}

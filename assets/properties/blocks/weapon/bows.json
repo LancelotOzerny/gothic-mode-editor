@@ -1,0 +1,51 @@
+{
+  "id": "bows",
+  "title": "Луки",
+  "instance": {
+    "prefix": "ItRw_",
+    "suffix_default_pattern": "Bow{n}"
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_FF"
+  },
+  "field_overrides": {
+    "instance": {
+      "prefix": "ItRw_",
+      "default": "Bow{n}",
+      "placeholder": ""
+    },
+    "name": {
+      "default": "\"Новый предмет\""
+    },
+    "flags": {
+      "default": "ITEM_BOW",
+      "options_ref": "bowsFlags"
+    },
+    "munition": {
+      "default": "ItRw_Arrow"
+    },
+    "damagetype": {
+      "default": "DAM_POINT"
+    }
+  },
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  },
+  "option_lists": {
+    "bowsFlags": [
+      {
+        "name": "Обычный",
+        "value": "ITEM_BOW"
+      },
+      {
+        "name": "Квестовый",
+        "value": "ITEM_BOW | ITEM_MISSION"
+      }
+    ]
+  }
+}

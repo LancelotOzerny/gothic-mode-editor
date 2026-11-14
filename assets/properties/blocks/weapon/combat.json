@@ -1,0 +1,33 @@
+{
+  "sections": [
+    {
+      "id": "combat",
+      "title": "Боевые характеристики",
+      "fields": [
+        {
+          "key": "damageTotal",
+          "label": "Урон",
+          "type": "expression",
+          "default": "10"
+        },
+        {
+          "key": "damagetype",
+          "label": "Тип урона",
+          "type": "expression",
+          "default": "DAM_EDGE"
+        },
+        {
+          "key": "range",
+          "label": "Дальность",
+          "type": "expression",
+          "default": "100"
+        },
+        {
+          "key": "munition",
+          "label": "Боеприпас",
+          "type": "expression"
+        }
+      ]
+    }
+  ]
+}

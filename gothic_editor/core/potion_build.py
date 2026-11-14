@@ -23,7 +23,7 @@ def apply_potions(project: Path, content: Path):
     for path in (project_scripts(project)/'Content').rglob('*'):
         if path.is_file() and path.suffix.lower()=='.d':
             script_items.extend(item for item in parse_items(path,'project')
-                                if classify(item)=='scrolls' and item.editor_metadata.get('item_actions'))
+                                if classify(item) in ('scrolls','runes') and item.editor_metadata.get('item_actions'))
     if not replacements and not additions and not helpers and not script_items:
         return []
     tree = ScriptTree(content)

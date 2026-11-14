@@ -1,0 +1,45 @@
+{
+  "id": "onehand",
+  "title": "Одноручные мечи",
+  "instance": {
+    "prefix": "ItMw_",
+    "suffix_default_pattern": "Sword{n}"
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_NF"
+  },
+  "field_overrides": {
+    "instance": {
+      "prefix": "ItMw_",
+      "default": "Sword{n}",
+      "placeholder": ""
+    },
+    "name": {
+      "default": "\"Новый предмет\""
+    },
+    "flags": {
+      "default": "ITEM_SWD",
+      "options_ref": "onehandFlags"
+    }
+  },
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  },
+  "option_lists": {
+    "onehandFlags": [
+      {
+        "name": "Обычный",
+        "value": "ITEM_SWD"
+      },
+      {
+        "name": "Квестовый",
+        "value": "ITEM_SWD | ITEM_MISSION"
+      }
+    ]
+  }
+}

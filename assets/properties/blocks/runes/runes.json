@@ -1,0 +1,32 @@
+{
+  "id": "runes",
+  "title": "Руны",
+  "instance": {
+    "prefix": "ItRu_",
+    "suffix_default_pattern": "Rune{n}"
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_RUNE"
+  },
+  "field_overrides": {
+    "instance": {
+      "prefix": "ItRu_",
+      "default": "Rune{n}",
+      "placeholder": ""
+    },
+    "name": {
+      "default": "\"Новый предмет\""
+    },
+    "flags": {
+      "default": "0"
+    }
+  },
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  }
+}

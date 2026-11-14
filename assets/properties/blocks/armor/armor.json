@@ -1,0 +1,32 @@
+{
+  "id": "armor",
+  "title": "Броня",
+  "instance": {
+    "prefix": "ItAr_",
+    "suffix_default_pattern": "Armor{n}"
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_ARMOR"
+  },
+  "field_overrides": {
+    "instance": {
+      "prefix": "ItAr_",
+      "default": "Armor{n}",
+      "placeholder": ""
+    },
+    "name": {
+      "default": "\"Новый предмет\""
+    },
+    "flags": {
+      "default": "0"
+    }
+  },
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  }
+}

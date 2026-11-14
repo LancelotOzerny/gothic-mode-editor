@@ -93,20 +93,15 @@ class PropertiesTests(unittest.TestCase):
         self.app.select(item)
         self.assertNotIn('description_raw', self.app.properties.inputs)
 
-    def test_other_categories_and_ctrl_save_are_readonly(self):
+    def test_other_category_forms_save_through_existing_controller(self):
         for category in ('onehand', 'armor', 'runes', 'food', 'rings', 'documents', 'ammo', 'misc'):
             item = self.repo.create_item(category)
             self.app.select(item)
             form = self.app.properties
-            self.assertFalse(form.editable)
-            self.assertTrue(all(entry['state'] == 'readonly' for entry in form.inputs.values()))
-            before = item.path.read_bytes()
-            with patch.object(self.repo, 'edit') as edit:
-                form.save()
-                self.app.save_fields(item, {'name': '"Bypassed"'})
-                self.app.rename(item, 'Bypassed')
-            edit.assert_not_called()
-            self.assertEqual(item.path.read_bytes(), before)
+            self.assertTrue(form.editable)
+            self.change('name', 'Changed')
+            form.save()
+            self.assertEqual(form.current.fields['name'], '"Changed"')
 
     def test_instance_rename_updates_folder_and_rejects_collisions(self):
         old_folder = self.item.path.parent

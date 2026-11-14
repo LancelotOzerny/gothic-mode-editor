@@ -1,0 +1,32 @@
+{
+  "id": "misc",
+  "title": "Разное",
+  "instance": {
+    "prefix": "ItMi_",
+    "suffix_default_pattern": "Item{n}"
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_NONE"
+  },
+  "field_overrides": {
+    "instance": {
+      "prefix": "ItMi_",
+      "default": "Item{n}",
+      "placeholder": ""
+    },
+    "name": {
+      "default": "\"Новый предмет\""
+    },
+    "flags": {
+      "default": "0"
+    }
+  },
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  }
+}

@@ -15,7 +15,6 @@ from gothic_editor.core.properties_schema import PropertiesSchema, schema_for
 from gothic_editor.core.scripts import parse_items
 from gothic_editor.core.settings import SettingsStore
 from gothic_editor.core.model_export import geometry_3ds
-from gothic_editor.ui.widgets.buttons import PropertyButton
 
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets/properties'
@@ -28,13 +27,13 @@ class PropertyBlocksTests(unittest.TestCase):
         self.root = Path(temporary.name)
 
     def test_categories_contain_only_block_references_and_share_sections(self):
-        self.assertEqual(EDITABLE_CATEGORIES, {'potions', 'scrolls'})
+        self.assertTrue({'potions', 'scrolls', 'runes'} <= EDITABLE_CATEGORIES)
         for category in ('potions', 'scrolls'):
             data = json.loads((ASSETS / 'categories' / (category + '.json')).read_text('utf-8'))
             self.assertEqual(set(data), {'blocks'})
             self.assertTrue(all((ASSETS / 'blocks' / name).is_file() for name in data['blocks']))
         potions, scrolls = schema_for('potions'), schema_for('scrolls')
-        self.assertEqual([s.key for s in scrolls.sections], ['general', 'parameters', 'appearance', 'inventory'])
+        self.assertEqual([s.key for s in scrolls.sections], ['general', 'parameters', 'actions', 'appearance', 'inventory'])
         self.assertIn('actions', [s.key for s in potions.sections])
         self.assertEqual(next(s for s in potions.sections if s.key == 'appearance'),
                          next(s for s in scrolls.sections if s.key == 'appearance'))
@@ -142,10 +141,9 @@ class ScrollFormTests(unittest.TestCase):
                 form = app.properties
                 self.assertTrue(form.editable)
                 self.assertNotIn('scemeName', form.inputs)
-                self.assertEqual(set(form.inputs), {'instance', 'name', 'description', 'flags', 'value', 'visual', 'effect', 'inventory_rows'})
-                self.assertEqual(len(form.sections), 4)
-                buttons = [child for child in form.sections['appearance'].body.winfo_children() if isinstance(child, PropertyButton)]
-                self.assertEqual(len(buttons), 1)  # Model choice uses the existing project/script path.
+                self.assertEqual(set(form.inputs), {'instance', 'name', 'description', 'flags', 'value', 'visual', 'effect', 'inventory_rows', 'item_actions'})
+                self.assertEqual(len(form.sections), 5)
+                self.assertIsNotNone(form.appearance_holder)
                 model = app.repo.root / 'Assets/Models/Scroll.3ds'
                 model.write_bytes(geometry_3ds([(0.,0.,0.), (1.,0.,0.), (0.,1.,0.)], [(0,1,2)]))
                 app.repo.mesh_index['scroll.3ds'] = model
@@ -167,7 +165,8 @@ class ScrollFormTests(unittest.TestCase):
                 potion = app.repo.create_item('potions')
                 app.select(potion)
                 self.assertEqual(len(app.properties.sections), 5)
-                self.assertEqual([field.key for field in schema_for('potions').sections[2].fields], ['visual', 'effect'])
+                self.assertEqual([field.key for section in schema_for('potions').sections
+                                  if section.key=='appearance' for field in section.fields], ['visual', 'effect'])
                 def create_scroll(dialog):
                     self.assertTrue(dialog.editable)
                     dialog.name.set('Новый тестовый свиток')

@@ -1,0 +1,45 @@
+{
+  "id": "twohand",
+  "title": "Двуручные мечи",
+  "instance": {
+    "prefix": "ItMw_",
+    "suffix_default_pattern": "TwoHandSword{n}"
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_NF"
+  },
+  "field_overrides": {
+    "instance": {
+      "prefix": "ItMw_",
+      "default": "TwoHandSword{n}",
+      "placeholder": ""
+    },
+    "name": {
+      "default": "\"Новый предмет\""
+    },
+    "flags": {
+      "default": "ITEM_2HD_SWD",
+      "options_ref": "twohandFlags"
+    }
+  },
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  },
+  "option_lists": {
+    "twohandFlags": [
+      {
+        "name": "Обычный",
+        "value": "ITEM_2HD_SWD"
+      },
+      {
+        "name": "Квестовый",
+        "value": "ITEM_2HD_SWD | ITEM_MISSION"
+      }
+    ]
+  }
+}

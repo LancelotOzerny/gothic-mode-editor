@@ -1,0 +1,21 @@
+{
+  "sections": [
+    {
+      "id": "use",
+      "title": "Чтение",
+      "fields": [
+        {
+          "key": "scemeName",
+          "label": "Анимация чтения",
+          "type": "string",
+          "default": "\"MAP\""
+        },
+        {
+          "key": "on_state[0]",
+          "label": "Функция чтения",
+          "type": "expression"
+        }
+      ]
+    }
+  ]
+}

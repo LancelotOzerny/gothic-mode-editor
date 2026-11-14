@@ -1,0 +1,32 @@
+{
+  "id": "ammo",
+  "title": "Боеприпасы",
+  "instance": {
+    "prefix": "ItAm_",
+    "suffix_default_pattern": "Ammo{n}"
+  },
+  "generated_defaults": {
+    "mainflag": "ITEM_KAT_MUN"
+  },
+  "field_overrides": {
+    "instance": {
+      "prefix": "ItAm_",
+      "default": "Ammo{n}",
+      "placeholder": ""
+    },
+    "name": {
+      "default": "\"Новый предмет\""
+    },
+    "flags": {
+      "default": "ITEM_MULTI"
+    }
+  },
+  "unknown_properties": {
+    "preserve": true,
+    "show_in_section": null
+  },
+  "missing_properties": {
+    "show_empty": true,
+    "write_only_if_modified": true
+  }
+}
