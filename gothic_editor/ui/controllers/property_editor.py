@@ -77,6 +77,7 @@ class PropertyEditor:
                 value = entry.get()
                 if field.source!='editor_metadata' and field.field_type not in ('string','resource'):value=value.strip()
                 if value==form.initial[key]:continue
+                if field.field_type=='action_list':entry.validate()
                 if field.required and not value:
                     raise ValueError(tr('properties.required',name=field.label))
                 if field.field_type=='expression' and not validate_expression(value):

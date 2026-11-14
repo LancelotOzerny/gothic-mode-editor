@@ -1,0 +1,19 @@
+{
+  "sections": [
+    {
+      "id": "actions",
+      "title": "Действия",
+      "fields": [
+        {
+          "key": "item_actions",
+          "label": "Действия",
+          "type": "action_list",
+          "source": "editor_metadata",
+          "export": false,
+          "max_rows": 4,
+          "options_source": "item_actions"
+        }
+      ]
+    }
+  ]
+}

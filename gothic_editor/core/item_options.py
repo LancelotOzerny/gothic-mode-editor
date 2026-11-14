@@ -8,6 +8,8 @@ from .item_layout import project_scripts
 
 def item_options(repo, source):
     if source == 'item_schemes':return list(POTION_SCHEMES)
+    if source == 'item_actions':return action_catalog(repo).groups()
+    if source == 'item_action_catalog':return action_catalog(repo)
     key = {'visual_effects': 'effect'}.get(source)
     if key is None:return []
     names = {unquote(item.fields[key]) for item in repo.game_items + repo.project_items if item.fields.get(key)}
@@ -31,3 +33,10 @@ def item_options(repo, source):
         cache[source]=discovered
         names.update(discovered)
     return [(name, '"' + name + '"') for name in sorted(names, key=str.casefold) if name]
+
+
+def action_catalog(repo):
+    from .item_actions import ActionCatalog
+    cache=repo.options_cache
+    if 'action_catalog' not in cache:cache['action_catalog']=ActionCatalog(repo.root,repo._game_content())
+    return cache['action_catalog']

@@ -179,7 +179,7 @@ class PotionComponents:
             code=replace_field(code,'visual',ModelResolver.visual(data,folder))
         return code
 
-    def generated(self):
+    def generated(self,action_handlers=None):
         """Return original replacements and NEW instances, plus user-authored helpers."""
         replacements={}; additions=[]; helpers=[]
         identifiers={}
@@ -190,6 +190,8 @@ class PotionComponents:
                 raise ValueError(f'Неоднозначный INSTANCE {data["instance"]}: {identifiers[identifier]} / {file}')
             identifiers[identifier]=file
             block=self.render_instance(data,file.parent)
+            if action_handlers and identifier in action_handlers:
+                block=replace_field(block,'on_state[0]',action_handlers[identifier])
             if data.get('source_instance'):
                 replacements[data['instance'].casefold()]=block
             else:

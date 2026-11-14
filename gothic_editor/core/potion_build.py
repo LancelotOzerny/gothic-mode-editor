@@ -1,4 +1,4 @@
-"""Apply JSON potion components to structurally merged staging scripts only."""
+"""Apply potion components and script-item actions to staging sources only."""
 from __future__ import annotations
 
 import json
@@ -9,16 +9,30 @@ from .daedalus_merge import (
     DaedalusMergeError, ScriptTree, declaration_text, definitions, target_path,
 )
 from .potion_components import PotionComponents
-from .scripts import load_text
+from .scripts import load_text,parse_items
+from .action_build import prepare_actions
+from .item_layout import project_scripts
+from .categories import classify
+from .scroll_cast import configure_scroll_cast
 
 
 def apply_potions(project: Path, content: Path):
     store = PotionComponents(project)
     replacements, additions, helpers = store.generated()
-    if not replacements and not additions and not helpers:
+    script_items=[]
+    for path in (project_scripts(project)/'Content').rglob('*'):
+        if path.is_file() and path.suffix.lower()=='.d':
+            script_items.extend(item for item in parse_items(path,'project')
+                                if classify(item)=='scrolls' and item.editor_metadata.get('item_actions'))
+    if not replacements and not additions and not helpers and not script_items:
         return []
     tree = ScriptTree(content)
+    handlers,action_sources,action_files,tree=prepare_actions(store,content,tree,helpers,script_items)
+    if handlers:
+        replacements,additions,helpers=store.generated(handlers)
+        helpers.extend(action_sources)
     changes = defaultdict(list)
+    helpers.extend(configure_scroll_cast(script_items,handlers,tree,changes))
     requests = {}
     missing = []
 
@@ -78,8 +92,14 @@ def apply_potions(project: Path, content: Path):
             names.add(key)
 
     # Validate every requested/generated symbol before writing the staging tree.
+    for path,edits in changes.items():
+        previous_end=-1
+        for start,end,_ in sorted(edits):
+            if start<previous_end:
+                raise DaedalusMergeError(f'Конфликт изменений в {path}: проверьте ручные переопределения заклинаний.')
+            previous_end=end
     tree.apply(changes)
-    affected = {path.relative_to(content) for path in changes}
+    affected = {path.relative_to(content) for path in changes}|action_files
     if generated:
         output = target_path(content, Path('Items/GE_ComponentPotions.d'))
         if output.is_file():

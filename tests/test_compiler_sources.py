@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -14,6 +15,39 @@ from gothic_editor.core.scripts import parse_items
 
 
 class CompilerSourceTests(unittest.TestCase):
+    def test_utf8_cyrillic_scripts_are_converted_to_cp1251_only_in_staging(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            original=root/'original.d'
+            text='INSTANCE ItSc_Test(C_Item) {name="Свиток разработчика";};\n'
+            original.write_text(text,encoding='utf-8-sig')
+            original_bytes=original.read_bytes()
+            staging=root/'staging'
+            staging.mkdir()
+            target=staging/'Scroll.d'
+            shutil.copy2(original,target)
+            prepare_compiler_sources(staging,lambda _:None)
+            self.assertEqual(target.read_bytes(),text.replace('\n','\r\n').encode('cp1251'))
+            self.assertEqual(original.read_bytes(),original_bytes)
+
+    @unittest.skipUnless(os.environ.get('GOTHIC_TEST_COMPILER'),'Optional real GDC')
+    def test_compiled_dat_contains_russian_title_in_game_encoding(self):
+        from gothic_editor.core.compiler_runner import run_compiler
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            title='Свиток разработчика'
+            code='class C_Item { var string name; };\nINSTANCE ItSc_Test(C_Item) { name="'+title+'"; };\n'
+            (root/'Scroll.d').write_text(code,encoding='utf-8')
+            manifest=root/'Gothic.src'
+            manifest.write_text('Scroll.d\n')
+            prepare_compiler_sources(root,lambda _:None)
+            output=root/'Gothic.dat'
+            log=root/'compiler.log'
+            result=run_compiler([os.environ['GOTHIC_TEST_COMPILER'],str(manifest),'--output-dat',str(output)],root,log)
+            self.assertEqual(result.returncode,0,log.read_text('utf-8'))
+            self.assertIn(title.encode('cp1251'),output.read_bytes())
+            self.assertNotIn(title.encode('utf-8'),output.read_bytes())
+
     def test_mixed_newlines_are_crlf_without_changing_encoding_or_order(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

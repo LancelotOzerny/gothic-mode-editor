@@ -9,6 +9,8 @@ from gothic_editor.ui.widgets.theme import ERROR
 from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
 from gothic_editor.ui.widgets.form import create_field
 from gothic_editor.ui.widgets.key_value_list import KeyValueList
+from gothic_editor.ui.widgets.choice_list import ChoiceList
+from gothic_editor.ui.widgets.function_actions import FunctionActionList
 from gothic_editor.ui.widgets.placeholders import add_placeholder
 from gothic_editor.ui.widgets.field_label import FieldLabel
 
@@ -101,6 +103,7 @@ class PropertiesPanel(Panel):
                     for key in sorted(item.fields):
                         if property_key(key) not in known:
                             self.render_field(frame.body,PropertyField(key,key),item.fields[key])
+        self._attach_action_parameters()
         if self.on_appearance is not None and classify(item) in EDITABLE_CATEGORIES and 'appearance' in self.sections:
             self.appearance_holder=tk.Frame(self.sections['appearance'].body,bg=PANEL)
             self.appearance_holder.pack(fill='x')
@@ -127,6 +130,11 @@ class PropertiesPanel(Panel):
                     if field.prefix and value.casefold().startswith(field.prefix.casefold()):value=value[len(field.prefix):]
                 elif field.source=='editor_metadata':value=item.editor_metadata.get(key,'')
                 else:value=item.fields.get(property_key(key),'')
+                if field.field_type in ('choice_list','action_list'):
+                    entry.set_expression(value)
+                    self.initial[key]=entry.get()
+                    self.editor.watch(key,entry.value_variable)
+                    continue
                 if field.field_type in ('string','resource') and re.fullmatch(r'"(?:\\.|[^"\\])*"',value):
                     value=re.sub(r'\\([\\"])',r'\1',value[1:-1])
                 if field.widget=='combobox':
@@ -139,6 +147,7 @@ class PropertiesPanel(Panel):
                 else:entry.value_variable.set(value)
                 self.initial[key]=value
                 self.editor.watch(key,entry.value_variable)
+            self._attach_action_parameters()
             if self.appearance_holder is not None:
                 for child in self.appearance_holder.winfo_children():child.destroy()
                 self.on_appearance(self.appearance_holder,item)
@@ -146,7 +155,32 @@ class PropertiesPanel(Panel):
             else:self.save_status.config(text='')
         finally:self._loading=False
 
+    def _attach_action_parameters(self):
+        if 'parameters' in self.sections:
+            loading=self._loading
+            self._loading=True
+            try:
+                for key,entry in self.inputs.items():
+                    if isinstance(entry,FunctionActionList):
+                        entry.attach_parameters(self.sections['parameters'].body)
+                        self.initial[key]=entry.get()
+            finally:self._loading=loading
+
     def render_field(self,parent,field,value):
+        if field.field_type in ('choice_list','action_list'):
+            if field.tooltip:
+                FieldLabel(parent,field.label,field.tooltip).pack(fill='x',padx=8,pady=(6,2))
+            provider=lambda:self.options_provider(field.options_source) if self.options_provider else []
+            if field.field_type=='action_list':
+                entry=FunctionActionList(parent,field,value,provider,
+                         lambda:self.options_provider('item_action_catalog'),self.editable)
+            else:entry=ChoiceList(parent,field,value,provider,self.editable)
+            entry.pack(fill='x',padx=8)
+            self.inputs[field.key]=entry
+            self.fields[field.key]=field
+            self.initial[field.key]=entry.get()
+            self.editor.watch(field.key,entry.value_variable)
+            return
         if field.field_type=='key_value_list':
             if field.tooltip:
                 FieldLabel(parent,field.label,field.tooltip).pack(fill='x',padx=8,pady=(6,2))

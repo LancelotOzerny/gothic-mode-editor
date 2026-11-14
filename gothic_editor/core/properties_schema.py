@@ -85,7 +85,7 @@ class PropertiesSchema:
                 key = raw['key']
                 canonical = property_key(key)
                 source = raw.get('source', 'property')
-                if (canonical in keys or raw.get('type') not in ('string', 'expression', 'identifier', 'enum', 'flags', 'resource', 'key_value_list')
+                if (canonical in keys or raw.get('type') not in ('string', 'expression', 'identifier', 'enum', 'flags', 'resource', 'key_value_list', 'choice_list', 'action_list')
                         or raw.get('widget', 'input') not in ('input', 'combobox')
                         or source not in ('property', 'instance_id', 'editor_metadata')):
                     raise ValueError(f'{path}: invalid or duplicate field {key}')
@@ -99,6 +99,9 @@ class PropertiesSchema:
                 columns = raw.get('columns', [])
                 maximum, start = raw.get('max_rows', 0), raw.get('start_index', 0)
                 reserved = raw.get('reserved', {})
+                if raw['type'] in ('choice_list','action_list') and (source!='editor_metadata' or raw.get('export',True)
+                        or type(maximum) is not int or maximum<1):
+                    raise ValueError(f'{path}: invalid choice_list {key}')
                 if raw['type'] == 'key_value_list':
                     if (type(maximum) is not int or maximum < 1 or type(start) is not int or start < 0
                             or not isinstance(columns, list) or len(columns) != 2

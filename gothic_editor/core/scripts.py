@@ -4,6 +4,7 @@ from .localization import tr
 from dataclasses import dataclass,field
 from pathlib import Path
 import re
+import json
 
 INST = re.compile(r'\bINSTANCE\s+([A-Za-z_]\w*)\s*\(\s*C_Item\s*\)\s*\{', re.I)
 FIELD = re.compile(r'\b([A-Za-z_]\w*(?:\s*\[\s*\d+\s*\])?)\s*=\s*("(?:\\.|[^"\\])*"|[^;]+)\s*;', re.I)
@@ -94,7 +95,16 @@ def parse_items(path: Path, origin: str):
         if end<0:continue
         block=masked[hit.end():end-1]
         fields={re.sub(r'\s+','',m.group(1)).lower():m.group(2).strip() for m in FIELD.finditer(block)}
-        found.append(Item(hit.group(1),path,origin,source[hit.start():end],fields,hit.start(),end,encoding))
+        text=source[hit.start():end]
+        metadata={}
+        match=re.search(r'(?m)^[ \t]*// @GE_METADATA ([^\r\n]*)',text)
+        if match:
+            try:metadata=json.loads(match[1])
+            except ValueError as exc:raise ValueError(f'{path}: некорректный @GE_METADATA для {hit[1]}') from exc
+            if not isinstance(metadata,dict) or any(not isinstance(key,str) or not isinstance(value,str)
+                                                     for key,value in metadata.items()):
+                raise ValueError(f'{path}: @GE_METADATA должен содержать строковые значения')
+        found.append(Item(hit.group(1),path,origin,text,fields,hit.start(),end,encoding,metadata))
     return found
 
 def replace_field(block: str, key: str, value: str) -> str:
@@ -115,7 +125,16 @@ def replace_field(block: str, key: str, value: str) -> str:
 def replace_instance(block: str, old: str, new: str) -> str:
     return re.sub(r'(\bINSTANCE\s+)'+re.escape(old)+r'(\s*\()',lambda m:m.group(1)+new+m.group(2),block,count=1,flags=re.I)
 
-def write_modified_item(item:Item, destination:Path, updates:dict[str,str], instance=None):
+def with_item_metadata(block, metadata):
+    line='    // @GE_METADATA '+json.dumps(metadata,ensure_ascii=True,separators=(',',':'))
+    pattern=r'(?m)^[ \t]*// @GE_METADATA [^\r\n]*'
+    if re.search(pattern,block):return re.sub(pattern,lambda _:line,block,count=1)
+    opening=mask_comments(block).find('{')
+    if opening<0:raise ValueError('Незавершённый INSTANCE для сохранения метаданных')
+    return block[:opening+1]+'\n'+line+'\n'+block[opening+1:]
+
+
+def write_modified_item(item:Item, destination:Path, updates:dict[str,str], instance=None,metadata=None):
     """Always write a project file; preserve all other item definitions verbatim."""
     source,codec=load_text(destination if destination.exists() else item.path)
     items=parse_items(destination if destination.exists() else item.path,'project')
@@ -124,6 +143,7 @@ def write_modified_item(item:Item, destination:Path, updates:dict[str,str], inst
     part=source[target.begin:target.end]
     for k,v in updates.items():part=replace_field(part,k,v)
     if instance is not None:part=replace_instance(part,item.instance,instance)
+    if metadata is not None:part=with_item_metadata(part,{**target.editor_metadata,**metadata})
     source=source[:target.begin]+part+source[target.end:]
     destination.parent.mkdir(parents=True,exist_ok=True)
     # Source scripts from Gothic are commonly ANSI/CP1251; retain the encoding.

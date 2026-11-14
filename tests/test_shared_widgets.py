@@ -148,7 +148,10 @@ class SharedWidgetTests(unittest.TestCase):
             archive_models=SimpleNamespace(entries={}),components=SimpleNamespace(owns=lambda _:False))
         self.root.save_fields=unittest.mock.Mock()
         item=Item('ItSc_Test',Path('test.d'),'project','',{'mainflag':'ITEM_KAT_RUNE'},0,0)
-        ItemAppearanceController(self.root).choose(item)
+        controller=ItemAppearanceController(self.root)
+        controller.model_options=lambda:[('Gothic / A.3ds','A.3ds'),('Gothic / B.3ds','B.3ds')]
+        controller._confirm_replace=lambda _:True
+        controller.choose(item)
         window=next(w for w in self.root.winfo_children() if isinstance(w,EditorDialog))
         def descendants(widget):
             for child in widget.winfo_children():

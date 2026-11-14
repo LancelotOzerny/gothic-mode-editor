@@ -10,17 +10,21 @@ def prepare_compiler_sources(content, report):
             continue
         raw = path.read_bytes()
         prepared = raw
-        if path.suffix.casefold() == '.d' and b'\x0c' in raw:
+        if path.suffix.casefold() == '.d':
             text, codec = load_text(path)
-            normalized, count = normalize_compiler_whitespace(text)
+            normalized, count = normalize_compiler_whitespace(text) if '\f' in text else (text,0)
+            if codec=='utf-8-sig':
+                try:prepared=normalized.encode('cp1251')
+                except UnicodeEncodeError as exc:
+                    raise ValueError(f'{path}: текст не представим в Windows-1251 для Gothic.') from exc
+                if prepared!=raw and (raw.startswith(b'\xef\xbb\xbf') or any(byte>=128 for byte in raw)):
+                    report(tr('tools.normalized_encoding',path=str(path.relative_to(content))))
+            elif count:prepared=normalized.encode(codec)
             if count:
-                if codec == 'utf-8-sig' and not raw.startswith(b'\xef\xbb\xbf'):
-                    codec = 'utf-8'
-                prepared = normalized.encode(codec)
                 report(tr('tools.normalized_whitespace', path=str(path.relative_to(content)), count=count))
         # DaedalusCompiler 0.9.2 splits diagnostic lines by Environment.NewLine.
         # LF or mixed endings otherwise make its line-number lookup crash on Windows.
-        # Work on bytes to preserve CP1251, BOMs and every non-newline character.
+        # Preserve existing ANSI bytes; UTF-8 scripts above are converted only in staging.
         prepared = prepared.replace(b'\r\n', b'\n').replace(b'\r', b'\n').replace(b'\n', b'\r\n')
         if prepared != raw:
             path.write_bytes(prepared)
