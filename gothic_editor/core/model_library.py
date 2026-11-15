@@ -19,9 +19,14 @@ class ModelLibrary:
         return model.parent.name + '.3ds' if model.name.casefold() == 'model.3ds' else model.name
 
     def index(self):
+        from .world_resources import WorldResources
+        replacements=set(WorldResources(self.project).overrides('model').values())
         result = {}
         for model in sorted(path for path in self.root.rglob('*')
-                            if path.is_file() and path.suffix.lower()=='.3ds'):
+                            if path.is_file() and path.suffix.lower()=='.3ds'
+                            and path not in replacements
+                            and (path.relative_to(self.root).parts[0].casefold() != 'world'
+                                 or path.name.casefold()=='model.3ds')):
             self.files.checked(model)
             name = self.name(model).casefold()
             if name in result:raise ValueError(f'Конфликт моделей {name}: {result[name]} / {model}')

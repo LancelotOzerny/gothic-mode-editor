@@ -12,11 +12,13 @@ class ArchiveModels:
     def __init__(self):
         self.entries: dict[str, VdfEntry] = {}
         self.texture_entries: dict[str, VdfEntry] = {}
+        self.animation_entries: dict[str, VdfEntry] = {}
         self._catalogs = {}
 
     def refresh(self, project: Path, game: Path | None):
         self.entries = {}
         self.texture_entries = {}
+        self.animation_entries = {}
         errors = []
         catalogs = {}
         # Project archives override game archives. Inactive Data/ModVDF mods
@@ -42,7 +44,9 @@ class ArchiveModels:
                     errors.append(f'{path.name}: {exc}')
             for archive in sorted(archives, key=lambda item: (item.timestamp, item.path.name.lower()), reverse=True):
                 for name, entry in archive.entries.items():
-                    target = self.texture_entries if Path(name).suffix in ('.tex', '.tga') else self.entries
+                    suffix = Path(name).suffix
+                    target = (self.texture_entries if suffix in ('.tex', '.tga') else
+                              self.animation_entries if suffix in ('.mdm', '.mdh', '.mdl', '.mds', '.msb', '.mmb') else self.entries)
                     target.setdefault(name, entry)
         self._catalogs = catalogs
         return errors

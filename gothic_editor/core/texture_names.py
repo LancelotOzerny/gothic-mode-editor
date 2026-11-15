@@ -6,6 +6,8 @@ def texture_candidates(name):
     name = name.replace('\\', '/').rsplit('/', 1)[-1].lower()
     stem = Path(name).stem
     candidates = [name]
+    if Path(name).suffix == '.tex' and stem.endswith('-c'):
+        stem = stem[:-2]
     if not stem.endswith('-c'):
         candidates.append(stem + '-c.tex')
     candidates.extend((stem + '.tex', stem + '.tga'))

@@ -159,6 +159,9 @@ class ProjectTools:
             project_files = merge_project_scripts(content,self.source)
         for generated in apply_potions(self.project,content):
             if generated not in project_files:project_files.append(generated)
+        from .npcs import apply_npc_overrides
+        for changed in apply_npc_overrides(self.project,content):
+            if changed not in project_files:project_files.append(changed)
         manifest = self._include_project_scripts(content, project_files)
         return content, manifest, project_files
 

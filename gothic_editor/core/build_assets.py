@@ -8,11 +8,13 @@ from .model_resolver import ModelResolver
 from .potion_components import PotionComponents
 from .mod_archive import write_mod
 from .model_library import ModelLibrary
+from .world_resources import WorldResources
 
 
 class BuildAssetService:
-    def __init__(self, project):
+    def __init__(self, project, game=None):
         self.store = PotionComponents(project)
+        self.game = game
 
     def collect(self):
         files, names, models = {}, {}, []
@@ -74,7 +76,9 @@ class BuildAssetService:
         for path in sorted(global_assets.rglob('*')):
             if not path.is_file():continue
             relative=path.relative_to(global_assets)
-            if relative.parts[0].casefold() in ('items','scripts','models'):continue
+            if relative.parts[0].casefold() in ('items','scripts','models','npc'):continue
+            if (relative.as_posix().casefold() == 'worlds/overrides.json'
+                    or tuple(part.casefold() for part in relative.parts[:2]) == ('textures','world')):continue
             self.store.layout.checked(path)
             suffix=path.suffix.casefold()
             if suffix in ('.3ds','.mrm','.msh'):
@@ -109,6 +113,18 @@ class BuildAssetService:
                 logical_name=material_texture_name(matched)
                 if reference.casefold()!=logical_name.casefold():replacements[reference]=logical_name
             files[packed_name]=replace_texture_references(files[packed_name],replacements)
+        # World replacements intentionally retain global Gothic names and references.
+        for name, data in WorldResources(self.store.layout.project).collect(self.game,files).items():
+            key=Path(name).name.casefold()
+            if key in names:raise ValueError(f'Конфликт имени ресурса мира {name}: {names[key]}')
+            names[key]='Мир'
+            files[name]=data
+        from .npc_models import collect_npc_models
+        for name,data in collect_npc_models(self.store.layout.project).items():
+            key=Path(name).name.casefold()
+            if key in names:raise ValueError(f'Конфликт модели NPC {name}: {names[key]}')
+            names[key]='NPC'
+            files[name]=data
         return files
 
     def package(self, output, compiled, files):

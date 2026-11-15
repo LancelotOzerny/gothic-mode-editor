@@ -63,7 +63,7 @@ class VdfArchive:
                 if flags & 0x80000000:
                     continue
                 name = raw_name.split(b'\0', 1)[0].rstrip(b' \x1a').decode('cp1251')
-                if Path(name).suffix.lower() not in ('.mrm', '.3ds', '.tex', '.tga'):
+                if Path(name).suffix.lower() not in ('.mrm', '.3ds', '.tex', '.tga', '.mdm', '.mdh', '.mdl', '.mds', '.msb', '.mmb'):
                     continue
                 if version != 0x50:
                     raise VdfFormatError(tr('viewer.unsupported_vdf', version=hex(version)))

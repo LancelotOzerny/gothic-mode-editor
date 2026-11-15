@@ -232,3 +232,16 @@ def read_ztex(data):
 
 def read_texture(data):
     return read_ztex(data) if data.startswith(b'ZTEX') else read_tga(data)
+
+
+def write_ztex(texture):
+    """Lossless BGRA Gothic texture; mipmaps are stored smallest first (ZenKit)."""
+    _dimensions(texture.width, texture.height)
+    levels = texture.mipmaps
+    data = bytearray(b'ZTEX' + struct.pack('<8I', 0, 0, texture.width, texture.height,
+                                        len(levels), texture.width, texture.height, 0))
+    for level in reversed(levels):
+        pixels = bytearray(level.pixels)
+        pixels[0::4], pixels[2::4] = level.pixels[2::4], level.pixels[0::4]
+        data.extend(pixels)
+    return bytes(data)

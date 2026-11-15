@@ -188,6 +188,8 @@ class ProjectRepository:
         self.errors.extend(self.archive_models.refresh(self.root,self.game))
         self.mesh_index.update(ModelResolver.index(self.components))
         self.mesh_index.update(ModelLibrary(self.root).index())
+        from .world_resources import WorldResources
+        self.mesh_index.update(WorldResources(self.root).overrides('model'))
 
     def exists(self,instance):return any(it.instance.casefold()==instance.casefold() for it in self.items)
 

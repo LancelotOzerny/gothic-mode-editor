@@ -17,6 +17,7 @@ class PreviewMesh:
     faces: list
     uvs: list = field(default_factory=list)
     texture_names: list = field(default_factory=list)
+    material_names: list = field(default_factory=list)
 
 
 def read_3ds(path: Path):
@@ -113,7 +114,7 @@ def read_3ds_bytes(data: bytes, *, preview=False):
     if preview:
         if any(not math.isfinite(n) for vertex in vertices for n in vertex):
             raise MeshFormatError(tr('viewer.invalid_format'))
-        return PreviewMesh(vertices, faces, uvs, [materials.get(name, '') for name in face_materials])
+        return PreviewMesh(vertices, faces, uvs, [materials.get(name, '') for name in face_materials], face_materials)
     return vertices, faces
 
 
@@ -166,10 +167,10 @@ def _read_mrm_section(data, *, preview=False):
     if any(not math.isfinite(number) for vertex in vertices for number in vertex):
         raise invalid()
     faces = []
-    uvs, texture_names = [], []
+    uvs, texture_names, material_names = [], [], []
     if preview:
-        from .mesh_materials import mrm_textures
-        materials = mrm_textures(bytes(data[metadata + submeshes * 80:]), submeshes)
+        from .mesh_materials import mrm_materials
+        materials = mrm_materials(bytes(data[metadata + submeshes * 80:]), submeshes)
     for index in range(submeshes):
         triangle_offset, triangle_count, wedge_offset, wedge_count = struct.unpack_from(
             '<4I', data, metadata + index * 80)
@@ -189,9 +190,10 @@ def _read_mrm_section(data, *, preview=False):
             if preview:
                 coords = tuple(struct.unpack_from('<ff', wedges, wedge * 24 + 12) for wedge in triangle)
                 uvs.append(coords if all(math.isfinite(n) for uv in coords for n in uv) else None)
-                texture_names.append(materials[index])
+                material_names.append(materials[index][0] or f'Материал {index+1}')
+                texture_names.append(materials[index][1])
     if not vertices or not faces:
         raise MeshFormatError(tr('viewer.no_triangles'))
-    return PreviewMesh(vertices, faces, uvs, texture_names) if preview else (vertices, faces)
+    return PreviewMesh(vertices, faces, uvs, texture_names, material_names) if preview else (vertices, faces)
 
 

@@ -141,7 +141,7 @@ class ScrollFormTests(unittest.TestCase):
                 form = app.properties
                 self.assertTrue(form.editable)
                 self.assertNotIn('scemeName', form.inputs)
-                self.assertEqual(set(form.inputs), {'instance', 'name', 'description', 'flags', 'value', 'visual', 'effect', 'inventory_rows', 'item_actions'})
+                self.assertEqual(set(form.inputs), {'instance', 'name', 'description', 'flags', 'value', 'visual', 'effect', 'inventory_rows', 'item_actions', 'inv_rotx', 'inv_roty', 'inv_rotz'})
                 self.assertEqual(len(form.sections), 5)
                 self.assertIsNotNone(form.appearance_holder)
                 model = app.repo.root / 'Assets/Models/Scroll.3ds'
@@ -166,7 +166,7 @@ class ScrollFormTests(unittest.TestCase):
                 app.select(potion)
                 self.assertEqual(len(app.properties.sections), 5)
                 self.assertEqual([field.key for section in schema_for('potions').sections
-                                  if section.key=='appearance' for field in section.fields], ['visual', 'effect'])
+                                  if section.key=='appearance' for field in section.fields], ['inv_rotx','inv_roty','inv_rotz','visual', 'effect'])
                 def create_scroll(dialog):
                     self.assertTrue(dialog.editable)
                     dialog.name.set('Новый тестовый свиток')

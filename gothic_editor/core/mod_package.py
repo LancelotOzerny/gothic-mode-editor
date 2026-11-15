@@ -67,7 +67,7 @@ def validate_build(archive, ini, config):
 class ModPackageService:
     def __init__(self, project, game, config):
         self.project, self.game, self.config = project, game, config
-        self.assets = BuildAssetService(project)
+        self.assets = BuildAssetService(project,game)
 
     def packer(self):
         raw = self.config.packer_path.strip()

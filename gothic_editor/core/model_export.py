@@ -74,3 +74,45 @@ def export_model_3ds(visual, mesh_index, archives, destination):
             converted = True
     Path(destination).write_bytes(data)
     return converted
+
+
+def preview_3ds(mesh):
+    """Export static preview geometry retaining UV seams and texture assignments."""
+    def chunk(kind, payload):
+        return struct.pack('<HI', kind, len(payload) + 6) + payload
+    vertices, uvs, faces, lookup, groups = [], [], [], {}, {}
+    for index, face in enumerate(mesh.faces):
+        coords = mesh.uvs[index] if index < len(mesh.uvs) else None
+        triangle = []
+        for corner, vertex in enumerate(face):
+            uv = coords[corner] if coords else (0., 0.)
+            key = vertex, tuple(uv)
+            if key not in lookup:
+                lookup[key] = len(vertices)
+                vertices.append(mesh.vertices[vertex])
+                uvs.append((uv[0], 1 - uv[1]))
+            triangle.append(lookup[key])
+        faces.append(tuple(triangle))
+        texture = mesh.texture_names[index] if index < len(mesh.texture_names) else ''
+        material = mesh.material_names[index] if index < len(mesh.material_names) else ''
+        groups.setdefault((material,texture), []).append(index)
+    # Reuse the exporter's bounds, index and finite-coordinate validation.
+    geometry_3ds(vertices, faces)
+    points = chunk(0x4110, struct.pack('<H', len(vertices)) + b''.join(struct.pack('<3f', *v) for v in vertices))
+    mapping = chunk(0x4140, struct.pack('<H', len(uvs)) + b''.join(struct.pack('<2f', *uv) for uv in uvs))
+    assignments, materials, used_names = b'', b'', set()
+    for number, ((material,texture), indices) in enumerate(groups.items()):
+        label = material or f'material_{number}'
+        if label in used_names:label += f'_{number}'
+        while label in used_names:label += '_'
+        used_names.add(label)
+        name = label.encode('cp1251') + b'\0'
+        assignments += chunk(0x4130, name + struct.pack('<H', len(indices)) + struct.pack(f'<{len(indices)}H', *indices))
+        material = chunk(0xA000, name)
+        if texture:material += chunk(0xA200, chunk(0xA300, texture.encode('cp1251') + b'\0'))
+        materials += chunk(0xAFFF, material)
+    triangles = chunk(0x4120, struct.pack('<H', len(faces)) +
+                      b''.join(struct.pack('<4H', *face, 0) for face in faces) + assignments)
+    obj = chunk(0x4000, b'model\0' + chunk(0x4100, points + triangles + mapping))
+    return chunk(0x4D4D, chunk(0x0002, struct.pack('<I', 3)) +
+                 chunk(0x3D3D, chunk(0x3D3E, struct.pack('<I', 3)) + obj + materials))

@@ -225,7 +225,7 @@ class PreviewWidgetTests(unittest.TestCase):
         viewer.set_preview(preview)
         self.finish_frame(root,viewer)
         self.assertFalse(viewer.textured)
-        self.assertTrue(viewer.solid_button.selected)
+        self.assertTrue(not viewer.texture_button.selected)
         self.assertIsNotNone(viewer.image)
         with patch.object(viewer.renderer,'request',wraps=viewer.renderer.request) as request:
             viewer.draw()
@@ -237,11 +237,11 @@ class PreviewWidgetTests(unittest.TestCase):
         root.update()
         self.assertEqual(viewer.image.width(), viewer.winfo_width()-20)
         camera = viewer.angle_x, viewer.angle_y, viewer.zoom
-        with patch.object(viewer.solid_button.icons, 'directory', Path('missing-icons')):
-            viewer.solid_button.invoke()
+        with patch.object(viewer.texture_button.icons, 'directory', Path('missing-icons')):
+            viewer.set_textured(False)
         self.assertFalse(viewer.textured)
-        self.assertTrue(viewer.solid_button.selected)
-        self.assertIsNone(viewer.solid_button.image)
+        self.assertTrue(not viewer.texture_button.selected)
+        self.assertIsNone(viewer.inventory_button.image)
         self.assertEqual(camera, (viewer.angle_x, viewer.angle_y, viewer.zoom))
         viewer.texture_button.invoke()
         self.assertTrue(viewer.textured)

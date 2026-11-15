@@ -8,6 +8,7 @@ from pathlib import Path
 from .mesh import PreviewMesh, read_3ds_bytes, read_mrm
 from .textures import Texture, read_texture
 from .texture_names import texture_candidates
+from .world_resources import WorldResources
 
 
 @dataclass
@@ -20,10 +21,14 @@ class ModelPreview:
     render_token: object = field(default_factory=object,repr=False,compare=False)
 
 
-def load_model_preview(source, project, game=None, item_assets=None, texture_entries=None, with_textures=True):
-    data = source.read_bytes()
-    name = source.name
-    mesh = read_3ds_bytes(data, preview=True) if Path(name).suffix.lower() == '.3ds' else read_mrm(data, preview=True)
+def load_model_preview(source, project, game=None, item_assets=None, texture_entries=None, with_textures=True, mesh=None):
+    if mesh is None:
+        data = source.read_bytes()
+        name = source.name
+        mesh = read_3ds_bytes(data, preview=True) if Path(name).suffix.lower() == '.3ds' else read_mrm(data, preview=True)
+        if Path(name).suffix.lower()=='.3ds':
+            # Source 3DS is Z-up; compiled Gothic meshes are Y-up.
+            mesh.vertices=[(x,z,y) for x,y,z in mesh.vertices]
     if not any(mesh.texture_names):
         return ModelPreview(mesh, {}, [])
     if not with_textures:return ModelPreview(mesh,{},[],False)
@@ -37,12 +42,17 @@ def load_model_preview(source, project, game=None, item_assets=None, texture_ent
     if game is not None:
         directories.append(Path(game) / '_work/data/Textures')
     indexes = []
+    overrides = WorldResources(project).overrides('texture')
     for directory in dict.fromkeys(directories):
+        if directory == Path(project) / 'Assets':
+            indexes.append(overrides)
         index = {}
         try:
             if directory.is_dir():
                 wanted={candidate for name in mesh.texture_names for candidate in texture_candidates(name) if name}
                 for parent,folders,files in os.walk(directory):
+                    folders[:] = [name for name in folders if Path(parent) / name not in (
+                        Path(project) / 'Assets/Models/World', Path(project) / 'Assets/Textures/World')]
                     folders.sort()
                     for filename in sorted(files):
                         if filename.lower() in wanted:index.setdefault(filename.lower(),Path(parent)/filename)

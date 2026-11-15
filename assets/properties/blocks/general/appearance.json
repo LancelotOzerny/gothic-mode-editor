@@ -12,6 +12,9 @@
       "id": "appearance",
       "title": "Внешний вид",
       "fields": [
+        {"key":"inv_rotx","label":"Вращение в инвентаре X (°)","type":"expression"},
+        {"key":"inv_roty","label":"Вращение в инвентаре Y (°)","type":"expression"},
+        {"key":"inv_rotz","label":"Вращение в инвентаре Z (°)","type":"expression"},
         {
           "key": "visual",
           "label": "Модель",

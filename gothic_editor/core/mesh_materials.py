@@ -8,7 +8,11 @@ import struct
 
 
 def mrm_textures(data, count):
-    result = [''] * count
+    return [texture for _,texture in mrm_materials(data,count)]
+
+
+def mrm_materials(data, count):
+    result = [('', '')] * count
     if not data.startswith(b'ZenGin Archive'):
         return result
     header = re.search(rb'\bBINARY\r?\n.*?\r?\nEND\r?\nobjects [^\n]*\nEND\r?\n(?:\r?\n)?', data, re.S)
@@ -37,11 +41,11 @@ def mrm_textures(data, count):
             string(end)  # object name
             if string(end) != 'zCMaterial':
                 break
-            string(end)  # material name
+            name = string(end)
             position += 9  # group byte, BGRA colour, smooth angle
             if position > end:
                 break
-            result[index] = string(end)
+            result[index] = (name, string(end))
             position = end
         except (ValueError, struct.error):
             break

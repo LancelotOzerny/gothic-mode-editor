@@ -30,6 +30,10 @@ from gothic_editor.ui.panels.welcome import WelcomeScreen
 from gothic_editor.ui.windows.project_dialog import NewProjectDialog
 from gothic_editor.ui.windows.item_dialog import AddItemDialog
 from gothic_editor.ui.controllers.item_appearance import ItemAppearanceController
+from gothic_editor.ui.controllers.world import WorldController
+from gothic_editor.ui.panels.world import WorldPanel, WorldPropertiesPanel
+from gothic_editor.ui.panels.npc import NpcPropertiesPanel
+from gothic_editor.ui.controllers.npc import NpcController
 
 RESOURCE_KEYS={'game_path':'resources.gothic.game_path','compiler_path':'build.compiler.path',
                'resource_editor_path':'resources.editor.path'}
@@ -53,7 +57,7 @@ class EditorApp(tk.Tk):
         self.register_bottom_tab('terminal','terminal.title',lambda parent:TerminalPanel(parent,self.hide_terminal))
         self.register_bottom_tab('resources','resources.title',lambda parent:ResourcesPanel(
             parent,lambda:self.repo.resource_editor_path,lambda:self.hide_bottom_tab('resources'),
-            on_changed=self.refresh,before_change=lambda:self.properties.save(automatic=True)))
+            on_changed=self.refresh,before_change=lambda:self._save_editors()))
         self.terminal_visible=self._bottom_tab_variables['terminal']
         self.resources_visible=self._bottom_tab_variables['resources']
         self.terminal_visible.set(True)
@@ -84,15 +88,18 @@ class EditorApp(tk.Tk):
         self._build_menu();self._build_layout()
         self.show_welcome()
         self.bind('<Control-o>',lambda e:self.open_project())
-        self.bind('<Control-s>',lambda e:self.properties.save())
+        self.bind('<Control-s>',lambda e:self._save_editors())
         self.bind('<Control-KeyPress>',self._save_shortcut,add='+')
         self.bind('<Alt-F4>',lambda e:self.destroy())
         self.deiconify()
 
+    def _save_editors(self):
+        return self.properties.save(automatic=True) and self.npcs.save()
+
     def _save_shortcut(self,event):
         if (event.keysym.lower() in ('s','cyrillic_yeru') or
                 (event.keycode==83 and self.tk.call('tk','windowingsystem')=='win32')):
-            self.properties.save()
+            self._save_editors()
             return 'break'
 
     def _build_menu(self):
@@ -139,7 +146,7 @@ class EditorApp(tk.Tk):
         if window is not None and window.winfo_exists():
             window.lift()
             return
-        if not self.properties.save(automatic=True):return
+        if not self._save_editors():return
         self.spreadsheet_window=SpreadsheetWindow(self,self.repo,operation,self._spreadsheet_imported)
 
     def _spreadsheet_imported(self):
@@ -165,8 +172,9 @@ class EditorApp(tk.Tk):
         header.columnconfigure(2,weight=1,uniform='header_side')
         mode_frame=tk.Frame(header,bg=BG);mode_frame.grid(row=0,column=0,sticky='w')
         label(mode_frame,tr('app.mode'),bg=BG,font=('Arial',11)).pack(side='left',padx=(0,10))
-        self.mode=create_field(mode_frame,'choice',options=((tr('app.items'),tr('app.items')),),caption=tr('app.mode'))
+        self.mode=create_field(mode_frame,'choice',options=((tr('app.items'),'items'),('Мир','world')),caption=tr('app.mode'))
         self.mode.current(0);self.mode.pack(side='left')
+        self.mode.bind('<<ComboboxSelected>>',lambda _:self._switch_resource_browser(self.mode.get()))
         actions=tk.Frame(header,bg=BG);actions.grid(row=0,column=1,padx=16)
         self.play_button=tk.Button(actions,image=self.icons.frames('build.png',26,'#62d785',BG)[0],bg=BG,
                                    activebackground=PANEL,activeforeground='#89eda5',relief='flat',
@@ -180,18 +188,27 @@ class EditorApp(tk.Tk):
         self.workspace.pack(fill='both',expand=True,padx=9,pady=(0,8))
         panes=tk.PanedWindow(self.workspace,orient='horizontal',bg=BG,bd=0,sashwidth=7)
         self.workspace.add(panes,minsize=160,stretch='always')
-        self.hierarchy=HierarchyPanel(panes,self.select,self.create_item,self.duplicate,self.delete,self.rename,on_copy=self.copy_to_project,on_export_model=self.export_model,on_export_texture=self.export_item_texture)
-        panes.add(self.hierarchy,width=300,minsize=225)
+        sidebar=tk.Frame(panes,bg=PANEL)
+        panes.add(sidebar,width=300,minsize=225)
+        self.hierarchy=HierarchyPanel(sidebar,self.select,self.create_item,self.duplicate,self.delete,self.rename,on_copy=self.copy_to_project,on_export_model=self.export_model,on_export_texture=self.export_item_texture)
+        self.hierarchy.pack(fill='both',expand=True)
+        self.world=WorldController(self)
+        self.npcs=NpcController(self)
+        self.world_panel=WorldPanel(sidebar,self.world.select,self.npcs.select)
         middle=tk.Frame(panes,bg='#191e29')
         panes.add(middle,width=550,minsize=250)
         self.viewer=ModelViewer(middle)
-        self.viewer.on_texture_mode=lambda:self._show_model(self.current,
-            (self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom)) if self.current else None
+        self.viewer.on_texture_mode=self._texture_mode_changed
         self.viewer.pack(fill='both',expand=True)
         from .core.item_options import item_options
-        self.properties=PropertiesPanel(panes,self.save_fields,on_appearance=self.appearance.show,
+        inspector=tk.Frame(panes,bg=PANEL)
+        panes.add(inspector,width=350,minsize=240)
+        self.properties=PropertiesPanel(inspector,self.save_fields,on_appearance=self.appearance.show,
                                         options_provider=lambda source:item_options(self.repo,source))
-        panes.add(self.properties,width=350,minsize=240)
+        self.properties.pack(fill='both',expand=True)
+        self.world_properties=WorldPropertiesPanel(inspector,self.world)
+        self.npc_properties=NpcPropertiesPanel(inspector,self.npcs)
+        self._show_resource_panels('items')
         self.bottom_dock=BottomDock(self.workspace)
         for key,(title_key,factory) in self._bottom_tab_specs.items():
             self.bottom_dock.register(key,tr(title_key),factory(self.bottom_dock))
@@ -290,7 +307,7 @@ class EditorApp(tk.Tk):
         return True
 
     def create_project(self,beside_recent=False):
-        if not self.properties.save(automatic=True):return
+        if not self._save_editors():return
         parent=self.recent_projects.parent_directory()
         dialog=NewProjectDialog(self,parent)
         self.wait_window(dialog)
@@ -310,7 +327,7 @@ class EditorApp(tk.Tk):
         self.open_project_path(Path(base))
 
     def open_project_path(self,path):
-        if not self.properties.save(automatic=True):return
+        if not self._save_editors():return
         try:
             self.repo.open(Path(path),confirm_migration=lambda count:messagebox.askyesno(
                 tr('item_assets.migration_title'),tr('item_assets.migration_confirm',count=count),parent=self))
@@ -322,6 +339,11 @@ class EditorApp(tk.Tk):
         self._show_editor()
         self._cancel_model_load()
         self.current=None
+        self.world.current=None
+        self.npcs.deselect()
+        self.npcs.stamp=None
+        self.world.catalog_stamp=None
+        self._show_resource_panels('items')
         self.project_label.config(text=f'{self.repo.name}   |   {self.repo.root}')
         if reset_hierarchy:self.hierarchy.collapse_all()
         self.update_hierarchy()
@@ -343,7 +365,7 @@ class EditorApp(tk.Tk):
         if self.repo.root is None:
             self.terminal.append(tr('app.need_project'))
             return
-        if not self.properties.save(automatic=True):return
+        if not self._save_editors():return
         try:
             tools=ProjectTools(self.repo.root,self.repo.game,self.repo.compiler_path)
         except (OSError,ValueError) as exc:
@@ -427,6 +449,7 @@ class EditorApp(tk.Tk):
             except OSError as exc:self.terminal.append(str(exc))
 
     def show_settings(self):
+        if not self._save_editors():return
         if self.settings_window is not None and self.settings_window.winfo_exists():
             self.settings_window.lift()
             return
@@ -478,6 +501,11 @@ class EditorApp(tk.Tk):
         if self.bottom_dock.visible_keys():self._schedule_dock_resize()
 
     def _rebuild_translated_ui(self):
+        if not self.npcs.save():return
+        previous_mode=self._resource_browser
+        npc_id=self.npcs.current.instance if self.npcs.current else None
+        world_name=self.world.current.name if self.world.current else None
+        self.npcs.deselect()
         self._cancel_dock_resize()
         showing_welcome=self.welcome is not None and self.welcome.winfo_exists()
         # Keep the current selection, filters, unsaved fields and camera on language change.
@@ -502,6 +530,14 @@ class EditorApp(tk.Tk):
         self.hierarchy.search.set(query)
         if self.repo.root is not None:
             self.show_project()
+            if previous_mode=='world':
+                self._switch_resource_browser('world')
+                if npc_id:
+                    npc=next((value for value in self.npcs.items if value.instance==npc_id),None)
+                    if npc:self.npcs.select(npc)
+                elif world_name:
+                    resource=next((value for value in self.world.catalog if value.name==world_name),None)
+                    if resource:self.world.select(resource,camera)
             if current is not None:
                 current=next((item for item in self.repo.project_items+self.repo.game_items
                               if item.instance==current.instance and item.origin==current.origin),None)
@@ -520,10 +556,24 @@ class EditorApp(tk.Tk):
 
     def refresh(self):
         if not self.need_project():return
-        if not self.properties.save(automatic=True):return
+        if not self._save_editors():return
         self._cancel_model_load()
         try:
             self.repo.refresh();self.update_hierarchy()
+            if self._resource_browser=='world':
+                name=self.world.current.name if self.world.current else None
+                npc_id=self.npcs.current.instance if self.npcs.current else None
+                self.world.refresh()
+                resource=next((value for value in self.world.catalog if value.name==name),None)
+                npc=next((value for value in self.npcs.items if value.instance==npc_id),None)
+                if npc is not None:self.npcs.select(npc)
+                elif resource is not None:self.world.select(resource)
+                else:
+                    self.world.current=None
+                    self.npcs.deselect()
+                    self.world_properties.show(None)
+                    self._show_resource_panels('world')
+                    self.viewer.set_mesh(caption='Выберите объект мира')
             if self.current is not None:
                 updated=next((item for item in self.repo.items if item.instance.casefold()==self.current.instance.casefold()),None)
                 if updated is not None:self.select(updated)
@@ -606,19 +656,25 @@ class EditorApp(tk.Tk):
         self.after(30,finish)
 
     def select(self,item,camera=None):
+        if self.npcs.current is not None and not self._save_editors():return
         if item is self.current and self.properties.current is item and camera is None:return
         previous=self.properties.current
         if previous is not None and item is not None and previous.path!=item.path:
-            if not self.properties.save(automatic=True):
+            if not self._save_editors():
                 self.hierarchy.choose(previous)
                 return
         self._cancel_model_load()
+        self.world.current=None
+        self.npcs.deselect()
+        self._show_resource_panels('items')
         self.current=item
         self.properties.show(item)
         self.resources.set_item(self.repo.root,item)
         self._show_model(item,camera)
 
     def _show_model(self,item,camera=None):
+        from .core.inventory_preview import rotation
+        self.viewer.set_inventory_source(lambda:rotation(item.fields,classify(item),self.repo))
         self._cancel_model_load()
         visual=item.visual
         name=Path(visual.replace('\\','/')).name.lower() if visual else ''
@@ -632,6 +688,51 @@ class EditorApp(tk.Tk):
                 return
         else:
             entry=mesh
+        self._show_model_source(entry,camera)
+
+    def _show_resource_panels(self,mode):
+        if mode=='world':self.viewer.set_inventory_source(None)
+        self._resource_browser=mode
+        self.hierarchy.pack_forget()
+        self.world_panel.pack_forget()
+        self.properties.pack_forget()
+        self.world_properties.pack_forget()
+        self.npc_properties.pack_forget()
+        (self.world_panel if mode=='world' else self.hierarchy).pack(fill='both',expand=True)
+        inspector=(self.npc_properties if self.npcs.current is not None else self.world_properties) if mode=='world' else self.properties
+        inspector.pack(fill='both',expand=True)
+        self.mode.set_expression(mode)
+
+    def _switch_resource_browser(self,mode):
+        if not self.repo.root or mode==self._resource_browser:return
+        if not self._save_editors():
+            self.mode.set_expression(self._resource_browser)
+            return
+        if mode=='world':
+            try:self.world.refresh()
+            except (OSError,ValueError,UnicodeError) as exc:
+                messagebox.showerror('Ресурсы мира',str(exc),parent=self)
+                self.mode.set_expression(self._resource_browser)
+                return
+        self._cancel_model_load()
+        self.current=None
+        self.world.current=None
+        self.npcs.deselect()
+        self.properties.show(None)
+        self.world_properties.show(None)
+        self.npc_properties.show(None)
+        self._show_resource_panels(mode)
+        self.viewer.set_mesh(caption='Выберите объект мира' if mode=='world' else tr('app.select_item'))
+
+    def _texture_mode_changed(self):
+        camera=(self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom)
+        if self.npcs.current is not None:self.npcs.preview(camera)
+        elif self.world.current is not None:
+            self._show_model_source(self.world.current.source,camera)
+        elif self.current is not None:self._show_model(self.current,camera)
+
+    def _show_model_source(self,entry,camera=None):
+        self._cancel_model_load()
         assets=entry.parent if isinstance(entry,Path) else None
         try:key=self._preview_cache.key(entry,(self.repo.root,self.repo.resource_revision),self.viewer.textured,assets)
         except OSError as exc:
@@ -640,6 +741,7 @@ class EditorApp(tk.Tk):
         cached=self._preview_cache.get(key)
         if cached is not None:
             self.viewer.set_preview(cached,caption=entry.name,camera=camera)
+            self.world.loaded(cached)
             return
         if camera is None:self.viewer.set_mesh(caption=tr('viewer.loading',name=entry.name))
         future=self._model_executor.submit(self._preview_cache.load,key,entry,self.repo.root,self.repo.game,
@@ -658,6 +760,7 @@ class EditorApp(tk.Tk):
             preview=future.result()
             caption=entry.name if isinstance(entry,Path) else f'{entry.archive.name} / {entry.name}'
             self.viewer.set_preview(preview,caption=caption,camera=camera)
+            self.world.loaded(preview)
         except (OSError,ValueError) as exc:
             self.viewer.set_mesh(caption=tr('messages.mesh_error',error=str(exc)))
 
@@ -677,7 +780,8 @@ class EditorApp(tk.Tk):
         if self._tool_runner.running:
             self.show_terminal()
             return
-        if hasattr(self,'properties') and not self.properties.save(automatic=True):return
+        if hasattr(self,'properties') and not self._save_editors():return
+        if hasattr(self,'npcs'):self.npcs.deselect()
         self._tool_runner.close()
         if self._welcome_map_after is not None:
             self.after_cancel(self._welcome_map_after)
@@ -692,7 +796,7 @@ class EditorApp(tk.Tk):
         if not self.need_project():return
         try:
             selected_before=self.properties.current
-            if not self.properties.save(automatic=True):return
+            if not self._save_editors():return
             if args and hasattr(args[0],'instance'):
                 if (selected_before is not None and args[0].instance.casefold()==selected_before.instance.casefold()
                         and args[0].origin==selected_before.origin):
@@ -750,6 +854,9 @@ class EditorApp(tk.Tk):
         else:self.resources.item=result
         if result.visual!=item.visual:
             self._show_model(result,(self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom))
+        elif any(key.lower().startswith('inv_rot') for key in values):
+            from .core.inventory_preview import rotation
+            self.viewer.set_inventory_source(lambda:rotation(result.fields,classify(result),self.repo))
         return result
 
 
