@@ -169,7 +169,8 @@ func void B_ENDPRODUCTIONDIALOG() {};
         self.assertIn('Info_ClearChoices(GE_RecipeCategory_experience)', text)
         with self.assertRaises(ValueError):self.store.save(dict(recipe(), category='missing'), 'TEST')
         with self.assertRaises(ValueError):categories.save(rows + [{'id': 'HEALTH', 'name': 'Дубль'}])
-        with self.assertRaises(ValueError):categories.save(rows[1:])
+        categories.save(rows[1:])
+        self.assertNotIn('health', [r['id'] for r in categories.load()])
 
 
 if __name__ == '__main__':

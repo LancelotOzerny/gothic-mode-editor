@@ -6,7 +6,7 @@ from pathlib import Path
 from .daedalus_merge import ScriptTree, definitions, target_path
 from .scripts import load_text, mask_comments
 from .recipes import RecipeStore, MAX_INT, batch_requirements
-from .recipe_categories import RecipeCategories, STOCK, DEFAULTS
+from .recipe_categories import RecipeCategories, STOCK, DEFAULTS, stock_binding
 
 
 def included_scripts(manifest, root):
@@ -49,6 +49,7 @@ def apply_recipes(project, content, manifest):
     recipes = RecipeStore(project).load()
     category_store = RecipeCategories(project)
     categories = category_store.load()
+    bindings = {row['id']: stock_binding(row) for row in categories}
     if not recipes and categories == DEFAULTS:
         return []
     for recipe in recipes:category_store.validate(recipe)
@@ -81,10 +82,11 @@ def apply_recipes(project, content, manifest):
     edits = {}
     for category in categories:
         key = category['id']
-        if key in STOCK:
-            if category['name'] != next(row['name'] for row in DEFAULTS if row['id'] == key):
-                path, definition = tree.unique('PC_' + STOCK[key] + '_Start', 'instance')
-                block = source('PC_' + STOCK[key] + '_Start', 'instance')
+        binding = bindings[key]
+        if binding is not None:
+            if category['name'] != next(row['name'] for row in DEFAULTS if row['id'] == binding):
+                path, definition = tree.unique('PC_' + STOCK[binding] + '_Start', 'instance')
+                block = source('PC_' + STOCK[binding] + '_Start', 'instance')
                 replaced, count = re.subn(r'\bdescription\s*=\s*"(?:\\.|[^"\\])*"\s*;',
                     lambda _: 'description = ' + literal(category['name']) + ';', block, flags=re.I)
                 if count != 1:raise ValueError('Не удалось изменить название категории ' + key)
@@ -114,8 +116,8 @@ def apply_recipes(project, content, manifest):
             category = recipe.get('category', '')
             menu_condition = 'PC_PotionAlchemy_End_Condition()'
             clear_choices = ''
-            if category in STOCK:
-                function = 'PC_' + STOCK[category] + '_Stop_Condition'
+            if bindings.get(category) is not None:
+                function = 'PC_' + STOCK[bindings[category]] + '_Stop_Condition'
                 source(function, 'func')
                 menu_condition = function + '()'
             elif category:

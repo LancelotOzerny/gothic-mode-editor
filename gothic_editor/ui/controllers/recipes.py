@@ -70,6 +70,7 @@ class RecipeController:
         self.current = deepcopy(recipe)
         self.persisted = persisted
         self.panel.show(self.current)
+        self.app.recipe_list.expanded[('project', self.current.get('category',''))] = True
         self.app.recipe_list.populate()
 
     def save(self):
@@ -111,15 +112,40 @@ class RecipeController:
             self.panel.status.config(text=tr('recipes.unsaved') + ('' if field else ': ' + str(exc)))
             return False
 
-    def create(self):
+    def create(self, category=''):
         if self.error:
             messagebox.showerror(tr('recipes.title'), self.error, parent=self.app)
             return
         if not self.app._save_editors():
             return
-        recipe = dict(schema_version=1, id=self.store.free_id(), name=tr('recipes.new'), result='',
+        recipe = dict(schema_version=1, id=self.store.free_id(), category=category, name=tr('recipes.new'), result='',
                       result_count=1, ingredients=[], availability={'type': 'always'})
         self.select(recipe, persisted=False)
+
+    def add(self, category):
+        if self.error or not self.app._save_editors():return
+        from gothic_editor.ui.windows.recipe_add import AddRecipeDialog, GameRecipeDialog
+        dialog = AddRecipeDialog(self.app)
+        dialog.show_centered(modal=True)
+        self.app.wait_window(dialog)
+        if dialog.result == 'new':self.create(category)
+        elif dialog.result == 'game':
+            try:
+                from gothic_editor.core.game_recipes import game_recipes
+                recipes, skipped = game_recipes(self.app.repo.game)
+                # The destination category is determined by the '+' the user chose.
+                picker = GameRecipeDialog(self.app, recipes, skipped)
+                picker.show_centered(modal=True)
+                self.app.wait_window(picker)
+                if picker.result is None:return
+                data = deepcopy(picker.result)
+                data['id'] = self.store.free_id(data['id'])
+                data['category'] = category
+                self.store.save(data)
+                self.load()
+                self.select(data)
+            except (OSError, ValueError) as exc:
+                messagebox.showerror(tr('recipes.title'), str(exc), parent=self.app)
 
     def categories(self):
         if not self.app._save_editors():return
@@ -132,6 +158,32 @@ class RecipeController:
             window.show_centered(modal=True)
         except (OSError, ValueError) as exc:
             messagebox.showerror(tr('recipes.categories'), str(exc), parent=self.app)
+
+    def category_action(self, action, code=None):
+        if not self.app._save_editors():return
+        from gothic_editor.core.recipe_categories import RecipeCategories
+        from gothic_editor.ui.windows.recipe_categories import RecipeCategoryDialog
+        store = RecipeCategories(self.app.repo.root)
+        selected = self.current['id'] if self.current else None
+        def refresh():
+            self.deselect()
+            self.panel.show(None)
+            self.load()
+            recipe = next((r for r in self.items if r['id']==selected), None)
+            if recipe is not None:self.select(recipe)
+        try:
+            category = next((row for row in store.load() if row['id']==code), None)
+            if action in ('create', 'edit'):
+                window = RecipeCategoryDialog(self.app, store, refresh, category)
+                window.show_centered(modal=True)
+            elif action == 'duplicate':
+                store.duplicate(code)
+                refresh()
+            elif action == 'delete' and messagebox.askyesno(tr('recipes.category'), tr('recipes.confirm_delete_category'), parent=self.app):
+                store.change(code, None)
+                refresh()
+        except (OSError, ValueError) as exc:
+            messagebox.showerror(tr('recipes.category'), str(exc), parent=self.app)
 
     def duplicate(self):
         if self.current is None or not self.app._save_editors():

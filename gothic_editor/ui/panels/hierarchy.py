@@ -33,12 +33,13 @@ class CategoryRow(tk.Frame):
         self.arrow.pack(side='left', padx=(3, 5))
         self.arrow.bind('<Button-1>', lambda _: self.toggle())
         label(row, category.icon, fg=ACCENT, font=('Segoe UI Symbol', 13)).pack(side='left', padx=(0, 5))
-        title = label(row, tr('categories.' + category.key) + f' [{section.count(category)}]',
+        caption = getattr(section.owner, 'category_title', lambda value: tr('categories.' + value.key))(category)
+        title = label(row, caption + f' [{section.count(category)}]',
                       font=('Arial', 10, 'bold'), anchor='w')
         title.pack(side='left', fill='x', expand=True)
         self.title_label=title
         title.bind('<Button-1>', lambda _: self.toggle())
-        if section.origin == 'project' and category.key in EDITABLE_CATEGORIES:
+        if section.origin == 'project' and getattr(section.owner, 'can_create', lambda value: value.key in EDITABLE_CATEGORIES)(category):
             plus = tk.Label(row, text='+', bg=INPUT, fg=ACCENT, font=('Arial', 14, 'bold'),
                             width=2, cursor='hand2')
             plus.pack(side='right', padx=5)

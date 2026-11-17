@@ -104,6 +104,67 @@ class RecipeUITests(unittest.TestCase):
         self.assertEqual(RecipeCategories(app.repo.root).load()[-1]['id'], 'experience')
         window.destroy()
 
+    def test_hierarchy_filters_categories_and_retains_expansion(self):
+        self.app.recipes.create('health')
+        form = self.app.recipe_properties
+        form.fields['result'].insert(0, 'POTION')
+        form.add_row({'instance':'HERB', 'count':1})
+        self.assertTrue(self.app._save_editors())
+        panel = self.app.recipe_list
+        self.assertEqual(panel.separator.pack_info()['pady'], 15)
+        self.assertTrue(panel.category_rows['health'].opened)
+        panel.search.set('маны')
+        self.assertEqual(set(panel.category_rows), {'mana'})
+        panel.search.set(self.app.recipes.current['name'])
+        self.assertEqual(set(panel.category_rows), {'health'})
+        panel.search.set('')
+        self.assertTrue(panel.category_rows['health'].opened)
+        panel.category_rows['health'].toggle()
+        panel.populate()
+        self.assertFalse(panel.category_rows['health'].opened)
+
+    def test_modal_add_new_assigns_destination_category(self):
+        from types import SimpleNamespace
+        dialog = SimpleNamespace(result='new', show_centered=lambda **_:None)
+        with patch('gothic_editor.ui.windows.recipe_add.AddRecipeDialog', return_value=dialog), patch.object(self.app,'wait_window'):
+            self.app.recipes.add('mana')
+        self.assertEqual(self.app.recipes.current['category'], 'mana')
+        self.assertFalse(self.app.recipes.persisted)
+
+    def test_single_category_dialog_and_context_actions(self):
+        from gothic_editor.ui.windows.recipe_categories import RecipeCategoryDialog
+        from gothic_editor.core.recipe_categories import RecipeCategories
+        from types import SimpleNamespace
+        store = RecipeCategories(self.app.repo.root)
+        dialog = RecipeCategoryDialog(self.app, store, lambda:None)
+        dialog.code.insert(0, 'experience')
+        dialog.name.insert(0, 'Опыт')
+        dialog.save()
+        self.assertEqual(store.load()[-1]['name'], 'Опыт')
+        self.app.recipes.load()
+        self.app.recipes.create('experience')
+        form = self.app.recipe_properties
+        form.fields['result'].insert(0,'POTION')
+        form.add_row({'instance':'HERB','count':1})
+        self.assertTrue(self.app._save_editors())
+        panel = self.app.recipe_list
+        with patch.object(panel,'popup') as popup:
+            panel.category_context(SimpleNamespace(), 'experience')
+            commands = popup.call_args.args[1]
+            self.assertEqual(len(commands), 3)
+            commands[1][1]()
+        self.assertEqual(store.load()[-1]['id'], 'experience_copy')
+        with patch('gothic_editor.ui.controllers.recipes.messagebox.askyesno',return_value=False):
+            self.app.recipes.category_action('delete','experience')
+        self.assertIn('experience', [r['id'] for r in store.load()])
+        with patch('gothic_editor.ui.controllers.recipes.messagebox.askyesno',return_value=True):
+            self.app.recipes.category_action('delete','experience')
+        self.assertEqual(self.app.recipes.current['category'], '')
+        with patch.object(panel,'popup') as popup:
+            panel.recipe_context(SimpleNamespace(), self.app.recipes.items[0])
+            popup.call_args.args[1][0][1]()
+        self.assertTrue(self.app.recipes.current['id'].endswith('_copy'))
+
 
 if __name__ == '__main__':
     unittest.main()

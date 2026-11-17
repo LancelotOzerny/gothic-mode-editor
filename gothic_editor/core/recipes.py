@@ -143,7 +143,7 @@ class RecipeStore:
 
     def duplicate(self, recipe):
         data = deepcopy(recipe)
-        data['id'] = self.free_id(recipe['id'] + '_COPY')
+        data['id'] = self.free_id(recipe['id'] + '_copy')
         self.save(data)
         return data
 

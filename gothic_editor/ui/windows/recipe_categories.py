@@ -8,6 +8,31 @@ from gothic_editor.ui.widgets.form import FormGroup
 from .dialog import EditorDialog
 
 
+class RecipeCategoryDialog(EditorDialog):
+    def __init__(self, owner, store, on_saved, category=None):
+        super().__init__(owner)
+        self.store, self.on_saved, self.category = store, on_saved, category
+        self.title(tr('recipes.edit_category' if category else 'recipes.add_category'))
+        self.geometry('420x310')
+        group = FormGroup(self, tr('recipes.category'))
+        group.pack(fill='both', expand=True, padx=12, pady=12)
+        self.code = group.add_field(tr('recipes.id'), value=category['id'] if category else '')
+        self.name = group.add_field(tr('recipes.name'), value=category['name'] if category else '')
+        group.add_button(tr('settings.save'), self.save)
+        group.add_button(tr('settings.cancel'), self.destroy)
+        self.bind('<Escape>', lambda _:self.destroy())
+
+    def save(self):
+        try:
+            self.store.change(self.category['id'] if self.category else None,
+                              {'id':self.code.get(), 'name':self.name.get()})
+        except (OSError, ValueError) as exc:
+            messagebox.showerror(tr('recipes.category'), str(exc), parent=self)
+            return
+        self.destroy()
+        self.on_saved()
+
+
 class RecipeCategoriesWindow(EditorDialog):
     def __init__(self, owner, project, on_saved):
         super().__init__(owner)

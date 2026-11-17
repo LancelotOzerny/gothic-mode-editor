@@ -24,14 +24,19 @@ class RecipeGameBuildTests(unittest.TestCase):
             project = Path(temporary)
             (project/'project.json').write_text('{"name":"RecipeTest"}', 'utf-8')
             store = RecipeStore(project)
+            from gothic_editor.core.game_recipes import game_recipes
+            templates, _ = game_recipes(game)
+            self.assertTrue(templates)
+            store.save(templates[0])
             from gothic_editor.core.recipe_categories import RecipeCategories
             categories = RecipeCategories(project)
             rows = categories.load()
             rows[0]['name'] = 'Здоровье (тест)'
             categories.save(rows + [{'id': 'experience', 'name': 'Зелья опыта'}])
+            categories.change('health', {'id':'healing', 'name':'Лечение'})
             for code, availability in [('TEST_ALWAYS', {'type': 'always'}),
                                        ('TEST_KNOWLEDGE', {'type': 'global_variable', 'variable': 'GE_Test_KnowsRecipe'})]:
-                store.save(dict(schema_version=1, id=code, category='health' if code=='TEST_ALWAYS' else 'experience', name='Тестовый рецепт', result=items[0].instance,
+                store.save(dict(schema_version=1, id=code, category='healing' if code=='TEST_ALWAYS' else 'experience', name='Тестовый рецепт', result=items[0].instance,
                                 result_count=1, ingredients=[{'instance': plants[0].instance, 'count': 2}],
                                 availability=availability))
             tools = ProjectTools(project, game, os.environ['GOTHIC_TEST_COMPILER'])
