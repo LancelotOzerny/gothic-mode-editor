@@ -6,6 +6,7 @@ from pathlib import Path
 from .daedalus_merge import ScriptTree, definitions, target_path
 from .scripts import load_text, mask_comments
 from .recipes import RecipeStore, MAX_INT, batch_requirements
+from .recipe_categories import RecipeCategories, STOCK, DEFAULTS
 
 
 def included_scripts(manifest, root):
@@ -46,8 +47,11 @@ def literal(value):
 
 def apply_recipes(project, content, manifest):
     recipes = RecipeStore(project).load()
-    if not recipes:
+    category_store = RecipeCategories(project)
+    categories = category_store.load()
+    if not recipes and categories == DEFAULTS:
         return []
+    for recipe in recipes:category_store.validate(recipe)
     tree = ScriptTree(content)
     active = included_scripts(manifest, content)
     tree.symbols = {key: [(p, d) for p, d in rows if p in active]
@@ -73,6 +77,19 @@ def apply_recipes(project, content, manifest):
     # Reuse the original main-menu condition: stock submenus stay separate.
     source('B_ENDPRODUCTIONDIALOG', 'func')
     declarations, bodies, generated = [], [], set()
+    custom = {}
+    edits = {}
+    for category in categories:
+        key = category['id']
+        if key in STOCK:
+            if category['name'] != next(row['name'] for row in DEFAULTS if row['id'] == key):
+                path, definition = tree.unique('PC_' + STOCK[key] + '_Start', 'instance')
+                block = source('PC_' + STOCK[key] + '_Start', 'instance')
+                replaced, count = re.subn(r'\bdescription\s*=\s*"(?:\\.|[^"\\])*"\s*;',
+                    lambda _: 'description = ' + literal(category['name']) + ';', block, flags=re.I)
+                if count != 1:raise ValueError('Не удалось изменить название категории ' + key)
+                edits.setdefault(path, []).append((definition.start, definition.end, replaced))
+        else:custom[key] = []
     for recipe in recipes:
         try:
             batch_requirements(recipe, 1)
@@ -94,6 +111,17 @@ def apply_recipes(project, content, manifest):
                     generated.add(variable.casefold())
                 known = f'({variable} != 0)'
             prefix = 'GE_Recipe_' + recipe['id']
+            category = recipe.get('category', '')
+            menu_condition = 'PC_PotionAlchemy_End_Condition()'
+            clear_choices = ''
+            if category in STOCK:
+                function = 'PC_' + STOCK[category] + '_Stop_Condition'
+                source(function, 'func')
+                menu_condition = function + '()'
+            elif category:
+                menu_condition = 'FALSE'
+                custom[category].append((recipe, known))
+                clear_choices = 'Info_ClearChoices(GE_RecipeCategory_' + category + ');'
             craft, cond, info = prefix + '_Craft', prefix + '_Condition', prefix + '_Info'
             limit = min(MAX_INT // n for n in [recipe['result_count']] + [r['count'] for r in recipe['ingredients']])
             checks = '\n'.join(f'if (Npc_HasItems(self, {r["instance"]}) < ({r["count"]} * portions)) {{ return FALSE; }};'
@@ -112,11 +140,12 @@ def apply_recipes(project, content, manifest):
 }};
 func int {cond}()
 {{
-    if (PC_PotionAlchemy_End_Condition()) && {known} {{ return TRUE; }};
+    if ({menu_condition}) && {known} {{ return TRUE; }};
     return FALSE;
 }};
 func void {info}()
 {{
+    {clear_choices}
     CreateInvItems(self, {flask.group(1)}, 1);
     if ({craft}(1)) {{ Print(PRINT_AlchemySuccess); }}
     else {{ Print(PRINT_ProdItemsMissing); }};
@@ -133,6 +162,31 @@ instance {prefix}(C_Info)
 }};''')
         except ValueError as exc:
             raise ValueError(f'Рецепт {recipe["id"]}: {exc}') from exc
+    for category in categories:
+        key = category['id']
+        if key not in custom or not custom[key]:continue
+        prefix = 'GE_RecipeCategory_' + key
+        choices = '\n'.join(f'if ({known}) {{ Info_AddChoice({prefix}, {literal(recipe["name"])}, GE_Recipe_{recipe["id"]}_Info); }};'
+                            for recipe, known in custom[key])
+        available = ' || '.join('(' + known + ')' for _, known in custom[key])
+        bodies.append(f'''func int {prefix}_Condition() {{
+    if (PC_PotionAlchemy_End_Condition()) && ({available}) {{ return TRUE; }};
+    return FALSE;
+}};
+func void {prefix}_Back() {{ Info_ClearChoices({prefix}); }};
+func void {prefix}_Info() {{
+    Info_ClearChoices({prefix});
+    Info_AddChoice({prefix}, DIALOG_BACK, {prefix}_Back);
+    {choices}
+}};
+instance {prefix}(C_Info) {{
+    npc = PC_Hero;
+    nr = 49;
+    condition = {prefix}_Condition;
+    information = {prefix}_Info;
+    permanent = TRUE;
+    description = {literal(category['name'])};
+}};''')
     text = '\n'.join(declarations + bodies) + '\n'
     seen = set()
     for definition in definitions(text, 'Рецепты'):
@@ -147,6 +201,7 @@ instance {prefix}(C_Info)
         raise ValueError(f'Рецепты: занят путь {relative}.')
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(text.encode('cp1251'))
+    tree.apply(edits)
     # Last include: item, knowledge-variable and mobsi dependencies precede recipes.
     original, codec = load_text(manifest)
     manifest.write_text(original.rstrip() + '\nGE_Recipes\\Alchemy.d\n', encoding=codec)

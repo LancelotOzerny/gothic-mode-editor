@@ -157,6 +157,20 @@ func void B_ENDPRODUCTIONDIALOG() {};
         self.base.write_text('const int TEST=1;', 'utf-8')
         self.assertEqual(apply_recipes(self.project, self.content, self.manifest), [])
 
+    def test_custom_category_choices_and_unknown_category(self):
+        from gothic_editor.core.recipe_categories import RecipeCategories
+        categories = RecipeCategories(self.project)
+        rows = categories.load()
+        categories.save(rows + [{'id': 'experience', 'name': 'Опыт'}])
+        self.store.save(dict(recipe(), category='experience'))
+        text = self.generate()
+        self.assertIn('Info_AddChoice(GE_RecipeCategory_experience, "Зелье", GE_Recipe_TEST_Info)', text)
+        self.assertIn('Info_AddChoice(GE_RecipeCategory_experience, DIALOG_BACK', text)
+        self.assertIn('Info_ClearChoices(GE_RecipeCategory_experience)', text)
+        with self.assertRaises(ValueError):self.store.save(dict(recipe(), category='missing'), 'TEST')
+        with self.assertRaises(ValueError):categories.save(rows + [{'id': 'HEALTH', 'name': 'Дубль'}])
+        with self.assertRaises(ValueError):categories.save(rows[1:])
+
 
 if __name__ == '__main__':
     unittest.main()

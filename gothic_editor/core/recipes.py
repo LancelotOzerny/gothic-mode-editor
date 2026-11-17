@@ -32,6 +32,7 @@ def validate_recipe(data):
     if type(data.get('schema_version')) is not int or data['schema_version'] != 1:
         raise RecipeError('id', 'Неподдерживаемая версия рецепта.')
     identifier(data.get('id'), 'id')
+    if data.get('category', '') != '':identifier(data['category'], 'category')
     name = data.get('name')
     if not isinstance(name, str) or not name.strip() or any(c in name for c in '\r\n\x00'):
         raise RecipeError('name', 'Укажите непустое название одной строкой.')
@@ -110,6 +111,8 @@ class RecipeStore:
 
     def save(self, data, previous=None):
         validate_recipe(data)
+        from .recipe_categories import RecipeCategories
+        RecipeCategories(self.project).validate(data)
         destination = self.path(data['id'])
         for recipe in self.load():
             if recipe['id'].casefold() == data['id'].casefold() and recipe['id'] != previous:

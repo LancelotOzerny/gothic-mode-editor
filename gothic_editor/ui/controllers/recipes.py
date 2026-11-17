@@ -27,6 +27,10 @@ class RecipeController:
         self.store = RecipeStore(self.app.repo.root)
         try:
             self.items = self.store.load()
+            from gothic_editor.core.recipe_categories import RecipeCategories
+            categories = RecipeCategories(self.app.repo.root)
+            categories.load()
+            for recipe in self.items:categories.validate(recipe)
             self.error = ''
         except (OSError, ValueError) as exc:
             self.items = []
@@ -116,6 +120,18 @@ class RecipeController:
         recipe = dict(schema_version=1, id=self.store.free_id(), name=tr('recipes.new'), result='',
                       result_count=1, ingredients=[], availability={'type': 'always'})
         self.select(recipe, persisted=False)
+
+    def categories(self):
+        if not self.app._save_editors():return
+        from gothic_editor.ui.windows.recipe_categories import RecipeCategoriesWindow
+        def saved():
+            if self.current is not None:self.select(self.current)
+            self.app.recipe_list.populate()
+        try:
+            window = RecipeCategoriesWindow(self.app, self.app.repo.root, saved)
+            window.show_centered(modal=True)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror(tr('recipes.categories'), str(exc), parent=self.app)
 
     def duplicate(self):
         if self.current is None or not self.app._save_editors():

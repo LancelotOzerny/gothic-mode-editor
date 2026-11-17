@@ -15,6 +15,7 @@ class RecipeListPanel(Panel):
         make_entry(self, textvariable=self.search).pack(fill='x', padx=12)
         for key in ('create', 'duplicate', 'delete'):
             PropertyButton(self, getattr(controller, key), text=tr('recipes.' + key)).pack(fill='x', padx=12, pady=3)
+        PropertyButton(self, controller.categories, text=tr('recipes.categories')).pack(fill='x', padx=12, pady=3)
         self.area = ScrollableArea(self)
         self.area.pack(fill='both', expand=True)
         self.search.trace_add('write', lambda *_: self.populate())
@@ -62,6 +63,9 @@ class RecipePropertiesPanel(Panel):
             self.status.config(text=tr('recipes.select'))
             return
         group = self.add_group(tr('recipes.general'), parent=self.area.content)
+        from gothic_editor.core.recipe_categories import RecipeCategories
+        options = [(tr('recipes.root_category'), '')] + [(row['name'], row['id']) for row in RecipeCategories(self.controller.app.repo.root).load()]
+        self.field(group, 'category', data.get('category', ''), kind='choice', options=options)
         for key in ('id', 'name', 'result', 'result_count'):
             variable = self.field(group, key, data[key])
             if key == 'result':

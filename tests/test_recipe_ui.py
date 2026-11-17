@@ -83,6 +83,27 @@ class RecipeUITests(unittest.TestCase):
         self.assertEqual(app.recipe_properties.fields['name'].get(), 'Fresh')
         self.assertEqual(RecipeStore(app.repo.root).load()[0]['name'], 'Fresh')
 
+    def test_category_settings_and_recipe_assignment(self):
+        from gothic_editor.ui.windows.recipe_categories import RecipeCategoriesWindow
+        from gothic_editor.core.recipe_categories import RecipeCategories
+        self.fill()
+        app = self.app
+        window = RecipeCategoriesWindow(app, app.repo.root, lambda: None)
+        window.add({'id': 'experience', 'name': 'Опыт'})
+        window.save()
+        self.assertEqual(RecipeCategories(app.repo.root).load()[-1]['id'], 'experience')
+        app.recipes.select(app.recipes.current)
+        app.recipe_properties.fields['category'].set_expression('experience')
+        self.assertTrue(app._save_editors())
+        self.assertEqual(RecipeStore(app.repo.root).load()[0]['category'], 'experience')
+        window = RecipeCategoriesWindow(app, app.repo.root, lambda: None)
+        window.rows.pop()[0].destroy()
+        with patch('gothic_editor.ui.windows.recipe_categories.messagebox.showerror') as error:
+            window.save()
+            error.assert_called_once()
+        self.assertEqual(RecipeCategories(app.repo.root).load()[-1]['id'], 'experience')
+        window.destroy()
+
 
 if __name__ == '__main__':
     unittest.main()
