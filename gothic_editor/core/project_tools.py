@@ -163,6 +163,8 @@ class ProjectTools:
         for changed in apply_npc_overrides(self.project,content):
             if changed not in project_files:project_files.append(changed)
         manifest = self._include_project_scripts(content, project_files)
+        from .recipe_build import apply_recipes
+        project_files.extend(apply_recipes(self.project, content, manifest))
         return content, manifest, project_files
 
     @staticmethod

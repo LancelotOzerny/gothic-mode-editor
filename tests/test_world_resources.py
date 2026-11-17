@@ -42,6 +42,38 @@ class WorldFixture:
 
 
 class WorldResourceTests(WorldFixture,unittest.TestCase):
+    def test_animated_chest_catalog_and_preview_use_native_hierarchy(self):
+        from test_npcs import mdm,chunk
+        import struct
+        skeleton=chunk(0xD100,struct.pack('<IH',3,0)+bytes(64))+chunk(0xD120)
+        write_vdf(self.game/'Data/Chests.vdf',{'CHEST_TEST.MDL':skeleton+mdm(),
+            'CHEST_TEST.MDM':mdm(),'CHEST_TEST.MDH':skeleton})
+        self.repo.refresh()
+        chests=[value for value in self.store.catalog(self.repo) if value.name.startswith('CHEST')]
+        self.assertEqual(len(chests),1)
+        self.assertTrue(chests[0].name.endswith('.MDL'))
+        self.assertEqual(chests[0].category,'furniture')
+        self.assertIn('Сундук',chests[0].title)
+        preview=load_model_preview(chests[0].source,self.repo.root,self.game,with_textures=False,
+                                  animation_entries=self.repo.archive_models.animation_entries)
+        self.assertTrue(preview.mesh.faces)
+        with self.assertRaisesRegex(ValueError,'анимированная'):self.store.replace('model',chests[0].name,self.replacement)
+
+    def test_compiled_replacement_overrides_vdf_and_source_only_fails_clearly(self):
+        from test_models import mrm_bytes
+        archive=write_vdf(self.game/'Data/Meshes.vdf',{'HOUSE.MRM':mrm_bytes()})
+        original=archive.read_bytes()
+        self.store.replace('model','House.3ds',self.replacement)
+        with self.assertRaisesRegex(ValueError,'MRM'):BuildAssetService(self.repo.root,self.game).collect()
+        native=self.root/'ready.mrm'
+        native.write_bytes(mrm_bytes())
+        target=self.store.replace('model','House.3ds',native)
+        self.assertEqual(target.suffix,'.mrm')
+        files=BuildAssetService(self.repo.root,self.game).collect()
+        self.assertEqual(files['_work/data/Meshes/_compiled/House.mrm'],native.read_bytes())
+        self.assertNotIn('_work/data/Meshes/House.3ds',files)
+        self.assertEqual(archive.read_bytes(),original)
+
     def test_catalog_is_lazy_and_groups_models_excluding_items(self):
         write_vdf(self.game/'Data/Objects.vdf',{'TREE.MRM':b'not parsed until selected',
                    'ITPO_BOTTLE.MRM':b'item', 'CHAIR.MRM':b'chair'})
@@ -201,6 +233,18 @@ class WorldUITests(WorldFixture,unittest.TestCase):
             self.store.replace('model','House.3ds',self.replacement,'architecture')
             app.world._changed()
             self.assertTrue(app.world.current.overridden)
+            from gothic_editor.core.project_selection import ProjectSelection
+            ProjectSelection(app.repo.root,'Worlds').add('House.3ds')
+            with patch('gothic_editor.ui.controllers.world.messagebox.askyesno',return_value=False):
+                app.world.remove()
+            self.assertTrue(app.world.current.overridden)
+            with patch('gothic_editor.ui.controllers.world.messagebox.askyesno',return_value=True):
+                app.world.remove()
+            self.assertIsNone(app.world.current)
+            self.assertFalse(self.store.overrides('model'))
+            self.assertFalse(ProjectSelection(app.repo.root,'Worlds').read())
+            self.assertFalse(app.world_panel.entries)
+            self.assertEqual(self.model.read_bytes(),textured_3ds())
             app._switch_resource_browser('items')
             self.assertIsNone(app.world.current)
             self.assertEqual(app._resource_browser,'items')
@@ -221,11 +265,11 @@ class WorldGameBuildTests(unittest.TestCase):
             repo.game=Path(os.environ['GOTHIC_TEST_GAME'])
             repo.refresh()
             store=WorldResources(repo.root)
-            resource=next(value for value in store.catalog(repo) if value.category=='architecture')
+            resource=next(value for value in store.catalog(repo) if value.category=='architecture' and Path(value.source.name).suffix.lower()=='.mrm')
             original=resource.source.read_bytes()
             preview=load_model_preview(resource.source,repo.root,repo.game,with_textures=False)
-            source=root/'replacement.3ds'
-            source.write_bytes(preview_3ds(preview.mesh))
+            source=root/'replacement.mrm'
+            source.write_bytes(original)
             store.replace('model',resource.name,source,resource.category)
             name=next(name for name in preview.mesh.texture_names if name)
             texture=root/'color.tga'
@@ -234,7 +278,7 @@ class WorldGameBuildTests(unittest.TestCase):
             with patch.object(ModPackageService,'packer',return_value=None):
                 result=ProjectTools(repo.root,repo.game,os.environ['GOTHIC_TEST_COMPILER']).compile()
             packed=read_mod(result.output)
-            self.assertIn('_work/data/meshes/'+resource.name.casefold(),packed)
+            self.assertIn('_work/data/meshes/_compiled/'+str(Path(resource.name).with_suffix('.mrm')).casefold(),packed)
             texture_name=resource_name(name,'texture')
             compiled='_work/data/textures/_compiled/'+Path(texture_name).stem.casefold()+'-c.tex'
             self.assertEqual(read_texture(packed[compiled]).pixels,read_texture(texture.read_bytes()).pixels)

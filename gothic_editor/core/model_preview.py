@@ -21,11 +21,20 @@ class ModelPreview:
     render_token: object = field(default_factory=object,repr=False,compare=False)
 
 
-def load_model_preview(source, project, game=None, item_assets=None, texture_entries=None, with_textures=True, mesh=None):
+def load_model_preview(source, project, game=None, item_assets=None, texture_entries=None, with_textures=True, mesh=None, animation_entries=None):
     if mesh is None:
         data = source.read_bytes()
         name = source.name
-        mesh = read_3ds_bytes(data, preview=True) if Path(name).suffix.lower() == '.3ds' else read_mrm(data, preview=True)
+        if Path(name).suffix.lower() in ('.mdm','.mdl'):
+            from .npc_models import read_npc_mesh,hierarchy
+            skeleton=data
+            if Path(name).suffix.lower()=='.mdm':
+                entry=(animation_entries or {}).get(str(Path(name).with_suffix('.mdh')).lower())
+                local=source.with_suffix('.mdh') if isinstance(source,Path) else None
+                if local is not None and local.is_file():skeleton=local.read_bytes()
+                elif entry is not None:skeleton=entry.read_bytes()
+            mesh=read_npc_mesh(data,hierarchy(skeleton))
+        else:mesh = read_3ds_bytes(data, preview=True) if Path(name).suffix.lower() == '.3ds' else read_mrm(data, preview=True)
         if Path(name).suffix.lower()=='.3ds':
             # Source 3DS is Z-up; compiled Gothic meshes are Y-up.
             mesh.vertices=[(x,z,y) for x,y,z in mesh.vertices]

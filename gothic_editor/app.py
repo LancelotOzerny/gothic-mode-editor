@@ -34,6 +34,8 @@ from gothic_editor.ui.controllers.world import WorldController
 from gothic_editor.ui.panels.world import WorldPanel, WorldPropertiesPanel
 from gothic_editor.ui.panels.npc import NpcPropertiesPanel
 from gothic_editor.ui.controllers.npc import NpcController
+from gothic_editor.ui.controllers.recipes import RecipeController
+from gothic_editor.ui.panels.recipes import RecipeListPanel, RecipePropertiesPanel
 
 RESOURCE_KEYS={'game_path':'resources.gothic.game_path','compiler_path':'build.compiler.path',
                'resource_editor_path':'resources.editor.path'}
@@ -94,7 +96,7 @@ class EditorApp(tk.Tk):
         self.deiconify()
 
     def _save_editors(self):
-        return self.properties.save(automatic=True) and self.npcs.save()
+        return self.properties.save(automatic=True) and self.npcs.save() and self.recipes.save()
 
     def _save_shortcut(self,event):
         if (event.keysym.lower() in ('s','cyrillic_yeru') or
@@ -172,7 +174,7 @@ class EditorApp(tk.Tk):
         header.columnconfigure(2,weight=1,uniform='header_side')
         mode_frame=tk.Frame(header,bg=BG);mode_frame.grid(row=0,column=0,sticky='w')
         label(mode_frame,tr('app.mode'),bg=BG,font=('Arial',11)).pack(side='left',padx=(0,10))
-        self.mode=create_field(mode_frame,'choice',options=((tr('app.items'),'items'),('Мир','world')),caption=tr('app.mode'))
+        self.mode=create_field(mode_frame,'choice',options=((tr('app.items'),'items'),('Мир','world'),('NPC','npc'),(tr('recipes.title'),'recipes')),caption=tr('app.mode'))
         self.mode.current(0);self.mode.pack(side='left')
         self.mode.bind('<<ComboboxSelected>>',lambda _:self._switch_resource_browser(self.mode.get()))
         actions=tk.Frame(header,bg=BG);actions.grid(row=0,column=1,padx=16)
@@ -194,6 +196,8 @@ class EditorApp(tk.Tk):
         self.hierarchy.pack(fill='both',expand=True)
         self.world=WorldController(self)
         self.npcs=NpcController(self)
+        self.recipes=RecipeController(self)
+        self.recipe_list=RecipeListPanel(sidebar,self.recipes)
         self.world_panel=WorldPanel(sidebar,self.world.select,self.npcs.select)
         middle=tk.Frame(panes,bg='#191e29')
         panes.add(middle,width=550,minsize=250)
@@ -208,6 +212,7 @@ class EditorApp(tk.Tk):
         self.properties.pack(fill='both',expand=True)
         self.world_properties=WorldPropertiesPanel(inspector,self.world)
         self.npc_properties=NpcPropertiesPanel(inspector,self.npcs)
+        self.recipe_properties=RecipePropertiesPanel(inspector,self.recipes)
         self._show_resource_panels('items')
         self.bottom_dock=BottomDock(self.workspace)
         for key,(title_key,factory) in self._bottom_tab_specs.items():
@@ -341,6 +346,8 @@ class EditorApp(tk.Tk):
         self.current=None
         self.world.current=None
         self.npcs.deselect()
+        self.recipes.deselect()
+        self.recipe_properties.show(None)
         self.npcs.stamp=None
         self.world.catalog_stamp=None
         self._show_resource_panels('items')
@@ -501,8 +508,10 @@ class EditorApp(tk.Tk):
         if self.bottom_dock.visible_keys():self._schedule_dock_resize()
 
     def _rebuild_translated_ui(self):
-        if not self.npcs.save():return
+        if not self._save_editors():return
         previous_mode=self._resource_browser
+        recipe_id=self.recipes.current['id'] if self.recipes.current else None
+        self.recipes.deselect()
         npc_id=self.npcs.current.instance if self.npcs.current else None
         world_name=self.world.current.name if self.world.current else None
         self.npcs.deselect()
@@ -530,8 +539,11 @@ class EditorApp(tk.Tk):
         self.hierarchy.search.set(query)
         if self.repo.root is not None:
             self.show_project()
-            if previous_mode=='world':
-                self._switch_resource_browser('world')
+            if previous_mode in ('world','npc','recipes'):
+                self._switch_resource_browser(previous_mode)
+                if recipe_id:
+                    recipe=next((value for value in self.recipes.items if value['id']==recipe_id),None)
+                    if recipe:self.recipes.select(recipe)
                 if npc_id:
                     npc=next((value for value in self.npcs.items if value.instance==npc_id),None)
                     if npc:self.npcs.select(npc)
@@ -560,10 +572,12 @@ class EditorApp(tk.Tk):
         self._cancel_model_load()
         try:
             self.repo.refresh();self.update_hierarchy()
-            if self._resource_browser=='world':
+            if self._resource_browser=='recipes':self.recipes.load()
+            if self._resource_browser in ('world','npc'):
                 name=self.world.current.name if self.world.current else None
                 npc_id=self.npcs.current.instance if self.npcs.current else None
-                self.world.refresh()
+                if self._resource_browser=='npc':self.npcs.show_list()
+                else:self.world.refresh()
                 resource=next((value for value in self.world.catalog if value.name==name),None)
                 npc=next((value for value in self.npcs.items if value.instance==npc_id),None)
                 if npc is not None:self.npcs.select(npc)
@@ -572,7 +586,7 @@ class EditorApp(tk.Tk):
                     self.world.current=None
                     self.npcs.deselect()
                     self.world_properties.show(None)
-                    self._show_resource_panels('world')
+                    self._show_resource_panels(self._resource_browser)
                     self.viewer.set_mesh(caption='Выберите объект мира')
             if self.current is not None:
                 updated=next((item for item in self.repo.items if item.instance.casefold()==self.current.instance.casefold()),None)
@@ -656,7 +670,7 @@ class EditorApp(tk.Tk):
         self.after(30,finish)
 
     def select(self,item,camera=None):
-        if self.npcs.current is not None and not self._save_editors():return
+        if (self.npcs.current is not None or self.recipes.current is not None) and not self._save_editors():return
         if item is self.current and self.properties.current is item and camera is None:return
         previous=self.properties.current
         if previous is not None and item is not None and previous.path!=item.path:
@@ -666,6 +680,7 @@ class EditorApp(tk.Tk):
         self._cancel_model_load()
         self.world.current=None
         self.npcs.deselect()
+        self.recipes.deselect()
         self._show_resource_panels('items')
         self.current=item
         self.properties.show(item)
@@ -691,15 +706,24 @@ class EditorApp(tk.Tk):
         self._show_model_source(entry,camera)
 
     def _show_resource_panels(self,mode):
-        if mode=='world':self.viewer.set_inventory_source(None)
+        if mode!='items':self.viewer.set_inventory_source(None)
         self._resource_browser=mode
         self.hierarchy.pack_forget()
         self.world_panel.pack_forget()
         self.properties.pack_forget()
         self.world_properties.pack_forget()
         self.npc_properties.pack_forget()
-        (self.world_panel if mode=='world' else self.hierarchy).pack(fill='both',expand=True)
-        inspector=(self.npc_properties if self.npcs.current is not None else self.world_properties) if mode=='world' else self.properties
+        self.recipe_list.pack_forget()
+        self.recipe_properties.pack_forget()
+        (self.recipe_list if mode=='recipes' else self.world_panel if mode!='items' else self.hierarchy).pack(fill='both',expand=True)
+        inspector=self.recipe_properties if mode=='recipes' else self.npc_properties if mode=='npc' else self.world_properties if mode=='world' else self.properties
+        # Let the recipe form use the central area as well as the inspector.
+        if mode=='recipes':
+            self.viewer.master.master.paneconfigure(self.viewer.master,hide=True)
+        else:
+            self.viewer.master.master.paneconfigure(self.viewer.master,hide=False)
+        self.world_panel.on_add=self.npcs.add if mode=='npc' else self.world.add
+        self.world_panel.on_remove=self.npcs.remove if mode=='npc' else self.world.remove
         inspector.pack(fill='both',expand=True)
         self.mode.set_expression(mode)
 
@@ -708,8 +732,10 @@ class EditorApp(tk.Tk):
         if not self._save_editors():
             self.mode.set_expression(self._resource_browser)
             return
-        if mode=='world':
-            try:self.world.refresh()
+        if mode in ('world','npc'):
+            try:
+                if mode=='npc':self.npcs.show_list()
+                else:self.world.refresh()
             except (OSError,ValueError,UnicodeError) as exc:
                 messagebox.showerror('Ресурсы мира',str(exc),parent=self)
                 self.mode.set_expression(self._resource_browser)
@@ -718,11 +744,14 @@ class EditorApp(tk.Tk):
         self.current=None
         self.world.current=None
         self.npcs.deselect()
+        self.recipes.deselect()
+        self.recipe_properties.show(None)
+        if mode=='recipes':self.recipes.load()
         self.properties.show(None)
         self.world_properties.show(None)
         self.npc_properties.show(None)
         self._show_resource_panels(mode)
-        self.viewer.set_mesh(caption='Выберите объект мира' if mode=='world' else tr('app.select_item'))
+        self.viewer.set_mesh(caption={'world':'Выберите объект мира','npc':'Выберите NPC'}.get(mode,tr('app.select_item')))
 
     def _texture_mode_changed(self):
         camera=(self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom)
@@ -745,7 +774,8 @@ class EditorApp(tk.Tk):
             return
         if camera is None:self.viewer.set_mesh(caption=tr('viewer.loading',name=entry.name))
         future=self._model_executor.submit(self._preview_cache.load,key,entry,self.repo.root,self.repo.game,
-            assets,dict(self.repo.archive_models.texture_entries),with_textures=self.viewer.textured)
+            assets,dict(self.repo.archive_models.texture_entries),with_textures=self.viewer.textured,
+            animation_entries=dict(self.repo.archive_models.animation_entries))
         self._model_future=future
         self._model_poll=self.after(20,lambda:self._finish_archive_model(future,entry,camera))
 
@@ -782,6 +812,7 @@ class EditorApp(tk.Tk):
             return
         if hasattr(self,'properties') and not self._save_editors():return
         if hasattr(self,'npcs'):self.npcs.deselect()
+        if hasattr(self,'recipes'):self.recipes.deselect()
         self._tool_runner.close()
         if self._welcome_map_after is not None:
             self.after_cancel(self._welcome_map_after)

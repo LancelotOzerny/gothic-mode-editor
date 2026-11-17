@@ -8,6 +8,8 @@ from gothic_editor.core.model_export import export_texture, preview_3ds
 from gothic_editor.core.mesh import read_mrm
 from gothic_editor.ui.widgets import BG, MUTED, label
 from gothic_editor.ui.windows.dialog import EditorDialog
+from gothic_editor.core.project_selection import ProjectSelection
+from gothic_editor.ui.windows.value_choice import ValueChoiceWindow
 
 
 class WorldController:
@@ -27,8 +29,21 @@ class WorldController:
         if stamp != self.catalog_stamp:
             self.catalog = self.store.catalog(repo)
             self.catalog_stamp = stamp
-        self.app.npcs.refresh()
-        self.app.world_panel.set_resources(self.catalog,self.app.npcs.items)
+        selected=ProjectSelection(repo.root,'Worlds').read()
+        self.app.world_panel.set_resources([value for value in self.catalog if value.overridden or value.name.casefold() in selected])
+
+    def add(self):
+        self.refresh()
+        options=self.catalog
+        def choose(index):
+            resource=options[index]
+            ProjectSelection(self.app.repo.root,'Worlds').add(resource.name)
+            window.destroy()
+            self.refresh()
+            self.select(resource)
+        window=ValueChoiceWindow(self.app,[(value.title,value.name) for value in options],-1,
+                                 'Добавить объект из Gothic',choose,lambda:window.destroy())
+        window.show()
 
     def select(self, resource, camera=None):
         app = self.app
@@ -41,6 +56,25 @@ class WorldController:
         app._show_resource_panels('world')
         app.world_properties.show(resource)
         app._show_model_source(resource.source, camera)
+
+    def remove(self):
+        resource=self.current
+        if resource is None:return
+        if not messagebox.askyesno('Удалить из проекта',
+                'Удалить объект из списка проекта и отменить замену его модели? '
+                'Глобальные замены текстур сохранятся; их можно отменить отдельно.',parent=self.app):return
+        try:
+            self.store.remove('model',resource.name)
+            ProjectSelection(self.app.repo.root,'Worlds').remove(resource.name)
+            self.current=None
+            self.app._cancel_model_load()
+            self.app.repo.refresh()
+            self.catalog_stamp=None
+            self.refresh()
+            self.app.world_properties.show(None)
+            self.app.viewer.set_mesh(caption='Выберите объект мира')
+            self.app.resources.refresh()
+        except (OSError,ValueError) as exc:self._error(exc)
 
     def loaded(self, preview):
         if self.current is not None:self.app.world_properties.show(self.current, preview)
@@ -82,7 +116,7 @@ class WorldController:
     def replace_model(self):
         resource = self.current
         if resource is None:return
-        source = filedialog.askopenfilename(parent=self.app, title='Заменить модель', filetypes=[('3DS', '*.3ds')])
+        source = filedialog.askopenfilename(parent=self.app, title='Заменить модель', filetypes=[('Готовая модель Gothic (MRM)', '*.mrm'),('3DS', '*.3ds')])
         if source:self._confirm(lambda:self.store.replace('model', resource.name, source, resource.category))
 
     def reset_model(self):
@@ -102,12 +136,17 @@ class WorldController:
     def export_model(self):
         resource = self.current
         if resource is None:return
-        destination = filedialog.asksaveasfilename(parent=self.app, initialfile=resource.name,
+        destination = filedialog.asksaveasfilename(parent=self.app, initialfile=str(Path(resource.name).with_suffix('.3ds')),
             defaultextension='.3ds', filetypes=[('3DS', '*.3ds')])
         if not destination:return
         try:
             data = resource.source.read_bytes()
             if Path(resource.source.name).suffix.lower() == '.mrm':data = preview_3ds(read_mrm(data, preview=True))
+            elif Path(resource.source.name).suffix.lower() in ('.mdm','.mdl'):
+                from gothic_editor.core.model_preview import load_model_preview
+                preview=load_model_preview(resource.source,self.app.repo.root,self.app.repo.game,
+                    with_textures=False,animation_entries=self.app.repo.archive_models.animation_entries)
+                data=preview_3ds(preview.mesh)
             Path(destination).write_bytes(data)
         except (OSError, ValueError) as exc:self._error(exc)
 
@@ -120,7 +159,8 @@ class WorldController:
         try:
             key = app._preview_cache.key(source, (app.repo.root, app.repo.resource_revision), True, assets)
             future = app._model_executor.submit(app._preview_cache.load, key, source, app.repo.root,
-                app.repo.game, assets, dict(app.repo.archive_models.texture_entries), with_textures=True)
+                app.repo.game, assets, dict(app.repo.archive_models.texture_entries), with_textures=True,
+                animation_entries=dict(app.repo.archive_models.animation_entries))
         except (OSError, ValueError) as exc:
             self._error(exc)
             return

@@ -15,8 +15,9 @@ class MeshCache:
         names = set()
         for filename in files:
             path = PurePosixPath(filename.replace('\\', '/').casefold())
-            if (path.parts[:3] == ('_work', 'data', 'meshes') and path.suffix == '.3ds'
-                    and '_compiled' not in path.parts and '..' not in path.parts):
+            if (path.parts[:3] == ('_work', 'data', 'meshes')
+                    and ((path.suffix == '.3ds' and '_compiled' not in path.parts)
+                         or (path.suffix == '.mrm' and '_compiled' in path.parts)) and '..' not in path.parts):
                 names.add(path.stem)
         if not names:return []
         folder = target_path(self.game, Path('_work/Data/Meshes/_compiled'))

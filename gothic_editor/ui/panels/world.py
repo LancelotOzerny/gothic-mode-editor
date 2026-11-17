@@ -1,5 +1,6 @@
 """Static world resource browser and forms using the common dark UI widgets."""
 import tkinter as tk
+from pathlib import Path
 from tkinter import ttk
 
 from gothic_editor.core.world_resources import WORLD_CATEGORIES
@@ -17,6 +18,10 @@ class WorldPanel(Panel):
         self.npc_entries = {}
         self.resources = []
         self.entries = {}
+        self.on_add=lambda:None
+        self.on_remove=lambda:None
+        self.add_button('Добавить из Gothic',lambda:self.on_add()).pack(fill='x',padx=10,pady=(10,0))
+        self.add_button('Удалить из проекта',lambda:self.on_remove()).pack(fill='x',padx=10,pady=(6,0))
         self.search = tk.StringVar(self)
         make_entry(self, textvariable=self.search).pack(fill='x', padx=10, pady=10)
         style = ttk.Style(self)
@@ -50,7 +55,7 @@ class WorldPanel(Panel):
         objects=None
         for category, title in WORLD_CATEGORIES.items():
             matches = [resource for resource in self.resources if resource.category == category
-                       and (not query or query in resource.name.casefold() or query in title.casefold())]
+                       and (not query or query in resource.title.casefold() or query in title.casefold())]
             if not matches:continue
             if objects is None:
                 objects=self.tree.insert('', 'end', iid='objects', text='Объекты',open=opened.get('objects',True))
@@ -60,7 +65,7 @@ class WorldPanel(Panel):
                 key = 'model:' + resource.name.casefold()
                 self.entries[key] = resource
                 self.tree.insert(category, 'end', iid=key,
-                                 text=resource.name + ('  • Проект' if resource.overridden else ''))
+                                 text=resource.title + ('  • Проект' if resource.overridden else ''))
         matches=[npc for npc in self.npcs if not query or query in npc.title.casefold() or query in npc.instance.casefold() or query in 'npc']
         if matches:
             self.tree.insert('','end',iid='npcs',text=f'NPC [{len(matches)}]',open=bool(query) or opened.get('npcs',False))
@@ -106,7 +111,11 @@ class WorldPropertiesPanel(Panel):
         label(group.body, 'Замена в проекте' if resource.overridden else 'Исходный ресурс',
               fg=MUTED).pack(fill='x', padx=8, pady=6)
         group.add_button('Экспорт модели', self.controller.export_model)
-        group.add_button('Заменить модель', self.controller.replace_model)
+        replace=group.add_button('Заменить модель', self.controller.replace_model)
+        if Path(resource.source.name).suffix.lower() in ('.mdm','.mdl'):
+            replace.config(state='disabled')
+            label(group.body,'Анимированный объект: замена статической моделью недоступна.',
+                  fg=MUTED,wraplength=260).pack(fill='x',padx=8,pady=6)
         if resource.overridden:group.add_button('Отменить замену модели', self.controller.reset_model)
         textures = self.add_group('Материалы и текстуры', parent=self.area.content)
         if preview is None:

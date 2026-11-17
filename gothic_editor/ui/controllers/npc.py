@@ -4,6 +4,8 @@ from tkinter import filedialog, messagebox
 
 from gothic_editor.core.npcs import NpcCatalog,NpcStore
 from gothic_editor.core.npc_models import NpcModelIndex,load_npc_preview
+from gothic_editor.core.project_selection import ProjectSelection
+from gothic_editor.ui.windows.value_choice import ValueChoiceWindow
 
 
 class NpcController:
@@ -33,6 +35,25 @@ class NpcController:
     def armor_options(self):
         return [(item.title,item.instance) for item in self.app.repo.items if item.instance.casefold() in self.index.armors]
 
+    def show_list(self):
+        self.refresh()
+        selected=ProjectSelection(self.app.repo.root,'NPC').read()
+        self.app.world_panel.set_resources([], [value for value in self.items if value.overridden
+            or value.instance.casefold() in selected or self.app.repo.root in value.path.parents])
+
+    def add(self):
+        self.refresh()
+        options=self.items
+        def choose(index):
+            npc=options[index]
+            ProjectSelection(self.app.repo.root,'NPC').add(npc.instance)
+            window.destroy()
+            self.show_list()
+            self.select(npc)
+        window=ValueChoiceWindow(self.app,[(value.title+' / '+value.instance,value.instance) for value in options],-1,
+                                 'Добавить NPC из Gothic',choose,lambda:window.destroy())
+        window.show()
+
     def deselect(self):
         if self.pending is not None:
             self.app.after_cancel(self.pending)
@@ -40,6 +61,22 @@ class NpcController:
         for variable,trace in self.traces:variable.trace_remove('write',trace)
         self.traces=[]
         self.current=None
+
+    def remove(self):
+        npc=self.current
+        if npc is None:return
+        if not messagebox.askyesno('Удалить из проекта',
+                'Удалить NPC из списка проекта и отменить изменения его свойств?',parent=self.app):return
+        try:
+            self.store.save(npc.instance,{})
+            ProjectSelection(self.app.repo.root,'NPC').remove(npc.instance)
+            self.deselect()
+            self.stamp=None
+            self.app._cancel_model_load()
+            self.app.npc_properties.show(None)
+            self.show_list()
+            self.app.viewer.set_mesh(caption='Выберите NPC')
+        except (OSError,ValueError) as exc:messagebox.showerror('NPC',str(exc),parent=self.app)
 
     def values(self,npc):
         return dict(name=npc.title,visual=npc.visual,body=npc.body,head=npc.head,armor=npc.armor)
@@ -54,7 +91,7 @@ class NpcController:
         self.current=self.store.apply(self.catalog.base[npc.instance.casefold()],self.store.read().get(npc.instance.casefold(),{}))
         self.initial=self.values(self.current)
         self.app.npc_properties.show(self.current)
-        self.app._show_resource_panels('world')
+        self.app._show_resource_panels('npc')
         self.preview()
 
     def watch(self,key,field):

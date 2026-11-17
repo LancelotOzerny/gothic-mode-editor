@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .asset_files import AssetFiles
-from .mesh import read_3ds_bytes
+from .mesh import read_3ds_bytes,read_mrm
 from .model_export import export_texture
 from .texture_names import material_texture_name, texture_candidates
 from .textures import read_texture, write_ztex
@@ -21,9 +21,9 @@ def resource_name(name, kind):
     name = Path(name.replace('\\', '/')).name
     AssetFiles.name(name)
     if kind == 'model':
-        if Path(name).suffix.lower() not in ('.3ds', '.mrm'):
+        if Path(name).suffix.lower() not in ('.3ds', '.mrm', '.mdm', '.mdl'):
             raise ValueError('Поддерживаются статические модели 3DS и MRM.')
-        name = str(Path(name).with_suffix('.3ds'))
+        if Path(name).suffix.lower() in ('.3ds','.mrm'):name = str(Path(name).with_suffix('.3ds'))
     elif kind == 'texture':
         name = material_texture_name(name)
         if Path(name).suffix.lower() in ('', '.tex'):
@@ -44,12 +44,16 @@ class WorldResource:
     category: str
     overridden: bool = False
 
+    @property
+    def title(self):
+        return 'Сундук — '+self.name if self.name.casefold().startswith('chest') else self.name
+
 
 def category_for(name):
     name = name.casefold()
     if any(word in name for word in ('tree', 'bush', 'plant', 'grass', 'flora', 'palm', 'baum')):
         return 'vegetation'
-    if any(word in name for word in ('chair', 'table', 'bed', 'bench', 'shelf', 'furniture', 'stool')):
+    if any(word in name for word in ('chair', 'table', 'bed', 'bench', 'shelf', 'furniture', 'stool','chest')):
         return 'furniture'
     if any(word in name for word in ('house', 'wall', 'tower', 'bridge', 'door', 'gate', 'building', 'arch', 'hut')):
         return 'architecture'
@@ -78,7 +82,9 @@ class WorldResources:
             category = record.get('category', 'decorations')
             if not isinstance(category,str) or category not in WORLD_CATEGORIES or key != record['kind'] + ':' + name.casefold():
                 raise ValueError(f'{self.manifest}: некорректный идентификатор {key}')
-            if record.get('path') != self._target(name, record['kind']).relative_to(self.project).as_posix():
+            target=self._target(name,record['kind'])
+            if record.get('format')=='mrm' and record['kind']=='model':target=target.with_suffix('.mrm')
+            if record.get('path') != target.relative_to(self.project).as_posix():
                 raise ValueError(f'{self.manifest}: некорректный путь {key}')
         return result
 
@@ -101,6 +107,8 @@ class WorldResources:
 
     def replace(self, kind, name, source, category='decorations'):
         name = resource_name(name, kind)
+        if kind=='model' and Path(name).suffix.lower() in ('.mdm','.mdl'):
+            raise ValueError('Сундук — анимированная модель. Заменить её статической 3DS/MRM нельзя.')
         if category not in WORLD_CATEGORIES:
             raise ValueError('Неизвестная категория объекта мира.')
         records = self._load()
@@ -109,13 +117,15 @@ class WorldResources:
         name = records.get(key, {}).get('name', name)
         target = self._target(name, kind)
         source = Path(source)
+        compiled=kind=='model' and source.suffix.lower()=='.mrm'
+        if compiled:target=target.with_suffix('.mrm')
         if source.stat().st_size > 64 * 1024 * 1024:
             raise ValueError('Ресурс превышает 64 МБ: ' + str(source))
         data = source.read_bytes()
         if kind == 'model':
-            if source.suffix.lower() != '.3ds':
-                raise ValueError('Для замены модели выберите файл 3DS.')
-            mesh = read_3ds_bytes(data, preview=True)
+            if source.suffix.lower() not in ('.3ds','.mrm'):
+                raise ValueError('Для замены модели выберите файл 3DS или MRM.')
+            mesh = read_mrm(data,preview=True) if compiled else read_3ds_bytes(data, preview=True)
             if not mesh.vertices or not mesh.faces:
                 raise ValueError('Модель не содержит треугольников: ' + str(source))
         else:
@@ -134,9 +144,12 @@ class WorldResources:
                     temporary.replace(target)
                 finally:
                     temporary.unlink(missing_ok=True)
+            old_path=self.project/records[key]['path'] if key in records else None
             records[key] = {'kind': kind, 'name': name, 'category': category,
                             'path': target.relative_to(self.project).as_posix()}
+            if compiled:records[key]['format']='mrm'
             self._save(records)
+            if old_path is not None and old_path!=target:self.files.checked(old_path).unlink(missing_ok=True)
         except Exception:
             if previous is None:target.unlink(missing_ok=True)
             else:target.write_bytes(previous)
@@ -180,6 +193,19 @@ class WorldResources:
                     result.setdefault(logical.casefold(), WorldResource(logical, source, category_for(str(source))))
         result = {key: value for key, value in result.items()
                   if key not in used and not key.startswith(('it', 'model_it'))}
+        animated={}
+        for source in repo.archive_models.animation_entries.values():
+            suffix=Path(source.name).suffix.lower()
+            stem=Path(source.name).stem.casefold()
+            if not stem.startswith('chest') or suffix not in ('.mdm','.mdl'):continue
+            if stem not in animated or suffix=='.mdl':animated[stem]=source
+        if repo.game:
+            for source in sorted((repo.game/'_work/data/Anims').rglob('*')):
+                if source.is_file() and source.stem.casefold().startswith('chest') and source.suffix.lower() in ('.mdm','.mdl'):
+                    key=source.stem.casefold()
+                    if key not in animated or source.suffix.lower()=='.mdl':animated[key]=source
+        for source in animated.values():
+            result[source.name.casefold()]=WorldResource(source.name,source,'furniture')
         for record in records.values():
             if record['kind'] != 'model':continue
             source = self.files.checked(self.project / record['path'])
@@ -205,13 +231,18 @@ class WorldResources:
             if not source.is_file():raise ValueError('Не найден ресурс мира: ' + str(source))
             data = source.read_bytes()
             if record['kind'] == 'model':
-                mesh=read_3ds_bytes(data,preview=True)
+                compiled=record.get('format')=='mrm'
+                mesh=read_mrm(data,preview=True) if compiled else read_3ds_bytes(data,preview=True)
+                original=archives.find(record['name']) if game is not None else None
+                if not compiled and original is not None and Path(original.name).suffix.lower()=='.mrm':
+                    raise ValueError(f'{source}: игра использует скомпилированную MRM из VDF. Для замены импортируйте готовую MRM; компиляция 3DS в MRM пока не поддерживается.')
                 if not mesh.vertices or not mesh.faces:raise ValueError('Модель не содержит треугольников: '+str(source))
                 if game is not None:
                     for reference in set(mesh.texture_names)-{''}:
                         if not any(candidate in textures for candidate in texture_candidates(reference)):
                             raise ValueError(f'{source}: отсутствует текстура {reference}. Добавьте замену текстуры в проект.')
-                result['_work/data/Meshes/' + record['name']] = data
+                packed='_work/data/Meshes/_compiled/'+str(Path(record['name']).with_suffix('.mrm')) if compiled else '_work/data/Meshes/'+record['name']
+                result[packed] = data
             else:
                 texture = read_texture(data)
                 result['_work/data/Textures/' + record['name']] = data

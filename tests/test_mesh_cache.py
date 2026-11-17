@@ -57,7 +57,7 @@ class MeshCacheTests(unittest.TestCase):
 
     def test_no_cleanup_without_source_models_or_directory(self):
         service=MeshCache(self.project,self.game)
-        self.assertFalse(service.plan({DAT_PATH:b'dat','_work/data/Meshes/_compiled/skill_potion.mrm':b'compiled'}))
+        self.assertTrue(service.plan({DAT_PATH:b'dat','_work/data/Meshes/_compiled/skill_potion.mrm':b'compiled'}))
         self.folder.rename(self.folder.with_name('unused'))
         self.assertFalse(service.plan(self.files))
 
