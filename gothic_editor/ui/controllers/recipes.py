@@ -90,7 +90,7 @@ class RecipeController:
                 return int(value)
             data['result_count'] = number(data['result_count'], 'result_count')
             data['ingredients'] = [{'instance': instance.get(), 'count': number(count.get(), 'ingredients')}
-                                   for _, instance, count in self.panel.rows]
+                                   for _, instance, count in self.panel.rows if instance.get().strip()]
             data['availability'] = {'type': self.panel.fields['availability'].get()}
             if data['availability']['type'] == 'global_variable':
                 data['availability']['variable'] = self.panel.fields['variable'].get()

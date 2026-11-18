@@ -131,6 +131,41 @@ class RecipeUITests(unittest.TestCase):
         self.assertEqual(self.app.recipes.current['category'], 'mana')
         self.assertFalse(self.app.recipes.persisted)
 
+    def test_ingredients_use_tiles_and_plus_tile_reflows(self):
+        self.app.recipes.create('health')
+        panel = self.app.recipe_properties
+        self.assertEqual(len(panel.rows), 1)
+        self.assertEqual(panel.rows[0][0].SIZE, 224)
+        panel.add_row({'instance': 'WATER', 'count': 1})
+        panel.add_row({'instance': 'HERB', 'count': 2})
+        self.app.update_idletasks()
+        self.assertEqual(len(panel.rows), 3)
+        self.assertTrue(all(row[0].winfo_class() == 'Frame' for row in panel.rows))
+        for row in panel.rows:
+            self.assertEqual(row[0].winfo_width(), 224)
+            self.assertEqual(row[0].winfo_height(), 224)
+        panel.remove_ingredient(panel.rows[0])
+        self.assertEqual(len(panel.rows), 2)
+
+    def test_item_binding_select_quantity_and_remove(self):
+        self.app.recipes.create('health')
+        panel = self.app.recipe_properties
+        tile, instance, count = panel.rows[-1]
+        instance.set('HERB')
+        self.assertEqual(len(panel.rows), 2)
+        self.assertEqual(panel.rows[-1][1].get(), '')
+        self.assertIn('[HERB]', tile.name.cget('text'))
+        tile.step(-1)
+        self.assertEqual(count.get(), '1')
+        tile.step(1)
+        self.assertEqual(count.get(), '2')
+        with patch('gothic_editor.ui.widgets.item_binding.messagebox.askyesno', return_value=False):
+            tile.remove()
+        self.assertEqual(len(panel.rows), 2)
+        with patch('gothic_editor.ui.widgets.item_binding.messagebox.askyesno', return_value=True):
+            tile.remove()
+        self.assertEqual(len(panel.rows), 1)
+
     def test_single_category_dialog_and_context_actions(self):
         from gothic_editor.ui.windows.recipe_categories import RecipeCategoryDialog
         from gothic_editor.core.recipe_categories import RecipeCategories
