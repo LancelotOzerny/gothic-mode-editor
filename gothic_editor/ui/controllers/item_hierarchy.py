@@ -86,3 +86,65 @@ class ItemHierarchyController:
         panel.selected_node = key
         self.app.update_hierarchy()
         self.select(node)
+
+    def clear_inspector(self):
+        app = self.app
+        app._cancel_model_load()
+        app.current = None
+        app.properties.show(None)
+        app.properties.info.config(text='')
+        app.viewer.set_inventory_source(None)
+        app.viewer.set_mesh(caption='')
+        app.resources.set_item(app.repo.root,None)
+
+    def batch(self,action,values,target=''):
+        from gothic_editor.core.item_hierarchy import HierarchyNode
+        app = self.app
+        if not app._save_editors():return
+        panel,store = app.hierarchy,app.repo.item_hierarchy
+        nodes = {node.key:node for node in walk_categories(store.tree())}
+        items = {panel.item_key(item):item for item in app.repo.items}
+        values = [nodes.get(value.key) if isinstance(value,HierarchyNode) else items.get(panel.item_key(value))
+                  for value in values]
+        values = [value for value in values if value is not None]
+        if not values:return
+        if action=='delete' and not messagebox.askyesno('Удалить выбранное',
+                'Удалить выбранные предметы и группировки ('+str(len(values))+')? '
+                'Предметы внутри удаляемых групп сохранятся, если не выбраны отдельно.',parent=app):return
+        completed = 0
+        try:
+            if action=='move':
+                store.move_many(values,target)
+                parents = {row['key']:row['parent'] for row in store.data['nodes']}
+                for value in values:
+                    if isinstance(value,HierarchyNode):
+                        parent = parents[value.key]
+                        while parent:
+                            panel.expanded[('project',parent)] = True
+                            parent = parents[parent]
+                    else:panel.reveal(value)
+            else:
+                # An ancestor already duplicates/deletes its whole visual subtree.
+                chosen = {value.key for value in values if isinstance(value,HierarchyNode)}
+                roots = [key for key in chosen if not any(key in store.descendants(other)
+                         for other in chosen if other!=key)]
+                for value in values:
+                    if isinstance(value,HierarchyNode):
+                        if value.key not in roots:continue
+                        if action=='delete':store.delete(value.key)
+                        elif action=='duplicate':store.duplicate(value.key)
+                    else:
+                        # Resolve again: preceding operations can reparse a shared .d file.
+                        value = next(item for item in app.repo.items if panel.item_key(item)==panel.item_key(value))
+                        if action=='delete':app.repo.delete(value)
+                        elif action=='duplicate':app.repo.duplicate(value)
+                        elif action=='copy':app.repo.copy_to_project(value)
+                    completed += 1
+                panel.multiple.clear()
+                panel.selected = panel.selected_node = None
+                self.clear_inspector()
+        except (OSError,ValueError) as exc:
+            messagebox.showerror('Иерархия',str(exc)+'\nВыполнено операций: '+str(completed),parent=app)
+        finally:
+            app.update_hierarchy()
+            panel.paint_selection()

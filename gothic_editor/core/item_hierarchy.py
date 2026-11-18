@@ -198,12 +198,58 @@ class ItemHierarchy:
         self.commit(data)
 
     def assign(self, item, key):
-        if key and not self.accepts(key, item):
+        self.assign_many([item], key)
+
+    def assign_many(self, items, key):
+        items = list(items)
+        if key and any(not self.accepts(key, item) for item in items):
             raise ValueError('Предмет и группа должны принадлежать одной категории.')
         data = deepcopy(self.data)
-        if key:data['items'][item.instance.casefold()] = key
-        else:data['items'].pop(item.instance.casefold(), None)
+        for item in items:
+            if key:data['items'][item.instance.casefold()] = key
+            else:data['items'].pop(item.instance.casefold(), None)
         self.commit(data)
+
+    def move_data(self, values, key):
+        """Validate a complete drop before writing; keep selected subtrees intact."""
+        rows = {row['key']:row for row in self.data['nodes']}
+        if key and key not in rows:raise ValueError('Цель переноса не найдена.')
+        groups = {value.key for value in values if isinstance(value, HierarchyNode)}
+        covered = set()
+        for group in groups:
+            if group not in rows or rows[group]['kind'] != 'group':
+                raise ValueError('Переносить можно группы и предметы, но не категории.')
+            subtree = self.descendants(group)
+            if key in subtree:raise ValueError('Нельзя перенести группу в себя или в её потомка.')
+            covered.update(subtree)
+        roots = [group for group in groups if not any(group in self.descendants(other)
+                 for other in groups if other != group)]
+        data = deepcopy(self.data)
+        for group in roots:
+            source = rows[group]['source']
+            target = key or next((row['key'] for row in self.data['nodes']
+                                  if row['kind']=='category' and row['source']==source), None)
+            if not target:raise ValueError('Исходная категория группы удалена.')
+            allowed = {node.key for node in walk_categories([get_category(rows[target]['source'])])}
+            if source not in allowed:raise ValueError('Группы должны принадлежать совместимым категориям.')
+            next(row for row in data['nodes'] if row['key']==group)['parent'] = target
+        for value in values:
+            if isinstance(value, HierarchyNode):continue
+            if key and not self.accepts(key,value):
+                raise ValueError('Предмет и группа должны принадлежать одной категории.')
+            if self.location(value) in covered:continue
+            if key:data['items'][value.instance.casefold()] = key
+            else:data['items'].pop(value.instance.casefold(),None)
+        self.validate(data)
+        return data
+
+    def can_move(self, values, key):
+        try:self.move_data(values,key)
+        except ValueError:return False
+        return True
+
+    def move_many(self, values, key):
+        self.commit(self.move_data(values,key))
 
     def transfer(self, previous, updated=None, copy=False):
         """Keep membership on item ID changes, copies and deletion."""

@@ -4,7 +4,7 @@ from __future__ import annotations
 import tkinter as tk
 from time import monotonic
 
-from gothic_editor.core.categories import CATEGORIES, classify, EDITABLE_CATEGORIES
+from gothic_editor.core.categories import CATEGORIES, Category, classify, EDITABLE_CATEGORIES
 from gothic_editor.core.item_hierarchy import HierarchyNode
 from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets.icons import IconImages
@@ -63,7 +63,9 @@ class CategoryRow(tk.Frame):
             if hasattr(section.owner, 'context_node'):
                 widget.bind('<Button-3>', lambda event: section.owner.context_node(event, category))
                 if widget is not self.arrow:
-                    widget.bind('<Button-1>', lambda _: self.select_node())
+                    widget.bind('<Button-1>', lambda event: section.owner.press_node(event,category))
+                    widget.bind('<B1-Motion>',section.owner.drag_motion)
+                    widget.bind('<ButtonRelease-1>',section.owner.release_item)
         self.set_hover(False)
         # Recipe rows share this widget but retain their existing add action.
         if not hasattr(section.owner, 'context_node') and getattr(section.owner, 'can_create', lambda _:False)(category):
@@ -71,14 +73,23 @@ class CategoryRow(tk.Frame):
             plus.pack(side='right', padx=5)
             plus.bind('<Button-1>', lambda _: section.owner.on_create(category.key))
 
-    def select_node(self):
-        if self.section.owner.select_node(self.category) and self.winfo_exists():self.toggle()
+    def select_node(self, event=None):
+        if event is not None and event.state & 1:
+            self.section.owner.toggle_selection(self.category)
+        elif self.section.owner.select_node(self.category) and self.winfo_exists():self.toggle()
 
     def set_hover(self, active):
-        selected = getattr(self.section.owner, 'selected_node', None) == self.category.key
+        selected = (self.section.owner.is_selected(self.category) if hasattr(self.section.owner,'is_selected')
+                    else getattr(self.section.owner,'selected_node',None)==self.category.key)
         color = '#3a4d66' if selected else '#26364a' if active else PANEL
+        target = getattr(self.section.owner,'drop_target',None)
+        if target is not None and target[0]==self.category.key:
+            color = '#315b50' if target[1] else '#683f48'
         for widget in self._hover_widgets:widget.configure(bg=color)
-        if self.group_icons:self.icon_label.configure(image=self.group_icons[color])
+        if self.group_icons:
+            if color not in self.group_icons:
+                self.group_icons[color] = IconImages.shared(self).frames('editor/union.png',18,ACCENT,color)[0]
+            self.icon_label.configure(image=self.group_icons[color])
 
     def show_content(self):
         if not self.built:
@@ -162,7 +173,7 @@ class HierarchySection(Panel):
         self.canvas.yview_moveto(position[0] if position else 0)
 
     def row_item(self, parent, item, level):
-        selected = self.owner.selected == self.owner.item_key(item)
+        selected = self.owner.is_selected(item)
         color = '#3a4d66' if selected else PANEL
         row = tk.Frame(parent, bg=color, height=31, cursor='hand2')
         row.pack(fill='x', padx=5, pady=1)
@@ -177,20 +188,25 @@ class HierarchySection(Panel):
         self.item_rows[self.owner.item_key(item)] = row
         if selected:self.highlighted=self.owner.item_key(item)
         for widget in (row, badge, title):
-            widget.bind('<Button-1>', lambda _, r=row: (r.focus_set(),self.owner.select(r.item)))
+            widget.bind('<Button-1>', lambda event, r=row: self.owner.press_item(event,r.item))
+            widget.bind('<B1-Motion>',self.owner.drag_motion)
+            widget.bind('<ButtonRelease-1>',self.owner.release_item)
             widget.bind('<Double-Button-1>', lambda _, r=row, t=title: self.owner.rename(r.item, r, t))
             widget.bind('<Button-3>', lambda event, r=row: self.owner.context(event, r.item))
         return row
 
     def highlight(self):
-        for key in {self.highlighted,self.owner.selected}:
-            row=self.item_rows.get(key)
+        selected = self.owner.selection_keys()
+        previous = getattr(self,'highlighted_keys',set())
+        if self.highlighted is not None:previous = previous | {self.highlighted}
+        for key in previous | selected:
+            row = self.item_rows.get(key)
             if row is None:continue
-            color = '#3a4d66' if key == self.owner.selected else PANEL
+            color = '#3a4d66' if key in selected else PANEL
             row.config(bg=color)
-            for widget in row.winfo_children():
-                widget.config(bg=color)
-        self.highlighted=self.owner.selected
+            for widget in row.winfo_children():widget.config(bg=color)
+        self.highlighted_keys = set(selected)
+        self.highlighted = self.owner.selected
 
 
 class HierarchyPanel(Panel):
@@ -204,6 +220,13 @@ class HierarchyPanel(Panel):
         self.on_copy = on_copy or on_duplicate
         self.on_export_model = on_export_model
         self.on_export_texture = on_export_texture
+        self.multiple = set()
+        self.before_select = lambda: True
+        self.on_multiple = None
+        self.on_batch = None
+        self._drag = None
+        self.drag_preview = None
+        self.drop_target = None
         self.store = None
         self.on_node = None
         self.on_node_action = None
@@ -233,16 +256,23 @@ class HierarchyPanel(Panel):
         owner=self.winfo_toplevel()
         self._shortcuts=[(sequence,owner.bind(sequence,self.shortcut,add='+'))
                          for sequence in ('<Control-KeyPress>','<Delete>')]
+        self._shortcuts.append(('<Escape>',owner.bind('<Escape>',self.cancel_drag,add='+')))
         self.bind('<Destroy>',self.dispose,add='+')
 
     def dispose(self,event):
         if event.widget is self:
+            self.cancel_drag()
             for sequence,binding in self._shortcuts:self.winfo_toplevel().unbind(sequence,binding)
 
     def shortcut(self,event):
         focused=self.focus_get()
         if focused is None or isinstance(focused,(tk.Entry,tk.Text,tk.Spinbox)):return
         if focused is not self and not str(focused).startswith(str(self)+'.'):return
+        if len(self.selection_keys())>1:
+            action = 'delete' if event.keysym=='Delete' else 'duplicate' if (
+                event.keysym.lower() in ('d','cyrillic_ve') or event.keycode==68) else None
+            if action in self.common_actions():self.on_batch(action,self.selected_values())
+            return 'break' if action else None
         item=next((item for item in self.items if self.item_key(item)==self.selected),None)
         if item is None or item.origin!='project' or classify(item) not in EDITABLE_CATEGORIES:return
         if event.keysym=='Delete':self.on_delete(item)
@@ -313,12 +343,15 @@ class HierarchyPanel(Panel):
                 row.title_label.config(text=self.category_title(row.category)+f' [{section.count(row.category)}]')
 
     def collapse_all(self):
+        self.cancel_drag()
+        self.multiple.clear()
         self.expanded.clear()
         self.selected = None
         self.selected_node = None
         self.search.set('')
 
     def choose(self, item):
+        self.multiple.clear()
         self.selected_node = None
         self.selected = self.item_key(item) if item else None
         changed=self.reveal(item)
@@ -347,6 +380,8 @@ class HierarchyPanel(Panel):
                 section.rebuild()
 
     def select(self, item):
+        if not self.before_select():return False
+        self.multiple.clear()
         self.selected_node = None
         self.selected = self.item_key(item)
         for section in self.sections.values():
@@ -356,6 +391,7 @@ class HierarchyPanel(Panel):
         self.on_select(item)
 
     def rename(self, item, row, title):
+        if len(self.selection_keys())>1:return
         if classify(item) not in EDITABLE_CATEGORIES:return
         title.pack_forget()
         entry = make_entry(row, font=('Arial', 10))
@@ -382,6 +418,10 @@ class HierarchyPanel(Panel):
         entry.bind('<Escape>', cancel)
 
     def context(self, event, item):
+        if self.multi_context(event,item):return
+        if self.multiple and self.select(item) is False:return
+        self.multiple.clear()
+        self.selected_node = None
         self.focus_set()
         self.selected=self.item_key(item)
         for section in self.sections.values():section.highlight()
@@ -426,6 +466,7 @@ class HierarchyPanel(Panel):
 
     def select_node(self, node):
         if self.on_node is None or not self.on_node(node):return False
+        self.multiple.clear()
         self.selected = None
         self.selected_node = node.key
         for section in self.sections.values():
@@ -434,6 +475,7 @@ class HierarchyPanel(Panel):
         return True
 
     def context_node(self, event, node):
+        if self.multi_context(event,node):return
         if self.store is None or not self.select_node(node):return
         if self._context_menu is not None:self._context_menu.destroy()
         menu = tk.Menu(self, tearoff=False, bg=INPUT, fg=TXT)
@@ -446,3 +488,155 @@ class HierarchyPanel(Panel):
             menu.add_command(label='Добавить предмет', command=lambda:self.on_node_action('add',node))
         try:menu.tk_popup(event.x_root,event.y_root)
         finally:menu.grab_release()
+
+    def selection_keys(self):
+        if self.multiple:return set(self.multiple)
+        if self.selected_node is not None:return {('node',self.selected_node)}
+        return {self.selected} if self.selected is not None else set()
+
+    def value_key(self,value):
+        return ('node',value.key) if isinstance(value,Category) else self.item_key(value)
+
+    def is_selected(self,value):return self.value_key(value) in self.selection_keys()
+
+    def selected_values(self):
+        from gothic_editor.core.categories import walk_categories
+        keys = self.selection_keys()
+        return [value for value in [*walk_categories(self.categories()),*self.items]
+                if self.value_key(value) in keys]
+
+    def paint_selection(self):
+        for section in self.sections.values():
+            section.highlight()
+            for row in section.category_rows.values():row.set_hover(False)
+
+    def toggle_selection(self,value):
+        if self.store is None:return False
+        if not self.before_select():return False
+        keys = self.selection_keys()
+        key = self.value_key(value)
+        if key in keys:keys.remove(key)
+        else:keys.add(key)
+        self.multiple = keys
+        self.selected = self.selected_node = None
+        values = self.selected_values()
+        if len(values)==1:
+            value = values[0]
+            if isinstance(value,Category):self.select_node(value)
+            else:self.select(value)
+        elif self.on_multiple is not None:self.on_multiple()
+        self.focus_set()
+        self.paint_selection()
+        return True
+
+    def common_actions(self):
+        values = self.selected_values()
+        common = None
+        for value in values:
+            if isinstance(value,Category):actions = {'duplicate','delete'}
+            else:
+                actions = {'move'}
+                if classify(value) in EDITABLE_CATEGORIES:
+                    actions |= {'duplicate','delete'} if value.origin=='project' else {'copy'}
+            common = actions if common is None else common & actions
+        return common or set()
+
+    def multi_context(self,event,value):
+        if len(self.selection_keys())<2 or not self.is_selected(value):return False
+        self.focus_set()
+        if self._context_menu is not None:self._context_menu.destroy()
+        menu = tk.Menu(self,tearoff=False,bg=INPUT,fg=TXT)
+        self._context_menu = menu
+        values = self.selected_values()
+        actions = self.common_actions()
+        for action,title in [('duplicate','Дублировать'),('delete','Удалить'),('copy','Копировать в проект')]:
+            if action in actions:
+                menu.add_command(label=title,command=lambda a=action:self.on_batch(a,values))
+        if 'move' in actions and self.store is not None:
+            move = tk.Menu(menu,tearoff=False,bg=INPUT,fg=TXT)
+            move.add_command(label='В исходные категории',command=lambda:self.on_batch('move',values,''))
+            def targets(nodes,path=''):
+                for node in nodes:
+                    title = path + node.name
+                    if all(self.store.accepts(node.key,item) for item in values):
+                        move.add_command(label=title,command=lambda key=node.key:self.on_batch('move',values,key))
+                    targets(node.children,title+' / ')
+            targets(self.categories())
+            menu.add_cascade(label='Переместить',menu=move)
+        try:menu.tk_popup(event.x_root,event.y_root)
+        finally:menu.grab_release()
+        return True
+
+    def press_item(self,event,item):
+        self.cancel_drag()
+        if event.state & 1:
+            self.toggle_selection(item)
+            return
+        if not self.is_selected(item):
+            if self.select(item) is False:return
+        self.focus_set()
+        self._drag = (event.x_root,event.y_root,item,False)
+
+    def press_node(self,event,node):
+        self.cancel_drag()
+        if event.state & 1:
+            self.toggle_selection(node)
+            return
+        if not self.is_selected(node) and not self.select_node(node):return
+        self.focus_set()
+        self._drag = (event.x_root,event.y_root,node,False)
+
+    def drop_at(self,x,y):
+        widget = self.winfo_containing(x,y)
+        for section in self.sections.values():
+            if widget in (section.inner,section.canvas):return ''
+            for key,row in section.category_rows.items():
+                if widget is row.header or widget in row.header.winfo_children():return key
+        return None
+
+    def drag_motion(self,event):
+        if self._drag is None:return
+        x,y,value,moved = self._drag
+        if not moved and abs(event.x_root-x)+abs(event.y_root-y)<=6:return
+        self._drag = (x,y,value,True)
+        values = self.selected_values()
+        target = self.drop_at(event.x_root,event.y_root)
+        allowed = target is not None and self.store is not None and self.store.can_move(values,target)
+        self.drop_target = (target,allowed)
+        self.paint_selection()
+        if self.drag_preview is None:
+            from gothic_editor.ui.widgets.drag_preview import DragPreview
+            self.drag_preview = DragPreview(self,[value.name if isinstance(value,Category) else value.title
+                                                  for value in values])
+        title = self.store.title(self.store.row(target)) if target else 'В исходные категории'
+        self.drag_preview.move(event.x_root,event.y_root,title,allowed)
+
+    def cancel_drag(self,event=None):
+        active = self._drag is not None
+        self._drag = None
+        self.drop_target = None
+        if self.drag_preview is not None:
+            self.drag_preview.destroy()
+            self.drag_preview = None
+        for section in getattr(self,'sections',{}).values():
+            for row in section.category_rows.values():
+                if row.winfo_exists():row.set_hover(False)
+        if active and event is not None:return 'break'
+
+    def release_item(self,event):
+        drag = self._drag
+        if drag is None:return
+        values = self.selected_values()
+        target = self.drop_at(event.x_root,event.y_root) if drag[3] else None
+        allowed = (drag[3] and target is not None and self.store is not None
+                   and self.store.can_move(values,target))
+        self.cancel_drag()
+        if not drag[3]:
+            if isinstance(drag[2],Category):
+                if not self.select_node(drag[2]):return
+                for section in self.sections.values():
+                    row = section.category_rows.get(drag[2].key)
+                    if row is not None:row.toggle()
+            elif len(self.selection_keys())>1:self.select(drag[2])
+            return
+        if allowed and self.on_batch is not None:self.on_batch('move',values,target)
