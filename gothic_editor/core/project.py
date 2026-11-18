@@ -15,6 +15,7 @@ from .model_resolver import ModelResolver
 from .model_library import ModelLibrary
 from .settings import field_key, validate_value
 from .settings_schema import all_fields
+from .item_hierarchy import ItemHierarchy
 
 class ProjectRepository:
     def __init__(self,shared_resources=None):
@@ -33,6 +34,7 @@ class ProjectRepository:
         self.project_settings={}
         self.options_cache={}
         self.resource_revision=0
+        self.item_hierarchy=None
 
     def create(self,root:Path,name:str):
         root=root.resolve();root.mkdir(parents=True,exist_ok=True)
@@ -65,6 +67,7 @@ class ProjectRepository:
         self.root=root
         self.project_settings=dict(project_settings)
         self.components=PotionComponents(root)
+        self.item_hierarchy=ItemHierarchy(root)
         ModelLibrary(root).migrate(self.components)
         self.game=game
         self.compiler_path=resources.get('compiler_path','')
@@ -282,8 +285,10 @@ class ProjectRepository:
         instance=self.new_id(item.instance+'_Copy',prefix='ItSc_' if classify(item)=='scrolls' else 'GE_')
         code=replace_instance(item.text,item.instance,instance)
         if classify(item)=='potions':
-            return self._import_component(item,instance)
-        return self._write_new(instance,code)
+            result=self._import_component(item,instance)
+        else:result=self._write_new(instance,code)
+        self.item_hierarchy.transfer(item,result,copy=True)
+        return result
 
     def copy_to_project(self,item:Item):
         """Copy an original definition without renaming its INSTANCE or replacing a project edit."""
@@ -326,17 +331,21 @@ class ProjectRepository:
             if self.mesh_index.get(old_name)==old_model:self.mesh_index.pop(old_name)
             model=ModelResolver.custom_model(updated.path.parent)
             if model.is_file():self.mesh_index[ModelResolver.generated_name(updated.instance).casefold()]=model
+            self.item_hierarchy.transfer(item,updated)
             return updated
         if item.origin=='game':item=self.copy_to_project(item)
         dest=self._destination_for(item)
         write_modified_item(item,dest,values,instance=instance,metadata=metadata)
         self._replace_project_file(item.path,parse_items(dest,'project'))
-        return next(x for x in self.items if x.instance.casefold()==target.casefold())
+        result=next(x for x in self.items if x.instance.casefold()==target.casefold())
+        self.item_hierarchy.transfer(item,result)
+        return result
 
     def delete(self,item:Item):
         if item.origin!='project':raise ValueError(tr('project.cannot_delete_original'))
         if self.components.owns(item.path):
             self.components.delete(item)
+            self.item_hierarchy.transfer(item)
             self.refresh()
             return
         from .scripts import load_text
@@ -351,4 +360,5 @@ class ProjectRepository:
             item.path.unlink()
         else:
             item.path.write_bytes(new.encode(codec))
+        self.item_hierarchy.transfer(item)
         self.refresh()

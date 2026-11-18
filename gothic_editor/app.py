@@ -193,6 +193,11 @@ class EditorApp(tk.Tk):
         sidebar=tk.Frame(panes,bg=PANEL)
         panes.add(sidebar,width=300,minsize=225)
         self.hierarchy=HierarchyPanel(sidebar,self.select,self.create_item,self.duplicate,self.delete,self.rename,on_copy=self.copy_to_project,on_export_model=self.export_model,on_export_texture=self.export_item_texture)
+        from .ui.controllers.item_hierarchy import ItemHierarchyController
+        self.item_hierarchy_controller = ItemHierarchyController(self)
+        self.hierarchy.on_node = self.item_hierarchy_controller.select
+        self.hierarchy.on_node_action = self.item_hierarchy_controller.action
+        self.hierarchy.on_move = self.item_hierarchy_controller.move
         self.hierarchy.pack(fill='both',expand=True)
         self.world=WorldController(self)
         self.npcs=NpcController(self)
@@ -599,6 +604,7 @@ class EditorApp(tk.Tk):
         except Exception as exc:messagebox.showerror(tr('app.refresh_error'),str(exc))
 
     def update_hierarchy(self,previous=None,updated=None,inserted=None):
+        self.hierarchy.store = self.repo.item_hierarchy
         project_only=self.settings.get_value('project.hierarchy.display_mode')=='project_only'
         if project_only and self.current is not None and self.current.origin=='game':
             self.current=None
@@ -670,6 +676,7 @@ class EditorApp(tk.Tk):
         self.after(30,finish)
 
     def select(self,item,camera=None):
+        if getattr(self.properties,"node",None) is not None and not self._save_editors():return
         if (self.npcs.current is not None or self.recipes.current is not None) and not self._save_editors():return
         if item is self.current and self.properties.current is item and camera is None:return
         previous=self.properties.current
@@ -851,8 +858,8 @@ class EditorApp(tk.Tk):
         self.wait_window(dialog)
         if dialog.result is None:return
         action,value=dialog.result
-        if action=='copy':self.copy_to_project(value)
-        else:self._action(self.repo.create_item,key,value)
+        if action=='copy':return self._action(self.repo.copy_to_project,value)
+        return self._action(self.repo.create_item,key,value)
     def duplicate(self,item):
         if classify(item) in EDITABLE_CATEGORIES:self._action(self.repo.duplicate,item)
     def copy_to_project(self,item):

@@ -45,6 +45,7 @@ class PropertiesPanel(Panel):
         self.show(None)
 
     def show(self,item):
+        self.node = None
         if item is not None and self.current is not None:
             try:schema=schema_for(classify(item))
             except (OSError,ValueError,KeyError,TypeError):schema=None
@@ -231,4 +232,27 @@ class PropertiesPanel(Panel):
         error.pack(after=surface,fill='x',padx=8,pady=(3,5))
 
     def save(self,keys=None,automatic=False):
+        if getattr(self,'node',None) is not None:
+            return self.save_node()
         return self.editor.save(keys,automatic)
+
+    def show_node(self,node,on_save):
+        self.show(None)
+        self.node = node
+        self.node_save = on_save
+        self.node_initial = node.name
+        self.info.config(text='Группа' if node.kind=='group' else node.code)
+        group = self.add_group('Группа' if node.kind=='group' else 'Категория',parent=self.inner)
+        self.node_name = group.add_field('Название',value=node.name)
+        group.add_button('Сохранить',self.save_node)
+
+    def save_node(self):
+        value = self.node_name.get().strip()
+        if value == self.node_initial:return True
+        try:self.node_save(self.node,value)
+        except (OSError,ValueError) as exc:
+            self.save_status.config(text=str(exc),fg=ERROR)
+            return False
+        self.node_initial = value
+        self.set_save_status('properties.saved')
+        return True

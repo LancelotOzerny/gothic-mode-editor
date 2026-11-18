@@ -5,6 +5,7 @@ import tkinter as tk
 from time import monotonic
 
 from gothic_editor.core.categories import CATEGORIES, classify, EDITABLE_CATEGORIES
+from gothic_editor.core.item_hierarchy import HierarchyNode
 from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets.icons import IconImages
 from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
@@ -16,7 +17,7 @@ class CategoryRow(tk.Frame):
         super().__init__(parent, bg=PANEL)
         self.section = section
         self.category = category
-        section.category_rows[category.key]=self
+        section.category_rows[category.key] = self
         self.level = level
         self.key = (section.origin, category.key)
         self.frames = section.owner.arrow_frames
@@ -32,22 +33,52 @@ class CategoryRow(tk.Frame):
         self.arrow = tk.Label(row, image=self.frames[self.angle], bg=PANEL, cursor='hand2')
         self.arrow.pack(side='left', padx=(3, 5))
         self.arrow.bind('<Button-1>', lambda _: self.toggle())
-        label(row, category.icon, fg=ACCENT, font=('Segoe UI Symbol', 13)).pack(side='left', padx=(0, 5))
-        caption = getattr(section.owner, 'category_title', lambda value: tr('categories.' + value.key))(category)
+        self.group_icons = {}
+        if getattr(category, 'kind', None) == 'group':
+            icons = IconImages.shared(self)
+            self.group_icons = {color: icons.frames('editor/union.png', 18, ACCENT, color)[0]
+                                for color in (PANEL, '#26364a', '#3a4d66')}
+            self.icon_label = tk.Label(row, image=self.group_icons[PANEL], bg=PANEL)
+        else:
+            self.icon_label = label(row, getattr(category, 'icon', '▦'), fg=ACCENT,
+                                    font=('Segoe UI Symbol', 13))
+        self.icon_label.pack(side='left', padx=(0, 5))
+        caption = (category.name if isinstance(category, HierarchyNode) else
+                   getattr(section.owner, 'category_title',
+                           lambda value: tr('categories.' + value.key))(category))
         title = label(row, caption + f' [{section.count(category)}]',
                       font=('Arial', 10, 'bold'), anchor='w')
         title.pack(side='left', fill='x', expand=True)
         self.title_label=title
         title.bind('<Button-1>', lambda _: self.toggle())
-        if section.origin == 'project' and getattr(section.owner, 'can_create', lambda value: value.key in EDITABLE_CATEGORIES)(category):
-            plus = tk.Label(row, text='+', bg=INPUT, fg=ACCENT, font=('Arial', 14, 'bold'),
-                            width=2, cursor='hand2')
-            plus.pack(side='right', padx=5)
-            plus.bind('<Button-1>', lambda _: section.owner.on_create(category.key))
         self.content = tk.Frame(self, bg=PANEL)
         if self.opened:
             self.show_content()
         self.bind('<Destroy>', self.cancel_animation, add='+')
+        self.header = row
+        self._hover_widgets = (row, *row.winfo_children())
+        for widget in self._hover_widgets:
+            widget.bind('<Enter>', lambda _: self.set_hover(True), add='+')
+            widget.bind('<Leave>', lambda _: self.set_hover(False), add='+')
+            if hasattr(section.owner, 'context_node'):
+                widget.bind('<Button-3>', lambda event: section.owner.context_node(event, category))
+                if widget is not self.arrow:
+                    widget.bind('<Button-1>', lambda _: self.select_node())
+        self.set_hover(False)
+        # Recipe rows share this widget but retain their existing add action.
+        if not hasattr(section.owner, 'context_node') and getattr(section.owner, 'can_create', lambda _:False)(category):
+            plus = tk.Label(row, text='+', bg=INPUT, fg=ACCENT, font=('Arial',14,'bold'), width=2, cursor='hand2')
+            plus.pack(side='right', padx=5)
+            plus.bind('<Button-1>', lambda _: section.owner.on_create(category.key))
+
+    def select_node(self):
+        if self.section.owner.select_node(self.category) and self.winfo_exists():self.toggle()
+
+    def set_hover(self, active):
+        selected = getattr(self.section.owner, 'selected_node', None) == self.category.key
+        color = '#3a4d66' if selected else '#26364a' if active else PANEL
+        for widget in self._hover_widgets:widget.configure(bg=color)
+        if self.group_icons:self.icon_label.configure(image=self.group_icons[color])
 
     def show_content(self):
         if not self.built:
@@ -120,11 +151,12 @@ class HierarchySection(Panel):
         query = self.owner.search.get().strip().casefold()
         for item in self.items:
             if not query or query in item.instance.casefold() or query in item.title.casefold():
-                self.grouped.setdefault(classify(item), []).append(item)
+                self.grouped.setdefault(self.owner.location(item), []).append(item)
         count = sum(len(items) for items in self.grouped.values())
         self.heading.config(text=tr('app.items') + f' [{count}]')
-        for category in CATEGORIES:
+        for category in self.owner.categories():
             if not query or self.count(category):CategoryRow(self, self.inner, category, 0)
+        for item in self.grouped.get('', []):self.row_item(self.inner, item, 0)
         if query and not count:
             label(self.inner,'Ничего не найдено',fg=MUTED).pack(padx=12,pady=15)
         self.canvas.yview_moveto(position[0] if position else 0)
@@ -172,6 +204,11 @@ class HierarchyPanel(Panel):
         self.on_copy = on_copy or on_duplicate
         self.on_export_model = on_export_model
         self.on_export_texture = on_export_texture
+        self.store = None
+        self.on_node = None
+        self.on_node_action = None
+        self.on_move = None
+        self.selected_node = None
         self.items = []
         self.selected = None
         self._context_menu = None
@@ -244,7 +281,7 @@ class HierarchyPanel(Panel):
             if row is not None:
                 row.item=updated
                 if previous.title!=updated.title:row.title_label.config(text=updated.title)
-            category=classify(updated)
+            category=self.location(updated)
             if category in section.grouped:
                 section.grouped[category]=[updated if self.item_key(item)==self.item_key(previous) else item
                                            for item in section.grouped[category]]
@@ -253,7 +290,7 @@ class HierarchyPanel(Panel):
         """Insert a new row without rebuilding unrelated categories or items."""
         self.items=items
         query=self.search.get().strip().casefold()
-        category=classify(item)
+        category=self.location(item)
         for section in self.sections.values():
             section.items=list(items)
             if query and query not in item.title.casefold() and query not in item.instance.casefold():continue
@@ -273,14 +310,16 @@ class HierarchyPanel(Panel):
             count=sum(len(values) for values in section.grouped.values())
             section.heading.config(text=tr('app.items')+f' [{count}]')
             for row in section.category_rows.values():
-                row.title_label.config(text=tr('categories.'+row.category.key)+f' [{section.count(row.category)}]')
+                row.title_label.config(text=self.category_title(row.category)+f' [{section.count(row.category)}]')
 
     def collapse_all(self):
         self.expanded.clear()
         self.selected = None
+        self.selected_node = None
         self.search.set('')
 
     def choose(self, item):
+        self.selected_node = None
         self.selected = self.item_key(item) if item else None
         changed=self.reveal(item)
         if changed:self.rebuild()
@@ -290,7 +329,7 @@ class HierarchyPanel(Panel):
     def reveal(self,item):
         changed=False
         if item:
-            category = classify(item)
+            category = self.location(item)
             def reveal(nodes):
                 nonlocal changed
                 for node in nodes:
@@ -299,7 +338,7 @@ class HierarchyPanel(Panel):
                         self.expanded[('project', node.key)] = True
                         return True
                 return False
-            reveal(CATEGORIES)
+            reveal(self.categories())
         return changed
 
     def rebuild(self):
@@ -308,9 +347,12 @@ class HierarchyPanel(Panel):
                 section.rebuild()
 
     def select(self, item):
+        self.selected_node = None
         self.selected = self.item_key(item)
         for section in self.sections.values():
             section.highlight()
+        for section in self.sections.values():
+            for row in section.category_rows.values():row.set_hover(False)
         self.on_select(item)
 
     def rename(self, item, row, title):
@@ -353,6 +395,17 @@ class HierarchyPanel(Panel):
             menu.add_command(label=tr('hierarchy.delete'), accelerator='Delete',state=state, command=lambda: self.on_delete(item))
         else:
             menu.add_command(label=tr('hierarchy.copy_to_project'), state=state, command=lambda: self.on_copy(item))
+        if self.store is not None and self.on_move is not None:
+            move = tk.Menu(menu, tearoff=False, bg=INPUT, fg=TXT)
+            move.add_command(label='В исходную категорию', command=lambda:self.on_move(item,''))
+            def targets(nodes, path=''):
+                for node in nodes:
+                    title = path + node.name
+                    if self.store.accepts(node.key,item):
+                        move.add_command(label=title, command=lambda key=node.key:self.on_move(item,key))
+                    targets(node.children,title+' / ')
+            targets(self.categories())
+            menu.add_cascade(label='Переместить в группу',menu=move)
         if self.on_export_model is not None:
             downloads=tk.Menu(menu,tearoff=False,bg=INPUT,fg=TXT)
             downloads.add_command(label='Модель 3DS',command=lambda:self.on_export_model(item))
@@ -363,3 +416,33 @@ class HierarchyPanel(Panel):
             menu.tk_popup(event.x_root, event.y_root)
         finally:
             menu.grab_release()
+
+    def categories(self):return self.store.tree() if self.store else CATEGORIES
+
+    def location(self, item):return self.store.location(item) if self.store else classify(item)
+
+    def category_title(self, category):
+        return category.name if isinstance(category, HierarchyNode) else tr('categories.' + category.key)
+
+    def select_node(self, node):
+        if self.on_node is None or not self.on_node(node):return False
+        self.selected = None
+        self.selected_node = node.key
+        for section in self.sections.values():
+            section.highlight()
+            for row in section.category_rows.values():row.set_hover(False)
+        return True
+
+    def context_node(self, event, node):
+        if self.store is None or not self.select_node(node):return
+        if self._context_menu is not None:self._context_menu.destroy()
+        menu = tk.Menu(self, tearoff=False, bg=INPUT, fg=TXT)
+        self._context_menu = menu
+        for title, action in [('Создать группу','create'), ('Дублировать','duplicate'),
+                              ('Переименовать','rename'), ('Удалить','delete')]:
+            menu.add_command(label=title, command=lambda a=action:self.on_node_action(a,node))
+        if node.source in EDITABLE_CATEGORIES:
+            menu.add_separator()
+            menu.add_command(label='Добавить предмет', command=lambda:self.on_node_action('add',node))
+        try:menu.tk_popup(event.x_root,event.y_root)
+        finally:menu.grab_release()
