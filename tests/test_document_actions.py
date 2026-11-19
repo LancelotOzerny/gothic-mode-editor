@@ -85,6 +85,34 @@ class DocumentBuildTests(DocumentFixture,unittest.TestCase):
 
 
 class OriginalActionUITests(DocumentFixture,unittest.TestCase):
+    def test_removing_project_callback_preserves_other_callbacks_and_source(self):
+        from gothic_editor.ui.widgets.buttons import PropertyButton
+        window = tk.Tk()
+        self.addCleanup(window.destroy)
+        form = PropertiesPanel(window, lambda item, values, **kwargs: self.repo.edit(item, values),
+                               options_provider=lambda source: item_options(self.repo, source))
+        before = self.book_source.read_bytes()
+        form.show(self.assign(self.book, 75))
+        form.pack(fill='both', expand=True)
+        window.update_idletasks()
+        button = next(widget for widget in form.original_actions.winfo_children()[1].winfo_children()
+                      if isinstance(widget, PropertyButton))
+        self.assertEqual(button.filename, 'remove_recent.png')
+        size = round(0.8 * button.winfo_height())
+        self.assertEqual((button.image.width(), button.image.height()), (size, size))
+        icon = next(item for item in button.find_all() if button.type(item) == 'image')
+        self.assertEqual(button.coords(icon), [button.winfo_width() / 2, button.winfo_height() / 2])
+        button.invoke()
+        self.assertIn('on_state[0]', form.current.fields)
+        self.assertTrue(form.save(automatic=True))
+        self.assertNotIn('on_state[0]', form.current.fields)
+        self.assertEqual(form.current.fields['on_state[1]'], 'Previous')
+        self.assertEqual(self.book_source.read_bytes(), before)
+        content, _, _ = self.prepare()
+        generated = (content/'Items/GE_ComponentPotions.d').read_text('cp1251')
+        self.assertNotIn('UseZweihandBuch();', generated)
+        self.assertIn('AddExperience(75);', generated)
+
     def test_book_and_potion_source_callbacks_visible_without_metadata_writes(self):
         window=tk.Tk()
         self.addCleanup(window.destroy)

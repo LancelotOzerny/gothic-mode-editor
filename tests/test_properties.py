@@ -139,10 +139,53 @@ class PropertiesTests(unittest.TestCase):
         self.assertNotIn('description = ;', self.app.current.text)
 
     def test_invalid_schema_disables_save_with_an_explanation(self):
+        from gothic_editor.ui.widgets.theme import ERROR
+        form = self.app.properties
         with patch('gothic_editor.ui.panels.properties.schema_for', side_effect=ValueError('bad schema')):
-            self.app.select(self.item)
-        self.assertFalse(self.app.properties.editable)
-        self.assertIn('bad schema', self.app.properties.info['text'])
+            form.show(self.item)
+        self.assertFalse(form.editable)
+        self.assertEqual(form.info['text'], self.item.instance)
+        self.assertEqual(form.save_dot.itemcget(form.save_circle, 'fill'), ERROR)
+        self.assertIn('bad schema', form.save_tooltip.text)
+
+    def test_compact_rotation_fields_save_separately_and_update_status(self):
+        from tkinter import font as tkfont
+        from gothic_editor.core.localization import tr
+        from gothic_editor.ui.widgets.theme import BORDER, ERROR, FIELD_FONT, PANEL, SAVED, UNSAVED
+        form = self.app.properties
+        section = form.sections['appearance']
+        self.assertEqual(section.pack_info()['pady'], (0, 25))
+        arrows = self.app.hierarchy.arrows(PANEL)
+        self.assertEqual(str(section.header['image']), str(arrows[-1]))
+        section.toggle()
+        self.assertEqual(str(section.header['image']), str(arrows[0]))
+        section.toggle()
+        buttons = {button.text: button for button in form.appearance_holder.winfo_children()}
+        self.assertEqual(len({button.winfo_reqwidth() for button in buttons.values()}), 1)
+        self.assertIsNone(buttons[tr('item_assets.remove_model')].filename)
+        line_height = tkfont.Font(root=form, font=FIELD_FONT).metrics('linespace')
+        for button in buttons.values():
+            self.assertEqual(button.background, BORDER)
+            self.assertEqual(button.winfo_reqheight(), line_height + 15)
+        fields = [form.inputs['inv_rot' + axis] for axis in 'xyz']
+        columns = [field.surface.master for field in fields]
+        self.assertEqual([int(column.grid_info()['column']) for column in columns], [0, 1, 2])
+        self.assertTrue(all(column.master is columns[0].master for column in columns))
+        self.assertTrue(all(int(field.surface['height']) == field.winfo_reqheight() + 10 for field in fields))
+        self.assertTrue(all(field.surface.coords(field._entry_window) == [10, field.height / 2] for field in fields))
+        self.assertTrue(all(field.surface.pack_info()['pady'] == (2, 3) for field in fields))
+        self.assertEqual(form.save_dot.itemcget(form.save_circle, 'fill'), SAVED)
+        self.change('inv_roty', 'BASE + 30')
+        self.change('inv_rotz', '30°')
+        self.assertEqual(form.save_dot.itemcget(form.save_circle, 'fill'), UNSAVED)
+        self.assertFalse(form.save())
+        self.assertEqual(form.save_dot.itemcget(form.save_circle, 'fill'), ERROR)
+        self.assertIs(form.error_labels['inv_rotz'].master, columns[0].master.master)
+        self.change('inv_rotz', '-45')
+        self.assertTrue(form.save())
+        self.assertEqual(form.current.fields['inv_roty'], 'BASE + 30')
+        self.assertEqual(form.current.fields['inv_rotz'], '-45')
+        self.assertEqual(form.save_dot.itemcget(form.save_circle, 'fill'), SAVED)
 
     def test_renaming_copied_instance_keeps_original_and_builds_as_new_item(self):
         content = self.root/'game/_work/Data/Scripts/Content'

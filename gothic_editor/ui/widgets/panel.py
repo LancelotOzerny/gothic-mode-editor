@@ -10,10 +10,10 @@ class Panel(tk.Frame):
         kwargs.setdefault('bg', PANEL)
         super().__init__(parent, **kwargs)
 
-    def add_group(self, title, closed=False, on_toggle=lambda _:None, parent=None):
+    def add_group(self, title, closed=False, on_toggle=lambda _:None, parent=None, *, compact=False):
         from .form import FormGroup
-        group = FormGroup(parent if parent is not None else self, title, closed, on_toggle)
-        group.pack(fill='x', pady=(0,30))
+        group = FormGroup(parent if parent is not None else self, title, closed, on_toggle, compact=compact)
+        group.pack(fill='x', pady=(0,25 if compact else 30))
         return group
 
     def add_button(self, text, command, parent=None, **kwargs):

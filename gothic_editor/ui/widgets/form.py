@@ -5,13 +5,14 @@ from .choice_field import ExpressionChoiceField
 from .buttons import PropertyButton, PropertyToggle
 from .field_label import FieldLabel
 from .sections import PropertySectionFrame
+from .theme import COMPACT_FIELD_PADDING, FIELD_HEIGHT
 
 
 def create_field(parent, kind='text', variable=None, value='', options=(), caption='',
-                 enabled=True, readonly=False, minimum=None, maximum=None):
+                 enabled=True, readonly=False, minimum=None, maximum=None, height=FIELD_HEIGHT):
     state = 'normal' if enabled else 'disabled'
     if kind == 'choice':
-        field = ExpressionChoiceField(parent, options, caption=caption,
+        field = ExpressionChoiceField(parent, options, caption=caption, height=height,
             state='readonly' if enabled else 'disabled')
         field.set_expression(variable.get() if variable is not None else value)
         if variable is not None:
@@ -30,7 +31,8 @@ def create_field(parent, kind='text', variable=None, value='', options=(), capti
                                tk.BooleanVar(parent,value=False if value=='' else value))
         field.configure(state=state)
     else:
-        kwargs = {'textvariable': variable} if variable is not None else {}
+        kwargs = {'height': height}
+        if variable is not None:kwargs['textvariable'] = variable
         field = (NumberField(parent, minimum=minimum, maximum=maximum, **kwargs)
                  if kind == 'number' else PropertyEntry(parent, **kwargs))
         if variable is None:field.insert(0, value)
@@ -40,9 +42,10 @@ def create_field(parent, kind='text', variable=None, value='', options=(), capti
 
 class FormGroup(PropertySectionFrame):
     def add_field(self, title, kind='text', tooltip='', **kwargs):
-        FieldLabel(self.body, title, tooltip).pack(fill='x', padx=8, pady=(6,2))
+        FieldLabel(self.body, title, tooltip).pack(fill='x', padx=8, pady=(2,0) if self.compact else (6,2))
+        if self.compact:kwargs.setdefault('height', None)
         field = create_field(self.body, kind, caption=title, **kwargs)
-        field.pack(fill='x', padx=8)
+        field.pack(fill='x', padx=8, pady=COMPACT_FIELD_PADDING if self.compact else 0)
         return field
 
     def add_button(self, text, command, **kwargs):

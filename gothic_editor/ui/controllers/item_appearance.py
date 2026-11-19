@@ -1,6 +1,6 @@
 """Model controls within the schema's appearance group; persistence stays in core."""
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, font as tkfont, messagebox
 from pathlib import Path
 
 from gothic_editor.core.item_assets import ItemAssetManager
@@ -8,6 +8,7 @@ from gothic_editor.core.categories import classify
 from gothic_editor.core.model_library import ModelLibrary
 from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets.buttons import PropertyButton
+from gothic_editor.ui.widgets.theme import BORDER, FIELD_FONT
 from gothic_editor.ui.widgets.inputs import make_entry
 from gothic_editor.ui.widgets.choice_field import ExpressionChoiceField
 from gothic_editor.ui.windows.dialog import EditorDialog
@@ -18,12 +19,20 @@ class ItemAppearanceController:
         self.app = app
 
     def show(self, parent, item):
+        height = tkfont.Font(root=parent, font=FIELD_FONT).metrics('linespace') + 15
+        buttons = []
         for key, action in [('choose_model', self.choose), ('import_model', self.import_model),
                             ('import_textures', self.import_textures), ('remove_model', self.remove)]:
             if classify(item)!='potions' and key!='choose_model':continue
-            button = PropertyButton(parent,lambda fn=action:fn(self.app.current or item),text=tr('item_assets.'+key))
-            button.pack(fill='x', padx=8, pady=(0,6))
+            title = tr('item_assets.' + key)
+            button = PropertyButton(parent, lambda fn=action: fn(self.app.current or item), text=title,
+                                    height=height, background=BORDER)
             if key == 'remove_model' and not self._custom(item):button.config(state='disabled')
+            buttons.append(button)
+        width = max(button.winfo_reqwidth() for button in buttons)
+        for button in buttons:
+            button.configure(width=width)
+            button.pack(padx=8, pady=2)
 
     def _custom(self, item):
         return item.visual.casefold() in ModelLibrary(self.app.repo.root).index()

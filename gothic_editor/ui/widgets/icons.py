@@ -18,6 +18,9 @@ class IconImages:
         self.cache = {}
         self.sources = {}
 
+    def disclosure(self, foreground, background):
+        return self.frames('arrow_right.png', 18, foreground, background, steps=13)
+
     def frames(self, filename, size, foreground, background, steps=1, normalize_alpha=False):
         key = (filename, size, foreground, background, steps, normalize_alpha)
         if key in self.cache:

@@ -7,9 +7,10 @@ from .tooltip import Tooltip
 class PropertyButton(tk.Canvas):
     """Matching text/icon buttons, including lighter dropdown option rows."""
     def __init__(self, parent, command, text='', filename=None, caption='',
-                 icons=None, background=INPUT, align='center'):
-        width = FIELD_HEIGHT if filename else max(FIELD_HEIGHT,tkfont.Font(root=parent,font=FIELD_FONT).measure(text)+20)
-        super().__init__(parent, bg=parent.cget('bg'), height=FIELD_HEIGHT, width=width,
+                 icons=None, background=INPUT, align='center', height=FIELD_HEIGHT):
+        self.height = height
+        width = height if filename else max(height,tkfont.Font(root=parent,font=FIELD_FONT).measure(text)+20)
+        super().__init__(parent, bg=parent.cget('bg'), height=height, width=width,
                          bd=0, highlightthickness=0, takefocus=True, cursor='hand2')
         self.command, self.text, self.filename = command, text, filename
         self.icons = icons or IconImages.shared(self)
@@ -53,15 +54,20 @@ class PropertyButton(tk.Canvas):
         if self.selected and not disabled:fill='#3a5675' if self.hovered else '#304a65'
         foreground = MUTED if disabled else TXT
         self.delete('all')
-        width = max(FIELD_HEIGHT, self.winfo_width())
-        rounded_box(self, width, FIELD_HEIGHT, fill, ACCENT if self.selected and not disabled else BORDER)
+        width = self.winfo_width()
+        if width == 1:
+            width = self.winfo_reqwidth()
+        rounded_box(self, width, self.height, fill, ACCENT if self.selected and not disabled else BORDER)
         self.image = None
         if self.filename and (self.icons.directory/self.filename).is_file():
-            try:self.image = self.icons.frames(self.filename,20,foreground,fill,
+            size = min(20, self.height - 4)
+            if self.filename == 'remove_recent.png':
+                size = round(0.8 * min(width, self.height))
+            try:self.image = self.icons.frames(self.filename,max(1,size),foreground,fill,
                                                normalize_alpha=self.filename=='create.png')[0]
             except (tk.TclError, OSError):pass
-        if self.image:self.create_image(width/2,FIELD_HEIGHT/2,image=self.image)
-        else:self.create_text(10 if self.align=='left' else width/2,FIELD_HEIGHT/2,
+        if self.image:self.create_image(width/2,self.height/2,image=self.image)
+        else:self.create_text(10 if self.align=='left' else width/2,self.height/2,
                               text=self.text, fill=foreground, font=FIELD_FONT,
                               anchor='w' if self.align=='left' else 'center')
 

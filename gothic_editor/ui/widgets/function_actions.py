@@ -4,14 +4,14 @@ import tkinter as tk
 from .choice_list import ChoiceList
 from .inputs import PropertyEntry
 from .field_label import FieldLabel
-from .theme import PANEL, ERROR, label
+from .theme import COMPACT_FIELD_HEIGHT, COMPACT_FIELD_PADDING, PANEL, ERROR, FIELD_HEIGHT, label
 from gothic_editor.core.item_actions import assignments,argument_literal
 
 
 class FunctionActionList(ChoiceList):
     # Retain the former five-row format; only adding new rows uses max_rows.
     allow_existing_overflow=True
-    def __init__(self,parent,field,value,provider,catalog_provider,editable=True):
+    def __init__(self,parent,field,value,provider,catalog_provider,editable=True,*,height=FIELD_HEIGHT):
         self.catalog_provider=catalog_provider
         self.arguments={}
         self._pending=[]
@@ -19,7 +19,7 @@ class FunctionActionList(ChoiceList):
         self.parameter_holder=None
         self._parameter_key=None
         self._updating=False
-        super().__init__(parent,field,value,provider,editable)
+        super().__init__(parent,field,value,provider,editable,height=height)
 
     def set_expression(self,value):
         rows=assignments(value) if value else [{'id':'','values':{}}]
@@ -74,10 +74,12 @@ class FunctionActionList(ChoiceList):
             values=self.arguments.setdefault(frame,{})
             for parameter in function.parameters:
                 values.setdefault(parameter.name,parameter.default)
-                FieldLabel(self.parameter_holder,f'[{function.label}] {parameter.label}').pack(fill='x',padx=8,pady=(6,2))
+                FieldLabel(self.parameter_holder,f'[{function.label}] {parameter.label}').pack(fill='x',padx=8,pady=(2,0))
                 variable=tk.StringVar(self,value=values[parameter.name])
-                field=PropertyEntry(self.parameter_holder,textvariable=variable,state='normal' if self.editable else 'readonly')
-                field.pack(fill='x',padx=8,pady=(0,4))
+                field=PropertyEntry(self.parameter_holder,textvariable=variable,
+                                    height=None if self.height == COMPACT_FIELD_HEIGHT else self.height,
+                                    state='normal' if self.editable else 'readonly')
+                field.pack(fill='x',padx=8,pady=COMPACT_FIELD_PADDING if self.height == COMPACT_FIELD_HEIGHT else 0)
                 def change(*_,v=variable,values=values,name=parameter.name):
                     values[name]=v.get()
                     self._sync()

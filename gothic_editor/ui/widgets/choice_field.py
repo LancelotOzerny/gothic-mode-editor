@@ -1,6 +1,6 @@
 import tkinter as tk
 from gothic_editor.core.localization import tr
-from .theme import INPUT, TXT, FIELD_HEIGHT
+from .theme import INPUT, TXT
 from .inputs import PropertyEntry
 from gothic_editor.ui.windows.value_choice import ValueChoiceWindow
 
@@ -13,7 +13,7 @@ class ExpressionChoiceField(PropertyEntry):
         self.owner=parent.winfo_toplevel()
         super().__init__(parent,right_padding=32,textvariable=self.variable,**kwargs)
         self.arrow=tk.Label(self.surface,text='…',bg=INPUT,fg=TXT,cursor='hand2')
-        self._arrow_window=self.surface.create_window(0,FIELD_HEIGHT/2,window=self.arrow,anchor='e')
+        self._arrow_window=self.surface.create_window(0,self.height/2,window=self.arrow,anchor='e')
         for widget in (self,self.surface,self.arrow):
             widget.bind('<ButtonRelease-1>',self.open_choices)
             widget.configure(cursor='hand2')

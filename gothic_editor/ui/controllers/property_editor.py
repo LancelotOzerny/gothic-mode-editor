@@ -16,6 +16,7 @@ class PropertyEditor:
         self._traces = []
         self.dirty = set()
         self.draft = {}
+        self.removed_actions = set()
 
     def cancel(self):
         if self._after is not None:
@@ -29,6 +30,7 @@ class PropertyEditor:
         self._traces.clear()
         self.dirty.clear()
         self.draft.clear()
+        self.removed_actions.clear()
 
     def watch(self, key, variable):
         trace = variable.trace_add('write', lambda *_:self.changed(key))
@@ -45,9 +47,21 @@ class PropertyEditor:
         if value == form.initial[key]:self.dirty.discard(key)
         else:self.dirty.add(key)
         form.clear_field_error(key)
+        self.schedule_save()
+
+    def remove_action(self, key):
+        self.removed_actions.add(key)
+        self.schedule_save()
+
+    def schedule_save(self):
+        form = self.form
+        pending = self.dirty or self.removed_actions
         self.cancel()
-        form.set_save_status('properties.unsaved' if self.dirty else 'properties.saved')
-        if self.dirty:self._after = form.after(self.AUTOSAVE_DELAY, self._autosave)
+        if any(error.winfo_manager() == 'pack' for error in form.error_labels.values()):
+            form.set_save_status('properties.invalid', failed=True)
+        else:
+            form.set_save_status('properties.unsaved' if pending else 'properties.saved')
+        if pending:self._after = form.after(self.AUTOSAVE_DELAY, self._autosave)
 
     def _autosave(self):
         self._after = None
@@ -63,7 +77,8 @@ class PropertyEditor:
 
     def _save(self, keys):
         form = self.form
-        values, metadata, instance = {}, {}, None
+        removed_actions = {key for key in self.removed_actions if keys is None or key in keys}
+        values, metadata, instance = dict.fromkeys(removed_actions, ''), {}, None
         instance_key = None
         valid = True
         selected = [key for key in form.inputs if keys is None or key in keys]
@@ -96,7 +111,7 @@ class PropertyEditor:
                 form.show_field_error(key,str(exc))
                 valid = False
         if not valid:
-            form.set_save_status('properties.invalid',error=True)
+            form.set_save_status('properties.invalid',failed=True)
             return False
         if values or metadata or instance is not None:
             options = {'autosave':True}
@@ -105,11 +120,11 @@ class PropertyEditor:
             form.set_save_status('properties.saving')
             try:result=form.on_save(form.current,values,**options)
             except (OSError,ValueError) as exc:
-                form.set_save_status('properties.save_error',error=True,detail=str(exc))
+                form.set_save_status('properties.save_error',failed=True,detail=str(exc))
                 if instance_key is not None:form.show_field_error(instance_key,str(exc))
                 return False
             if result is None:
-                form.set_save_status('properties.save_error',error=True,detail=tr('properties.save_rejected'))
+                form.set_save_status('properties.save_error',failed=True,detail=tr('properties.save_rejected'))
                 return False
             form.current=result
             form.info.config(text=result.instance)
@@ -119,6 +134,8 @@ class PropertyEditor:
             form.initial[key]=entry.get()
             self.draft.pop(key,None)
             self.dirty.discard(key)
-        form.set_save_status('properties.unsaved' if self.dirty else 'properties.saved')
-        if self.dirty:self._after=form.after(self.AUTOSAVE_DELAY,self._autosave)
+        if removed_actions:
+            self.removed_actions.difference_update(removed_actions)
+            form._show_original_actions(form.current)
+        self.schedule_save()
         return True

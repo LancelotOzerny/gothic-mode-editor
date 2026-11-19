@@ -1,31 +1,33 @@
 import tkinter as tk
 from gothic_editor.core.property_lists import PropertyList, display_value, expression_value
-from .theme import PANEL, MUTED
+from .theme import COMPACT_FIELD_HEIGHT, COMPACT_FIELD_PADDING, PANEL, FIELD_HEIGHT
 from .inputs import PropertyEntry
 from .buttons import PropertyButton
 from .field_label import FieldLabel
 
 class KeyValueList(tk.Frame):
     """Two schema-defined columns with stable array indices and responsive layout."""
-    def __init__(self, parent, field, fields, editable=True, on_commit=lambda:None, on_change=lambda:None):
+    def __init__(self, parent, field, fields, editable=True, on_commit=lambda:None, on_change=lambda:None,
+                 *, height=FIELD_HEIGHT):
         super().__init__(parent, bg=PANEL)
         self.model = PropertyList(field, fields)
         self.editable = editable
         self.on_commit = on_commit
         self.on_change = on_change
         self.rows = []
+        self.height = height
         self.column_header=tk.Frame(self,bg=PANEL)
         self.column_header.pack(fill='x')
         self.column_header.columnconfigure(0,weight=3,uniform='fields')
         self.column_header.columnconfigure(1,weight=1,uniform='fields')
-        self.column_header.columnconfigure(2,minsize=44)
+        self.column_header.columnconfigure(2,minsize=height + 4)
         self.column_labels=[FieldLabel(self.column_header,column.label,column.tooltip,font='TkDefaultFont')
                             for column in field.columns]
         self.column_header.bind('<Configure>',self.layout_header)
         footer=tk.Frame(self,bg=PANEL)
         footer.pack(side='bottom',fill='x',pady=5)
         self.add_button = PropertyButton(footer, self.add_row, text='+',
-                                         filename='create.png',caption='Добавить')
+                                         filename='create.png',caption='Добавить',height=height)
         self.add_button.pack(side='right')
         self.set_expression(self.model.rows)
 
@@ -64,12 +66,13 @@ class KeyValueList(tk.Frame):
 
     def _append(self, index, values):
         frame = tk.Frame(self, bg=PANEL)
-        frame.pack(fill='x', pady=4)
+        padding = COMPACT_FIELD_PADDING if self.height == COMPACT_FIELD_HEIGHT else 0
+        frame.pack(fill='x', pady=0 if padding else 2)
         cells, holders = [], []
         for column, value in zip(self.model.field.columns, values):
             holder = tk.Frame(frame, bg=PANEL)
             variable=tk.StringVar(self)
-            entry = PropertyEntry(holder, width=1,textvariable=variable)
+            entry = PropertyEntry(holder, width=1, textvariable=variable, height=None if padding else self.height)
             initial = display_value(value, column.field_type)
             entry.insert(0, initial)
             entry.value_variable=variable
@@ -80,18 +83,18 @@ class KeyValueList(tk.Frame):
             holders.append(holder)
             cells.append((column, entry, initial, value))
         remove = PropertyButton(frame,lambda:self.remove_row(index),text='×',
-                                filename='detele.png',caption='Удалить')
+                                filename='remove_recent.png',caption='Удалить',height=self.height)
         if not self.editable:remove.config(state='disabled')
-        remove.grid(row=0, column=2, sticky='s', padx=(4,0))
+        remove.grid(row=0, column=2, padx=(4,0), pady=padding)
         frame.columnconfigure(0, weight=3, uniform='fields')
         frame.columnconfigure(1, weight=1, uniform='fields')
 
         def layout(event):
             narrow = event.width < 300
-            holders[0].grid(row=0, column=0, columnspan=2 if narrow else 1, sticky='ew', padx=(0,4))
+            holders[0].grid(row=0, column=0, columnspan=2 if narrow else 1, sticky='ew', padx=(0,4), pady=padding)
             holders[1].grid(row=1 if narrow else 0, column=0 if narrow else 1,
-                            columnspan=2 if narrow else 1, sticky='ew')
-            remove.grid(row=1 if narrow else 0,column=2,sticky='s')
+                            columnspan=2 if narrow else 1, sticky='ew', pady=padding)
+            remove.grid(row=1 if narrow else 0,column=2)
         frame.bind('<Configure>', layout)
         self.rows.append((index, frame, cells))
 

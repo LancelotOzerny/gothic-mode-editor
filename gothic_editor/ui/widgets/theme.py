@@ -7,6 +7,12 @@ def label(parent,text='',**kw):
     return tk.Label(parent,text=text,bg=kw.pop('bg',PANEL),fg=kw.pop('fg',TXT),**kw)
 
 FIELD_HEIGHT = 40
+COMPACT_FIELD_HEIGHT = FIELD_HEIGHT // 2
+FIELD_CONTENT_PADDING = 5
+# Tk grid and pack use whole pixels. Keep five pixels of total vertical padding.
+COMPACT_FIELD_PADDING = (2, 3)
+SAVED = '#7bd5a9'
+UNSAVED = '#efc86a'
 ERROR = '#ef9a9a'
 FIELD_FONT = 'TkDefaultFont'
 OPTION_BG = '#293444'

@@ -2,7 +2,7 @@
 import json
 import tkinter as tk
 from tkinter import messagebox
-from .theme import PANEL
+from .theme import COMPACT_FIELD_HEIGHT, COMPACT_FIELD_PADDING, FIELD_HEIGHT, PANEL
 from .buttons import PropertyButton
 from .choice_field import ExpressionChoiceField
 from gothic_editor.core.localization import tr
@@ -46,14 +46,16 @@ class GroupedChoiceField(ExpressionChoiceField):
 
 class ChoiceList(tk.Frame):
     allow_existing_overflow=False
-    def __init__(self,parent,field,value,provider,editable=True):
+    def __init__(self,parent,field,value,provider,editable=True,*,height=FIELD_HEIGHT):
         super().__init__(parent,bg=PANEL)
         self.field,self.provider,self.editable=field,provider,editable
         self.rows=[]
+        self.height=height
         self.value_variable=tk.StringVar(self)
         footer=tk.Frame(self,bg=PANEL)
         footer.pack(side='bottom',fill='x',pady=5)
-        self.add_button=PropertyButton(footer,self.add_row,text='+',filename='create.png',caption=tr('item_actions.add'))
+        self.add_button=PropertyButton(footer,self.add_row,text='+',filename='create.png',
+                                       caption=tr('item_actions.add'),height=height)
         self.add_button.pack(side='right')
         self.set_expression(value)
 
@@ -69,12 +71,14 @@ class ChoiceList(tk.Frame):
 
     def _append(self,value):
         frame=tk.Frame(self,bg=PANEL)
-        frame.pack(fill='x',pady=4)
+        frame.pack(fill='x',pady=COMPACT_FIELD_PADDING if self.height == COMPACT_FIELD_HEIGHT else 2)
         frame.columnconfigure(0,weight=1)
-        entry=GroupedChoiceField(frame,self.provider,state='readonly' if self.editable else 'disabled',caption=self.field.label)
+        entry=GroupedChoiceField(frame,self.provider,state='readonly' if self.editable else 'disabled',
+                                 caption=self.field.label,height=None if self.height == COMPACT_FIELD_HEIGHT else self.height)
         entry.set_expression(value)
         entry.grid(row=0,column=0,sticky='ew')
-        remove=PropertyButton(frame,lambda:self.remove_row(frame),text='×',filename='detele.png',caption=tr('resources.delete'))
+        remove=PropertyButton(frame,lambda:self.remove_row(frame),text='×',filename='remove_recent.png',
+                              caption=tr('resources.delete'),height=self.height)
         remove.grid(row=0,column=1,padx=(4,0))
         if not self.editable:remove.config(state='disabled')
         self.rows.append((frame,entry))

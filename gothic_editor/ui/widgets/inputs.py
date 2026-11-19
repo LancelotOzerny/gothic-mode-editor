@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import font as tkfont
 from gothic_editor.core.localization import tr
-from .theme import INPUT, PANEL, TXT, MUTED, BORDER, ACCENT, FIELD_HEIGHT, FIELD_FONT, rounded_box
+from .theme import INPUT, PANEL, TXT, MUTED, BORDER, ACCENT, FIELD_CONTENT_PADDING, FIELD_HEIGHT, FIELD_FONT, rounded_box
 
 def entry_menu(widget):
     menu=tk.Menu(widget,tearoff=False)
@@ -32,11 +32,11 @@ def make_entry(parent,**kw):
     return PropertyEntry(parent,**kw)
 
 class PropertyEntry(tk.Entry):
-    """A native entry (selection, clipboard, focus) inside a padded dark surface."""
-    def __init__(self, parent, right_padding=10, **kwargs):
+    """A native entry in a dark surface. A height of None fits the entry plus padding."""
+    def __init__(self, parent, right_padding=10, height=FIELD_HEIGHT, **kwargs):
         font = kwargs.pop('font', FIELD_FONT)
         width = kwargs.get('width',20)
-        self.surface = tk.Canvas(parent, bg=parent.cget('bg'), height=FIELD_HEIGHT,
+        self.surface = tk.Canvas(parent, bg=parent.cget('bg'),
                                  width=tkfont.Font(root=parent,font=font).measure('0')*int(width)+20,
                                  highlightthickness=0, bd=0)
         self.right_padding = right_padding
@@ -44,7 +44,9 @@ class PropertyEntry(tk.Entry):
         super().__init__(self.surface, bg=INPUT, readonlybackground=INPUT, disabledbackground=INPUT, fg=TXT,
                          disabledforeground=MUTED, insertbackground=TXT, font=font,
                          relief='flat', bd=0, highlightthickness=0, **kwargs)
-        self._entry_window=self.surface.create_window(10,FIELD_HEIGHT/2,window=self,anchor='w')
+        self.height = self.winfo_reqheight() + 2 * FIELD_CONTENT_PADDING if height is None else height
+        self.surface.configure(height=self.height)
+        self._entry_window=self.surface.create_window(10,self.height/2,window=self,anchor='w')
         entry_menu(self)
         self.bind('<Button-1>',lambda _:self.focus_set(),add='+')
         self.surface.bind('<Configure>', lambda _:self.paint())
@@ -75,10 +77,10 @@ class PropertyEntry(tk.Entry):
         width=self.surface.winfo_width()
         self.surface.itemconfigure(self._entry_window,width=max(1,width-10-self.right_padding))
         if hasattr(self,'_arrow_window'):
-            self.surface.coords(self._arrow_window,width-10,FIELD_HEIGHT/2)
+            self.surface.coords(self._arrow_window,width-10,self.height/2)
         if hasattr(self,'_buttons_window'):
-            self.surface.coords(self._buttons_window,width-3,FIELD_HEIGHT/2)
-        rounded_box(self.surface, width, FIELD_HEIGHT, INPUT, border)
+            self.surface.coords(self._buttons_window,width-3,self.height/2)
+        rounded_box(self.surface, width, self.height, INPUT, border)
 
 
 class NumberField(PropertyEntry):
@@ -91,7 +93,7 @@ class NumberField(PropertyEntry):
             tk.Button(controls,text=title,command=lambda d=delta:self.step(d),bg=INPUT,fg=TXT,
                 activebackground=BORDER,activeforeground=TXT,bd=0,padx=4,pady=0,
                 font=('Arial',8),takefocus=False).pack(fill='x')
-        self._buttons_window = self.surface.create_window(0,FIELD_HEIGHT/2,window=controls,anchor='e')
+        self._buttons_window = self.surface.create_window(0,self.height/2,window=controls,anchor='e')
         self.bind('<Up>',lambda _:self.step(1))
         self.bind('<Down>',lambda _:self.step(-1))
 

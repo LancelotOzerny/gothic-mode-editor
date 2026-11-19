@@ -44,7 +44,7 @@ class HierarchyBrowser(Panel):
         return button
 
     def arrows(self, color):
-        return self.icons.frames('arrow_right.png', 18, MUTED, color, steps=13)
+        return self.icons.disclosure(MUTED, color)
 
     def new_menu(self, parent=None):
         if parent is None and self._context_menu is not None:
