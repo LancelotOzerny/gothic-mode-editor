@@ -75,10 +75,28 @@ class EditorLayoutTests(unittest.TestCase):
         self.app.show_project(reset_hierarchy=True)
 
     def test_terminal_menu_full_width_default_height_and_resize_persistence(self):
+        from tkinter import ttk
+        from gothic_editor.ui.widgets.theme import BORDER, INPUT, PANEL
+        self.app._show_editor()
+        dock = self.app.bottom_dock
+        style = ttk.Style(dock)
+        self.assertEqual(style.lookup(dock['style'], 'bordercolor'), BORDER)
+        self.assertEqual(style.lookup(dock['style'] + '.Tab', 'background'), INPUT)
+        self.assertEqual(style.lookup(dock['style'] + '.Tab', 'background', ('selected',)), PANEL)
+        for toolbar in dock.toolbars.values():
+            self.assertTrue(any(getattr(child, 'filename', None) == 'close.png' for child in toolbar.winfo_children()))
         self.assertEqual(len(self.app.workspace.panes()), 2)
         self.assertEqual(self.app.bottom_dock.selected_key(),'resources')
+        self.app.update()
+        toolbar = dock.toolbars['resources']
+        self.assertTrue(toolbar.winfo_ismapped())
+        self.assertFalse(dock.toolbars['terminal'].winfo_ismapped())
+        self.assertGreater(toolbar.winfo_x(), dock.winfo_width() / 2)
+        toolbar_center = toolbar.winfo_y() + toolbar.winfo_height() / 2
+        self.assertAlmostEqual(toolbar_center, self.app.resources.winfo_y() / 2, delta=1)
+        self.assertEqual(dock.index(f'@10,{int(toolbar_center)}'), 0)
         self.app.hide_terminal()
-        self.app.hide_bottom_tab('resources')
+        toolbar.winfo_children()[-1].invoke()
         self.assertEqual(len(self.app.workspace.panes()), 1)
         view = self.app.nametowidget(self.app.main_menu.entrycget(3, 'menu'))
         windows = self.app.nametowidget(view.entrycget(0, 'menu'))
@@ -97,6 +115,20 @@ class EditorLayoutTests(unittest.TestCase):
         self.app.show_terminal()
         self.app.update()
         self.assertAlmostEqual(self.app.bottom_dock.winfo_height(), self.app.terminal_height, delta=2)
+        toolbar = dock.toolbars['terminal']
+        self.assertAlmostEqual(toolbar.winfo_y() + toolbar.winfo_height() / 2,
+                               self.app.terminal.winfo_y() / 2, delta=1)
+
+    def test_clear_command_clears_terminal_locally(self):
+        terminal = self.app.terminal
+        terminal.append('Previous output')
+        terminal.command.insert(0, ' clear ')
+        with patch('gothic_editor.ui.panels.terminal.PowerShellSession') as session_factory:
+            self.assertEqual(terminal.execute(), 'break')
+            session_factory.assert_not_called()
+        self.assertEqual(terminal.log.get('1.0', 'end-1c'), '')
+        self.assertEqual(terminal.command.get(), '')
+        self.assertEqual(terminal.history[-1], 'clear')
 
     def test_category_counts_collapsed_origins_and_clockwise_animation(self):
         self.create_project()

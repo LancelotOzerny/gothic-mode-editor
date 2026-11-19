@@ -204,6 +204,84 @@ class AssetsBrowserTests(unittest.TestCase):
         self.panel.duplicate_selected()
         self.assertFalse((self.assets/'Models/Mesh_copy.3ds').exists())
 
+    def test_scripts_in_tree_rename_from_menu_and_f2(self):
+        folder = self.assets/'Scripts/Content'
+        script = folder/'Old.d'
+        script.write_text('script')
+        self.panel.refresh()
+        self.panel.open_folder(folder, selection=script)
+        self.window.update()
+        node = self.panel.tree.focus()
+        self.assertEqual(self.panel._tree_paths[node], script)
+        self.assertTrue(self.panel.tree.item(node, 'image'))
+        tile = self.panel.tiles[script]
+        self.assertEqual(tile.image.width(), 64)
+        tile_icon = next(item for item in tile.find_all() if tile.type(item) == 'image')
+        self.assertEqual(tile.bbox(tile_icon)[1], 10)
+        self.assertEqual(self.panel.icons.resource_icon_gap.width(), 5)
+        menu = self.popup()
+        rename = menu.index('end')
+        self.assertEqual(menu.entrycget(rename, 'label'), 'Переименовать')
+        self.assertEqual(menu.entrycget(rename, 'accelerator'), 'F2')
+        with patch('gothic_editor.ui.panels.resources.ResourceNameDialog') as dialog, patch.object(self.panel, 'wait_window'):
+            dialog.return_value.result = 'First.d'
+            menu.invoke(rename)
+            first = folder/'First.d'
+            self.assertEqual(self.panel.selected_file(), first)
+            tile = self.panel.tiles[first]
+            tile.focus_force()
+            self.window.update()
+            dialog.return_value.result = 'Second.d'
+            tile.event_generate('<F2>')
+            second = folder/'Second.d'
+            self.assertEqual(self.panel.selected_file(), second)
+            self.panel.open_folder(folder, selection=second)
+            self.panel.tree.focus_force()
+            self.window.update()
+            dialog.return_value.result = 'Third.d'
+            self.panel.tree.event_generate('<F2>')
+        self.assertEqual((folder/'Third.d').read_text(), 'script')
+        self.assertFalse(script.exists())
+
+    def test_drag_file_to_tree_then_folder_to_tile(self):
+        self.window.geometry('800x450')
+        self.panel.open_folder(self.assets/'Models')
+        self.window.update()
+        source = self.assets/'Models/Mesh.3ds'
+        tile = self.panel.tiles[source]
+        tree = self.panel.tree
+        destination = self.assets/'Scripts'
+        node = next(node for node, path in self.panel._tree_paths.items() if path == destination)
+        x, y, _, height = tree.bbox(node)
+        targets = dict(rootx=tree.winfo_rootx() + x + 50, rooty=tree.winfo_rooty() + y + height // 2)
+        tile.event_generate('<ButtonPress-1>', x=10, y=10)
+        with patch.object(self.panel, 'winfo_containing', return_value=tree):
+            tile.event_generate('<B1-Motion>', **targets)
+            self.assertEqual(self.panel._preview.status.cget('text'), 'Scripts')
+            self.assertIn('drop_allowed', tree.item(node, 'tags'))
+            tile.event_generate('<ButtonRelease-1>', **targets)
+        self.assertFalse(source.exists())
+        self.assertEqual((destination/source.name).read_bytes(), b'model')
+
+        self.panel.open_folder(self.assets)
+        self.window.update()
+        node = next(node for node, path in self.panel._tree_paths.items() if path == destination)
+        x, y, _, height = tree.bbox(node)
+        row_y = y + height // 2
+        self.assertTrue(any(tree.identify_element(px, row_y).endswith('indicator') for px in range(x, x+40)))
+        tree.event_generate('<ButtonPress-1>', x=x+50, y=row_y)
+        self.window.update()
+        self.assertEqual(self.panel.folder, self.assets)
+        folder = self.assets/'Items'
+        target = self.panel.tiles[folder]
+        targets = dict(rootx=target.winfo_rootx() + 25, rooty=target.winfo_rooty() + 25)
+        with patch.object(self.panel, 'winfo_containing', return_value=target):
+            tree.event_generate('<B1-Motion>', **targets)
+            self.assertEqual(target.drop_color, '#315b50')
+            tree.event_generate('<ButtonRelease-1>', **targets)
+        self.assertEqual((folder/'Scripts/Mesh.3ds').read_bytes(), b'model')
+        self.assertFalse(destination.exists())
+
 
 class AssetFileOperationsTests(unittest.TestCase):
     def setUp(self):
@@ -262,3 +340,23 @@ class AssetFileOperationsTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.files.copy(folder,self.root)
         with self.assertRaises(ValueError):self.files.delete(folder)
         self.assertEqual((outside/'keep.txt').read_text(),'keep')
+
+    def test_rename_and_move_preserve_contents_and_reject_collisions(self):
+        folder = self.files.create(self.root, 'Folder')
+        target = self.files.create(self.root, 'Target')
+        script = self.files.create(folder, 'New', script=True)
+        script.write_text('first')
+        renamed = self.files.rename(script, 'new.d')
+        self.assertEqual([path.name for path in folder.iterdir()], ['new.d'])
+        other = self.files.create(target, 'new.d', script=True)
+        other.write_text('second')
+        with self.assertRaises(FileExistsError):
+            self.files.move(renamed, target)
+        with self.assertRaises(ValueError):
+            self.files.move(folder, folder)
+        with self.assertRaises(ValueError):
+            self.files.rename(renamed, '..')
+        self.assertEqual(other.read_text(), 'second')
+        moved = self.files.move(folder, target)
+        self.assertEqual((moved/'new.d').read_text(), 'first')
+        self.assertFalse(folder.exists())

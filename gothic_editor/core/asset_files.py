@@ -66,6 +66,32 @@ class AssetFiles:
                 shutil.copyfileobj(src, dst)
         return target
 
+    def rename(self, source, name):
+        source = self._check_tree(source)
+        target = source.with_name(self.name(name))
+        resolved = self.checked(target)
+        if target.name == source.name:
+            return source
+        if resolved.exists() and resolved != source:
+            raise FileExistsError(f'Ресурс уже существует: {target.name}')
+        return source.rename(target)
+
+    def move_target(self, source, folder):
+        source = self.checked(source)
+        folder = self.checked(folder, allow_root=True)
+        if not folder.is_dir():
+            raise NotADirectoryError(str(folder))
+        if source == folder or source in folder.parents:
+            raise ValueError('Нельзя переносить папку внутрь неё самой.')
+        target = self.checked(folder / source.name)
+        if target.exists():
+            raise FileExistsError(f'Ресурс уже существует: {target.name}')
+        return target
+
+    def move(self, source, folder):
+        source = self._check_tree(source)
+        return source.rename(self.move_target(source, folder))
+
     def delete(self, path):
         path = self._check_tree(path)
         if path.is_dir():shutil.rmtree(path)

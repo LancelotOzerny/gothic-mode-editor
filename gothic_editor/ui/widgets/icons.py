@@ -17,9 +17,26 @@ class IconImages:
         self.directory = Path(__file__).resolve().parents[3] / 'assets' / 'icons'
         self.cache = {}
         self.sources = {}
+        self.resource_icons = {}
 
     def disclosure(self, foreground, background):
         return self.frames('arrow_right.png', 18, foreground, background, steps=13)
+
+    def resource(self, path, resolution, subsample):
+        suffix = path.suffix.lower()
+        if path.is_dir():
+            kind = 'folder'
+        elif suffix == '.d':
+            kind = 'script'
+        elif suffix in ('.3ds', '.mrm', '.mdm', '.mdl', '.mmb'):
+            kind = 'model'
+        else:
+            return None
+        key = (resolution, subsample, kind)
+        if key not in self.resource_icons:
+            source = tk.PhotoImage(master=self.master, file=str(self.directory / str(resolution) / f'{kind}.png'))
+            self.resource_icons[key] = source.subsample(subsample)
+        return self.resource_icons[key]
 
     def frames(self, filename, size, foreground, background, steps=1, normalize_alpha=False):
         key = (filename, size, foreground, background, steps, normalize_alpha)

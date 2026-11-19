@@ -3,6 +3,7 @@ from pathlib import Path
 from queue import Empty
 from gothic_editor.core.powershell import PowerShellSession
 from gothic_editor.ui.widgets.panel import Panel, attach_scrollbar
+from gothic_editor.ui.widgets.dock import TAB_ACTION_HEIGHT
 from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets import BG, PANEL, INPUT, TXT, MUTED, label, make_entry
 
@@ -15,14 +16,8 @@ class TerminalPanel(Panel):
         self.history_index=0
         self._poll_id=None
         self._detached=False
-        header = tk.Frame(self, bg=PANEL)
-        header.pack(fill='x')
-        label(header, tr('terminal.title')).pack(side='left', padx=10, pady=4)
-        self.add_button('×',on_hide,parent=header).pack(side='right')
-        self.add_button(tr('terminal.clear'),self.clear,parent=header).pack(side='right',padx=6)
-        self.stop_button=self.add_button('Остановить',self.stop,parent=header)
-        self.stop_button.pack(side='right',padx=6)
-        self.stop_button.config(state='disabled')
+        self.on_hide = on_hide
+        self.stop_button = None
         command_line=tk.Frame(self,bg=PANEL)
         command_line.pack(side='bottom',fill='x',padx=6,pady=5)
         self.prompt=label(command_line,'PS >',fg=MUTED)
@@ -36,7 +31,7 @@ class TerminalPanel(Panel):
         self.command.bind('<Control-Cyrillic_es>',self.copy_or_stop)
         self.bind('<Destroy>',self.dispose,add='+')
         self.log = tk.Text(self, bg=INPUT, fg=TXT, insertbackground=TXT, wrap='word',
-                           font=('Consolas', 10), state='disabled', relief='flat',
+                           font=('Consolas', 10), state='disabled', relief='flat', highlightthickness=0,
                            height=1)
         self.scrollbar=attach_scrollbar(self,self.log)
         self.log.pack(fill='both', expand=True)
@@ -44,6 +39,19 @@ class TerminalPanel(Panel):
         self.log.bind('<Control-KeyPress>',self._copy_shortcut)
         self.log.bind('<<Copy>>',self.copy_selection)
         self._poll_id=self.after(30,self.poll)
+
+    def build_tab_actions(self, parent):
+        self.stop_button = self.add_button(tr('terminal.stop'), self.stop, parent=parent, height=TAB_ACTION_HEIGHT)
+        self.stop_button.pack(side='left', padx=(0, 4))
+        self._set_stop_enabled(bool(self.session and self.session.running))
+        self.add_button(tr('terminal.clear'), self.clear, parent=parent,
+                        height=TAB_ACTION_HEIGHT).pack(side='left', padx=(0, 4))
+        self.add_button('', self.on_hide, parent=parent, filename='close.png', caption=tr('tools.close'),
+                        height=TAB_ACTION_HEIGHT).pack(side='left')
+
+    def _set_stop_enabled(self, enabled):
+        if self.stop_button is not None and self.stop_button.winfo_exists():
+            self.stop_button.configure(state='normal' if enabled else 'disabled')
 
     def set_project(self,project):
         project=Path(project) if project else None
@@ -55,6 +63,10 @@ class TerminalPanel(Panel):
     def execute(self,_event=None):
         command=self.command.get().strip()
         if not command:return 'break'
+        if command.casefold() == 'clear':
+            self.clear()
+            self._remember_command(command)
+            return 'break'
         if self.session and self.session.running:return 'break'
         if self.session is None:self.session=PowerShellSession(self.project or Path.cwd())
         self.append(f'PS {self.session.cwd}> {command}')
@@ -63,12 +75,15 @@ class TerminalPanel(Panel):
             self.append(str(exc))
             self.stop()
             return 'break'
+        self._remember_command(command)
+        self._set_stop_enabled(True)
+        return 'break'
+
+    def _remember_command(self, command):
         self.history.append(command)
         self.history=self.history[-100:]
         self.history_index=len(self.history)
         self.command.delete(0,'end')
-        self.stop_button.config(state='normal')
-        return 'break'
 
     def navigate_history(self,delta):
         self.history_index=max(0,min(len(self.history),self.history_index+delta))
@@ -94,7 +109,7 @@ class TerminalPanel(Panel):
                     session.cwd=Path(value)
                     session.running=False
                     self.prompt.config(text='PS >')
-                    self.stop_button.config(state='disabled')
+                    self._set_stop_enabled(False)
                 elif kind=='exit':
                     output.append(f'PowerShell завершён: {value}')
                     self.stop()
@@ -104,7 +119,7 @@ class TerminalPanel(Panel):
     def stop(self):
         if self.session:self.session.close()
         self.session=None
-        if self.stop_button.winfo_exists():self.stop_button.config(state='disabled')
+        self._set_stop_enabled(False)
         return 'break'
 
     def detach(self):
@@ -114,7 +129,7 @@ class TerminalPanel(Panel):
     def adopt(self,state):
         self.session,self.project,self.history,self.history_index,draft=state
         self.command.insert(0,draft)
-        if self.session and self.session.running:self.stop_button.config(state='normal')
+        self._set_stop_enabled(bool(self.session and self.session.running))
 
     def dispose(self,event):
         if event.widget is not self:return
