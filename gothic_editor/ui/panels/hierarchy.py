@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+from dataclasses import dataclass
 from time import monotonic
 
 from gothic_editor.core.categories import CATEGORIES, Category, classify, EDITABLE_CATEGORIES
@@ -9,7 +10,128 @@ from gothic_editor.core.item_hierarchy import HierarchyNode
 from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets.icons import IconImages
 from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
+from gothic_editor.ui.widgets.theme import FIELD_HEIGHT
 from gothic_editor.ui.widgets import BG, PANEL, INPUT, TXT, MUTED, ACCENT, label, make_entry
+
+
+@dataclass
+class HierarchyCategory:
+    key: str
+    title: str
+    children: tuple = ()
+    icon: str = '▦'
+
+
+class HierarchyBrowser(Panel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.expanded = {}
+        self.icons = IconImages.shared(self)
+        self.search = tk.StringVar(self)
+        self.heading_bar = tk.Frame(self, bg=PANEL, height=FIELD_HEIGHT)
+        self.heading_bar.pack(fill='x', padx=12, pady=(12, 8))
+        self.heading_bar.pack_propagate(False)
+        label(self.heading_bar, tr('hierarchy.title'), font=('Arial', 10, 'bold')).pack(side='left')
+        make_entry(self, textvariable=self.search).pack(fill='x', padx=10, pady=(0, 10), ipady=6)
+        self._context_menu = None
+
+    def add_header_action(self, command, caption):
+        button = self.add_button('+', command, parent=self.heading_bar, caption=caption)
+        button.pack(side='right')
+        return button
+
+    def arrows(self, color):
+        return self.icons.frames('arrow_right.png', 18, MUTED, color, steps=13)
+
+    def new_menu(self, parent=None):
+        if parent is None and self._context_menu is not None:
+            self._context_menu.destroy()
+        menu = tk.Menu(parent if parent is not None else self, tearoff=False, bg=INPUT, fg=TXT)
+        if parent is None:
+            self._context_menu = menu
+        return menu
+
+    @staticmethod
+    def show_menu(menu, event):
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def popup(self, event, commands):
+        menu = self.new_menu()
+        for title, command in commands:
+            menu.add_command(label=title, command=command)
+        self.show_menu(menu, event)
+
+    def category_title(self, category):
+        return category.title
+
+    def is_category_selected(self, category):
+        return False
+
+    def bind_category(self, row, category):
+        row.header.bind_activate(row.toggle)
+
+
+class HierarchyRow(tk.Frame):
+    """Shared geometry and pointer states for branches and entries."""
+    def __init__(self, parent, title, level, *, branch=False, icon='', fg=ACCENT):
+        super().__init__(parent, bg=PANEL, height=32, cursor='hand2')
+        self.pack(fill='x', padx=5, pady=1)
+        self.pack_propagate(False)
+        if level:
+            tk.Frame(self, bg=PANEL, width=level * 13).pack(side='left')
+        self.indicator = (tk.Label(self, bg=PANEL, bd=0, padx=0) if branch
+                          else tk.Frame(self, bg=PANEL, width=18))
+        self.indicator.pack(side='left', padx=(3, 5))
+        icon_slot = tk.Frame(self, bg=PANEL, width=22)
+        icon_slot.pack(side='left', fill='y', padx=(0, 5))
+        icon_slot.pack_propagate(False)
+        self.icon_label = label(icon_slot, icon, fg=fg, font=('Segoe UI Symbol', 13))
+        self.icon_label.pack(fill='both', expand=True)
+        self.title_label = label(self, title, font=('Arial', 10, 'bold' if branch else 'normal'), anchor='w')
+        self.title_label.pack(side='left', fill='x', expand=True)
+        self.widgets = (self, *self.winfo_children(), self.icon_label)
+        self.hovered = self.selected = False
+        self.override_color = None
+        self.on_repaint = None
+        self.bind_row('<Enter>', lambda _: self.set_hover(True))
+        self.bind_row('<Leave>', lambda _: self.set_hover(False))
+
+    def bind_row(self, sequence, callback, *, exclude=None):
+        for widget in self.widgets:
+            if widget is exclude:
+                continue
+            widget.bind(sequence, callback)
+
+    def bind_activate(self, command):
+        def activate(_):
+            self.focus_set()
+            command()
+            return 'break'
+
+        self.configure(takefocus=True)
+        self.bind_row('<Button-1>', activate)
+        self.bind('<Return>', activate)
+        self.bind('<space>', activate)
+
+    def set_hover(self, hovered):
+        self.hovered = hovered
+        self.repaint()
+
+    def set_selected(self, selected):
+        self.selected = selected
+        self.repaint()
+
+    def repaint(self):
+        color = self.override_color or ('#3a4d66' if self.selected else '#26364a' if self.hovered else PANEL)
+        if self.cget('bg') == color:
+            return
+        for widget in self.widgets:
+            widget.configure(bg=color)
+        if self.on_repaint is not None:
+            self.on_repaint(color)
 
 
 class CategoryRow(tk.Frame):
@@ -20,76 +142,49 @@ class CategoryRow(tk.Frame):
         section.category_rows[category.key] = self
         self.level = level
         self.key = (section.origin, category.key)
-        self.frames = section.owner.arrow_frames
-        self.opened = bool(section.owner.expanded.get(self.key)) or bool(section.owner.search.get().strip())
+        owner = section.owner
+        self.frames = owner.arrows(PANEL)
+        self.opened = bool(owner.expanded.get(self.key) or owner.search.get().strip())
         self.angle = len(self.frames) - 1 if self.opened else 0
         self.animation = None
         self.built = False
         self.pack(fill='x')
-        row = tk.Frame(self, bg=PANEL, height=32)
-        row.pack(fill='x', padx=5, pady=1)
-        row.pack_propagate(False)
-        tk.Frame(row, bg=PANEL, width=level * 13).pack(side='left')
-        self.arrow = tk.Label(row, image=self.frames[self.angle], bg=PANEL, cursor='hand2')
-        self.arrow.pack(side='left', padx=(3, 5))
-        self.arrow.bind('<Button-1>', lambda _: self.toggle())
-        self.group_icons = {}
-        if getattr(category, 'kind', None) == 'group':
-            icons = IconImages.shared(self)
-            self.group_icons = {color: icons.frames('editor/union.png', 18, ACCENT, color)[0]
-                                for color in (PANEL, '#26364a', '#3a4d66')}
-            self.icon_label = tk.Label(row, image=self.group_icons[PANEL], bg=PANEL)
-        else:
-            self.icon_label = label(row, getattr(category, 'icon', '▦'), fg=ACCENT,
-                                    font=('Segoe UI Symbol', 13))
-        self.icon_label.pack(side='left', padx=(0, 5))
-        caption = (category.name if isinstance(category, HierarchyNode) else
-                   getattr(section.owner, 'category_title',
-                           lambda value: tr('categories.' + value.key))(category))
-        title = label(row, caption + f' [{section.count(category)}]',
-                      font=('Arial', 10, 'bold'), anchor='w')
-        title.pack(side='left', fill='x', expand=True)
-        self.title_label=title
-        title.bind('<Button-1>', lambda _: self.toggle())
+        caption = owner.category_title(category)
+        self.header = HierarchyRow(self, f'{caption} [{section.count(category)}]', level,
+                                   branch=True, icon=getattr(category, 'icon', '▦'))
+        self.arrow = self.header.indicator
+        self.arrow.configure(image=self.frames[self.angle])
+        self.icon_label = self.header.icon_label
+        self.title_label = self.header.title_label
+        self.header.on_repaint = self.paint_icons
+        self.paint_icons(PANEL)
+        owner.bind_category(self, category)
+        self.refresh_selection()
         self.content = tk.Frame(self, bg=PANEL)
         if self.opened:
             self.show_content()
         self.bind('<Destroy>', self.cancel_animation, add='+')
-        self.header = row
-        self._hover_widgets = (row, *row.winfo_children())
-        for widget in self._hover_widgets:
-            widget.bind('<Enter>', lambda _: self.set_hover(True), add='+')
-            widget.bind('<Leave>', lambda _: self.set_hover(False), add='+')
-            if hasattr(section.owner, 'context_node'):
-                widget.bind('<Button-3>', lambda event: section.owner.context_node(event, category))
-                if widget is not self.arrow:
-                    widget.bind('<Button-1>', lambda event: section.owner.press_node(event,category))
-                    widget.bind('<B1-Motion>',section.owner.drag_motion)
-                    widget.bind('<ButtonRelease-1>',section.owner.release_item)
-        self.set_hover(False)
-        # Recipe rows share this widget but retain their existing add action.
-        if not hasattr(section.owner, 'context_node') and getattr(section.owner, 'can_create', lambda _:False)(category):
-            plus = tk.Label(row, text='+', bg=INPUT, fg=ACCENT, font=('Arial',14,'bold'), width=2, cursor='hand2')
-            plus.pack(side='right', padx=5)
-            plus.bind('<Button-1>', lambda _: section.owner.on_create(category.key))
 
     def select_node(self, event=None):
         if event is not None and event.state & 1:
             self.section.owner.toggle_selection(self.category)
-        elif self.section.owner.select_node(self.category) and self.winfo_exists():self.toggle()
+        elif self.section.owner.select_node(self.category) and self.winfo_exists():
+            self.toggle()
 
-    def set_hover(self, active):
-        selected = (self.section.owner.is_selected(self.category) if hasattr(self.section.owner,'is_selected')
-                    else getattr(self.section.owner,'selected_node',None)==self.category.key)
-        color = '#3a4d66' if selected else '#26364a' if active else PANEL
-        target = getattr(self.section.owner,'drop_target',None)
-        if target is not None and target[0]==self.category.key:
-            color = '#315b50' if target[1] else '#683f48'
-        for widget in self._hover_widgets:widget.configure(bg=color)
-        if self.group_icons:
-            if color not in self.group_icons:
-                self.group_icons[color] = IconImages.shared(self).frames('editor/union.png',18,ACCENT,color)[0]
-            self.icon_label.configure(image=self.group_icons[color])
+    def refresh_selection(self):
+        owner = self.section.owner
+        target = getattr(owner, 'drop_target', None)
+        self.header.override_color = ('#315b50' if target[1] else '#683f48') if (
+            target is not None and target[0] == self.category.key) else None
+        self.header.set_selected(owner.is_category_selected(self.category))
+
+    def paint_icons(self, color):
+        owner = self.section.owner
+        self.frames = owner.arrows(color)
+        self.arrow.configure(image=self.frames[round(self.angle)])
+        if getattr(self.category, 'kind', None) == 'group':
+            icon = owner.icons.frames('editor/union.png', 18, ACCENT, color)[0]
+            self.icon_label.configure(image=icon)
 
     def show_content(self):
         if not self.built:
@@ -174,25 +269,19 @@ class HierarchySection(Panel):
 
     def row_item(self, parent, item, level):
         selected = self.owner.is_selected(item)
-        color = '#3a4d66' if selected else PANEL
-        row = tk.Frame(parent, bg=color, height=31, cursor='hand2')
-        row.pack(fill='x', padx=5, pady=1)
-        row.pack_propagate(False)
-        label(row, '', bg=color, width=level * 2).pack(side='left')
-        badge = label(row, '?' if item.origin == 'project' else '?', bg=color,
-                      fg='#7bd5a9' if item.origin == 'project' else MUTED)
-        badge.pack(side='left', padx=(0, 6))
-        title = label(row, item.title, bg=color, anchor='w', font=('Arial', 10))
-        title.pack(side='left', fill='x', expand=True)
-        row.item,row.title_label=item,title
+        row = HierarchyRow(parent, item.title, level,
+                           icon='•' if item.origin == 'project' else '○',
+                           fg='#7bd5a9' if item.origin == 'project' else MUTED)
+        row.item = item
+        row.set_selected(selected)
         self.item_rows[self.owner.item_key(item)] = row
-        if selected:self.highlighted=self.owner.item_key(item)
-        for widget in (row, badge, title):
-            widget.bind('<Button-1>', lambda event, r=row: self.owner.press_item(event,r.item))
-            widget.bind('<B1-Motion>',self.owner.drag_motion)
-            widget.bind('<ButtonRelease-1>',self.owner.release_item)
-            widget.bind('<Double-Button-1>', lambda _, r=row, t=title: self.owner.rename(r.item, r, t))
-            widget.bind('<Button-3>', lambda event, r=row: self.owner.context(event, r.item))
+        if selected:
+            self.highlighted = self.owner.item_key(item)
+        row.bind_row('<Button-1>', lambda event: self.owner.press_item(event, row.item))
+        row.bind_row('<B1-Motion>', self.owner.drag_motion)
+        row.bind_row('<ButtonRelease-1>', self.owner.release_item)
+        row.bind_row('<Double-Button-1>', lambda _: self.owner.rename(row.item, row, row.title_label))
+        row.bind_row('<Button-3>', lambda event: self.owner.context(event, row.item))
         return row
 
     def highlight(self):
@@ -202,16 +291,14 @@ class HierarchySection(Panel):
         for key in previous | selected:
             row = self.item_rows.get(key)
             if row is None:continue
-            color = '#3a4d66' if key in selected else PANEL
-            row.config(bg=color)
-            for widget in row.winfo_children():widget.config(bg=color)
+            row.set_selected(key in selected)
         self.highlighted_keys = set(selected)
         self.highlighted = self.owner.selected
 
 
-class HierarchyPanel(Panel):
+class HierarchyPanel(HierarchyBrowser):
     def __init__(self, parent, on_select, on_create, on_duplicate, on_delete, on_rename, on_copy=None, on_export_model=None, on_export_texture=None):
-        super().__init__(parent, bg=PANEL)
+        super().__init__(parent)
         self.on_select = on_select
         self.on_create = on_create
         self.on_duplicate = on_duplicate
@@ -234,16 +321,6 @@ class HierarchyPanel(Panel):
         self.selected_node = None
         self.items = []
         self.selected = None
-        self._context_menu = None
-        self.expanded = {}
-        self.icons = IconImages.shared(self)
-        self.arrow_frames = self.icons.frames('arrow_right.png', 18, MUTED, PANEL, steps=13)
-        self.search = tk.StringVar(self)
-        top = tk.Frame(self, bg=PANEL)
-        top.pack(fill='x', padx=12, pady=(12, 8))
-        label(top, tr('hierarchy.title'), font=('Arial', 10, 'bold')).pack(side='left')
-        search = make_entry(self, textvariable=self.search)
-        search.pack(fill='x', padx=10, pady=(0, 10), ipady=6)
         self.search.trace_add('write', lambda *_: self.rebuild())
         self.panes = tk.PanedWindow(self, orient='vertical', bg=BG, bd=0, sashwidth=6)
         self.panes.pack(fill='both', expand=True)
@@ -356,8 +433,7 @@ class HierarchyPanel(Panel):
         self.selected = self.item_key(item) if item else None
         changed=self.reveal(item)
         if changed:self.rebuild()
-        else:
-            for section in self.sections.values():section.highlight()
+        else:self.paint_selection()
 
     def reveal(self,item):
         changed=False
@@ -384,10 +460,7 @@ class HierarchyPanel(Panel):
         self.multiple.clear()
         self.selected_node = None
         self.selected = self.item_key(item)
-        for section in self.sections.values():
-            section.highlight()
-        for section in self.sections.values():
-            for row in section.category_rows.values():row.set_hover(False)
+        self.paint_selection()
         self.on_select(item)
 
     def rename(self, item, row, title):
@@ -424,11 +497,8 @@ class HierarchyPanel(Panel):
         self.selected_node = None
         self.focus_set()
         self.selected=self.item_key(item)
-        for section in self.sections.values():section.highlight()
-        if self._context_menu is not None:
-            self._context_menu.destroy()
-        menu = tk.Menu(self, tearoff=False, bg=INPUT, fg=TXT)
-        self._context_menu = menu
+        self.paint_selection()
+        menu = self.new_menu()
         state='normal' if classify(item) in EDITABLE_CATEGORIES else 'disabled'
         if item.origin == 'project':
             menu.add_command(label=tr('hierarchy.duplicate'), accelerator='Ctrl+D',state=state, command=lambda: self.on_duplicate(item))
@@ -436,7 +506,7 @@ class HierarchyPanel(Panel):
         else:
             menu.add_command(label=tr('hierarchy.copy_to_project'), state=state, command=lambda: self.on_copy(item))
         if self.store is not None and self.on_move is not None:
-            move = tk.Menu(menu, tearoff=False, bg=INPUT, fg=TXT)
+            move = self.new_menu(menu)
             move.add_command(label='В исходную категорию', command=lambda:self.on_move(item,''))
             def targets(nodes, path=''):
                 for node in nodes:
@@ -447,15 +517,12 @@ class HierarchyPanel(Panel):
             targets(self.categories())
             menu.add_cascade(label='Переместить в группу',menu=move)
         if self.on_export_model is not None:
-            downloads=tk.Menu(menu,tearoff=False,bg=INPUT,fg=TXT)
+            downloads=self.new_menu(menu)
             downloads.add_command(label='Модель 3DS',command=lambda:self.on_export_model(item))
             if self.on_export_texture is not None:
                 downloads.add_command(label='Текстура',command=lambda:self.on_export_texture(item))
             menu.add_cascade(label='Скачать',menu=downloads)
-        try:
-            menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            menu.grab_release()
+        self.show_menu(menu, event)
 
     def categories(self):return self.store.tree() if self.store else CATEGORIES
 
@@ -464,30 +531,36 @@ class HierarchyPanel(Panel):
     def category_title(self, category):
         return category.name if isinstance(category, HierarchyNode) else tr('categories.' + category.key)
 
+    def bind_category(self, row, category):
+        header = row.header
+        header.bind_row('<Button-3>', lambda event: self.context_node(event, category))
+        header.bind_row('<Button-1>', lambda event: self.press_node(event, category), exclude=row.arrow)
+        header.bind_row('<B1-Motion>', self.drag_motion, exclude=row.arrow)
+        header.bind_row('<ButtonRelease-1>', self.release_item, exclude=row.arrow)
+        row.arrow.bind('<Button-1>', lambda _: row.toggle())
+
+    def is_category_selected(self, category):
+        return self.is_selected(category)
+
     def select_node(self, node):
         if self.on_node is None or not self.on_node(node):return False
         self.multiple.clear()
         self.selected = None
         self.selected_node = node.key
-        for section in self.sections.values():
-            section.highlight()
-            for row in section.category_rows.values():row.set_hover(False)
+        self.paint_selection()
         return True
 
     def context_node(self, event, node):
         if self.multi_context(event,node):return
         if self.store is None or not self.select_node(node):return
-        if self._context_menu is not None:self._context_menu.destroy()
-        menu = tk.Menu(self, tearoff=False, bg=INPUT, fg=TXT)
-        self._context_menu = menu
+        menu = self.new_menu()
         for title, action in [('Создать группу','create'), ('Дублировать','duplicate'),
                               ('Переименовать','rename'), ('Удалить','delete')]:
             menu.add_command(label=title, command=lambda a=action:self.on_node_action(a,node))
         if node.source in EDITABLE_CATEGORIES:
             menu.add_separator()
             menu.add_command(label='Добавить предмет', command=lambda:self.on_node_action('add',node))
-        try:menu.tk_popup(event.x_root,event.y_root)
-        finally:menu.grab_release()
+        self.show_menu(menu, event)
 
     def selection_keys(self):
         if self.multiple:return set(self.multiple)
@@ -508,7 +581,7 @@ class HierarchyPanel(Panel):
     def paint_selection(self):
         for section in self.sections.values():
             section.highlight()
-            for row in section.category_rows.values():row.set_hover(False)
+            for row in section.category_rows.values():row.refresh_selection()
 
     def toggle_selection(self,value):
         if self.store is None:return False
@@ -544,16 +617,14 @@ class HierarchyPanel(Panel):
     def multi_context(self,event,value):
         if len(self.selection_keys())<2 or not self.is_selected(value):return False
         self.focus_set()
-        if self._context_menu is not None:self._context_menu.destroy()
-        menu = tk.Menu(self,tearoff=False,bg=INPUT,fg=TXT)
-        self._context_menu = menu
+        menu = self.new_menu()
         values = self.selected_values()
         actions = self.common_actions()
         for action,title in [('duplicate','Дублировать'),('delete','Удалить'),('copy','Копировать в проект')]:
             if action in actions:
                 menu.add_command(label=title,command=lambda a=action:self.on_batch(a,values))
         if 'move' in actions and self.store is not None:
-            move = tk.Menu(menu,tearoff=False,bg=INPUT,fg=TXT)
+            move = self.new_menu(menu)
             move.add_command(label='В исходные категории',command=lambda:self.on_batch('move',values,''))
             def targets(nodes,path=''):
                 for node in nodes:
@@ -563,8 +634,7 @@ class HierarchyPanel(Panel):
                     targets(node.children,title+' / ')
             targets(self.categories())
             menu.add_cascade(label='Переместить',menu=move)
-        try:menu.tk_popup(event.x_root,event.y_root)
-        finally:menu.grab_release()
+        self.show_menu(menu, event)
         return True
 
     def press_item(self,event,item):
@@ -591,7 +661,7 @@ class HierarchyPanel(Panel):
         for section in self.sections.values():
             if widget in (section.inner,section.canvas):return ''
             for key,row in section.category_rows.items():
-                if widget is row.header or widget in row.header.winfo_children():return key
+                if widget in row.header.widgets:return key
         return None
 
     def drag_motion(self,event):
@@ -620,7 +690,7 @@ class HierarchyPanel(Panel):
             self.drag_preview = None
         for section in getattr(self,'sections',{}).values():
             for row in section.category_rows.values():
-                if row.winfo_exists():row.set_hover(False)
+                if row.winfo_exists():row.refresh_selection()
         if active and event is not None:return 'break'
 
     def release_item(self,event):

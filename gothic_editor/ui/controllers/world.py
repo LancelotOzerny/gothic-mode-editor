@@ -47,7 +47,7 @@ class WorldController:
 
     def select(self, resource, camera=None):
         app = self.app
-        if not app._save_editors():return
+        if not app._save_editors():return False
         app.npcs.deselect()
         app._cancel_model_load()
         app.current = None

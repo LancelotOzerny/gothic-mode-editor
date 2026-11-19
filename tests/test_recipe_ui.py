@@ -111,7 +111,6 @@ class RecipeUITests(unittest.TestCase):
         form.add_row({'instance':'HERB', 'count':1})
         self.assertTrue(self.app._save_editors())
         panel = self.app.recipe_list
-        self.assertEqual(panel.separator.pack_info()['pady'], 15)
         self.assertTrue(panel.category_rows['health'].opened)
         panel.search.set('маны')
         self.assertEqual(set(panel.category_rows), {'mana'})
@@ -186,7 +185,10 @@ class RecipeUITests(unittest.TestCase):
         with patch.object(panel,'popup') as popup:
             panel.category_context(SimpleNamespace(), 'experience')
             commands = popup.call_args.args[1]
-            self.assertEqual(len(commands), 3)
+            self.assertEqual(len(commands), 4)
+            with patch.object(self.app.recipes, 'add') as add:
+                commands[-1][1]()
+                add.assert_called_once_with('experience')
             commands[1][1]()
         self.assertEqual(store.load()[-1]['id'], 'experience_copy')
         with patch('gothic_editor.ui.controllers.recipes.messagebox.askyesno',return_value=False):

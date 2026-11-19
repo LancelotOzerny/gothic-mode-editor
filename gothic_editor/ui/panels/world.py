@@ -1,92 +1,169 @@
 """Static world resource browser and forms using the common dark UI widgets."""
-import tkinter as tk
 from pathlib import Path
-from tkinter import ttk
 
 from gothic_editor.core.world_resources import WORLD_CATEGORIES
-from gothic_editor.ui.widgets import PANEL, INPUT, TXT, MUTED, label
-from gothic_editor.ui.widgets.inputs import make_entry
-from gothic_editor.ui.widgets.panel import Panel, ScrollableArea, attach_scrollbar
+from gothic_editor.ui.widgets import MUTED, label
+from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
+from .hierarchy import CategoryRow, HierarchyBrowser, HierarchyCategory, HierarchyRow
 
 
-class WorldPanel(Panel):
-    def __init__(self, parent, on_select, on_select_npc=lambda npc:None):
+class WorldPanel(HierarchyBrowser):
+    def __init__(self, parent, on_select, on_select_npc=lambda npc: None):
         super().__init__(parent)
         self.on_select = on_select
         self.on_select_npc = on_select_npc
+        self.owner, self.origin = self, 'project'
         self.npcs = []
-        self.npc_entries = {}
         self.resources = []
-        self.entries = {}
-        self.on_add=lambda:None
-        self.on_remove=lambda:None
-        self.add_button('Добавить из Gothic',lambda:self.on_add()).pack(fill='x',padx=10,pady=(10,0))
-        self.add_button('Удалить из проекта',lambda:self.on_remove()).pack(fill='x',padx=10,pady=(6,0))
-        self.search = tk.StringVar(self)
-        make_entry(self, textvariable=self.search).pack(fill='x', padx=10, pady=10)
-        style = ttk.Style(self)
-        style.configure('World.Treeview', background=PANEL, fieldbackground=PANEL,
-                        foreground=TXT, borderwidth=0, rowheight=30)
-        style.layout('World.Treeview', [('Treeview.treearea', {'sticky': 'nswe'})])
-        style.map('World.Treeview', background=[('selected', INPUT)], foreground=[('selected', TXT)])
-        body = tk.Frame(self, bg=PANEL)
-        body.pack(fill='both', expand=True)
-        self.tree = ttk.Treeview(body, show='tree', style='World.Treeview', selectmode='browse')
-        self.tree.column('#0', width=240, minwidth=80)
-        attach_scrollbar(body, self.tree)
-        self.tree.pack(fill='both', expand=True)
-        self.empty = label(self, 'Выберите проект', fg=MUTED)
-        self.empty.pack(fill='x', padx=10, pady=8)
+        self.entries, self.npc_entries = {}, {}
+        self.grouped, self.category_rows, self.rows = {}, {}, {}
+        self.selected = None
+        self.on_add = lambda: None
+        self.on_remove = lambda: None
+        self.import_button = self.add_header_action(lambda: self.on_add(), 'Добавить из Gothic')
+        self.area = ScrollableArea(self)
+        self.area.pack(fill='both', expand=True)
+        label(self.area.content, 'Выберите проект', fg=MUTED).pack(fill='x', padx=10, pady=8)
         self.search.trace_add('write', lambda *_: self.rebuild())
-        self.tree.bind('<<TreeviewSelect>>', self._select)
 
     def set_resources(self, resources, npcs=()):
         self.resources = resources
         self.npcs = list(npcs)
         self.rebuild()
+        if not self.search.get().strip() and self.selected not in self.entries and self.selected not in self.npc_entries:
+            self.selected = None
 
     def rebuild(self):
-        selected = self.tree.selection()
-        opened = {node: self.tree.item(node, 'open') for node in self.tree.get_children('')}
-        self.tree.delete(*self.tree.get_children(''))
-        self.entries = {}
-        self.npc_entries = {}
+        position = self.area.canvas.yview()
+        for child in self.area.content.winfo_children():
+            child.destroy()
+        self.entries, self.npc_entries = {}, {}
+        self.grouped, self.category_rows, self.rows = {}, {}, {}
         query = self.search.get().strip().casefold()
-        objects=None
         for category, title in WORLD_CATEGORIES.items():
-            matches = [resource for resource in self.resources if resource.category == category
-                       and (not query or query in resource.title.casefold() or query in title.casefold())]
-            if not matches:continue
-            if objects is None:
-                objects=self.tree.insert('', 'end', iid='objects', text='Объекты',open=opened.get('objects',True))
-            self.tree.insert(objects, 'end', iid=category, text=f'{title} [{len(matches)}]',
-                             open=bool(query) or opened.get(category, False))
-            for resource in matches:
-                key = 'model:' + resource.name.casefold()
-                self.entries[key] = resource
-                self.tree.insert(category, 'end', iid=key,
-                                 text=resource.title + ('  • Проект' if resource.overridden else ''))
-        matches=[npc for npc in self.npcs if not query or query in npc.title.casefold() or query in npc.instance.casefold() or query in 'npc']
-        if matches:
-            self.tree.insert('','end',iid='npcs',text=f'NPC [{len(matches)}]',open=bool(query) or opened.get('npcs',False))
-            for npc in matches:
-                key='npc:'+npc.instance.casefold()
-                self.npc_entries[key]=npc
-                self.tree.insert('npcs','end',iid=key,text=npc.title+('  • Проект' if npc.overridden else ''))
-        self.empty.config(text='' if self.entries or self.npc_entries else 'Ничего не найдено')
-        if selected and self.tree.exists(selected[0]):self.tree.selection_set(selected[0])
+            matches = {
+                'model:' + resource.name.casefold(): resource for resource in self.resources
+                if resource.category == category and (query in resource.title.casefold() or query in title.casefold())
+            }
+            if matches:
+                self.entries.update(matches)
+                self.grouped[category] = list(matches)
+                CategoryRow(self, self.area.content, HierarchyCategory(category, title), 0)
+        self.npc_entries = {
+            'npc:' + npc.instance.casefold(): npc for npc in self.npcs
+            if query in npc.title.casefold() or query in npc.instance.casefold() or query in 'npc'
+        }
+        if self.npc_entries:
+            self.grouped['npcs'] = list(self.npc_entries)
+            CategoryRow(self, self.area.content, HierarchyCategory('npcs', 'NPC'), 0)
+        if not (self.entries or self.npc_entries):
+            label(self.area.content, 'Ничего не найдено', fg=MUTED).pack(padx=12, pady=15)
+        self.area.canvas.yview_moveto(position[0] if position else 0)
 
-    def _select(self, _event=None):
-        selected = self.tree.selection()
-        if selected and selected[0] in self.entries:self.on_select(self.entries[selected[0]])
-        elif selected and selected[0] in self.npc_entries:self.on_select_npc(self.npc_entries[selected[0]])
+    def bind_category(self, row, category):
+        super().bind_category(row, category)
+        row.header.bind_row('<Button-3>', lambda event: self.context(event))
+        self.bind_navigation(row.header)
+        row.header.bind('<Right>', lambda event: self.navigate_branch(row, True))
+        row.header.bind('<Left>', lambda event: self.navigate_branch(row, False))
 
-    def update_npc(self,npc):
-        self.npcs=[npc if value.instance==npc.instance else value for value in self.npcs]
-        key='npc:'+npc.instance.casefold()
+    @staticmethod
+    def visible_rows(container):
+        for child in container.winfo_children():
+            if isinstance(child, CategoryRow):
+                yield child.header
+                if child.opened:
+                    yield from WorldPanel.visible_rows(child.content)
+            elif isinstance(child, HierarchyRow):
+                yield child
+
+    def bind_navigation(self, row):
+        row.bind('<Up>', lambda event: self.navigate(row, -1))
+        row.bind('<Down>', lambda event: self.navigate(row, 1))
+
+    def navigate(self, row, step):
+        rows = list(self.visible_rows(self.area.content))
+        index = rows.index(row) + step
+        if 0 <= index < len(rows):
+            self.focus_row(rows[index])
+        return 'break'
+
+    def navigate_branch(self, row, open_branch):
+        if row.opened != open_branch:
+            row.toggle()
+        elif open_branch:
+            child = next(self.visible_rows(row.content), None)
+            if child is not None:
+                self.focus_row(child)
+        elif isinstance(row.master.master, CategoryRow):
+            self.focus_row(row.master.master.header)
+        return 'break'
+
+    def focus_row(self, row):
+        row.focus_set()
+        row.update_idletasks()
+        canvas = self.area.canvas
+        top = row.winfo_rooty() - canvas.winfo_rooty()
+        bottom = top + row.winfo_height()
+        window = canvas.bbox(self.area.window)
+        if window is not None and (top < 0 or bottom > canvas.winfo_height()):
+            offset = top if top < 0 else bottom - canvas.winfo_height()
+            canvas.yview_moveto((canvas.canvasy(0) + offset) / max(1, window[3]))
+        key = next((key for key, entry in self.rows.items() if entry is row), None)
+        if key is not None:
+            self.select(key)
+
+    def count(self, category):
+        return len(self.grouped.get(category.key, ())) + sum(self.count(child) for child in category.children)
+
+    @staticmethod
+    def caption(value):
+        return value.title + ('  • Проект' if value.overridden else '')
+
+    def row_item(self, parent, key, level):
+        value = self.npc_entries[key] if key in self.npc_entries else self.entries[key]
+        row = HierarchyRow(parent, self.caption(value), level)
+        self.rows[key] = row
+        row.set_selected(key == self.selected)
+        row.bind_activate(lambda: self.select(key))
+        row.bind_row('<Button-3>', lambda event: self.context(event, key))
+        row.bind('<Left>', lambda event: self.focus_row(parent.master.header))
+        self.bind_navigation(row)
+
+    def select(self, key):
         if key in self.npc_entries:
-            self.npc_entries[key]=npc
-            self.tree.item(key,text=npc.title+('  • Проект' if npc.overridden else ''))
+            result = self.on_select_npc(self.npc_entries[key])
+        else:
+            result = self.on_select(self.entries[key])
+        if result is False:
+            return False
+        previous = self.rows.get(self.selected)
+        if previous is not None:
+            previous.set_selected(False)
+        self.selected = key
+        row = self.rows.get(key)
+        if row is not None:
+            row.set_selected(True)
+        return True
+
+    def context(self, event, key=None):
+        commands = [('Добавить из Gothic', self.on_add)]
+        if key is not None:
+            if not self.select(key):
+                return
+            commands.append(('Удалить из проекта', self.on_remove))
+        self.popup(event, commands)
+
+    def update_npc(self, npc):
+        self.npcs = [npc if value.instance == npc.instance else value for value in self.npcs]
+        key = 'npc:' + npc.instance.casefold()
+        if self.search.get().strip():
+            self.rebuild()
+        elif key in self.npc_entries:
+            self.npc_entries[key] = npc
+            row = self.rows.get(key)
+            if row is not None:
+                row.title_label.configure(text=self.caption(npc))
 
 
 class WorldPropertiesPanel(Panel):

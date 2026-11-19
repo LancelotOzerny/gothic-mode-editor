@@ -82,7 +82,7 @@ class NpcController:
         return dict(name=npc.title,visual=npc.visual,body=npc.body,head=npc.head,armor=npc.armor)
 
     def select(self,npc):
-        if not self.app._save_editors():return
+        if not self.app._save_editors():return False
         self.deselect()
         self.app._cancel_model_load()
         self.app.current=None

@@ -1,41 +1,25 @@
 """Recipe list and property form built from the editor's shared widgets."""
 import tkinter as tk
 from gothic_editor.core.localization import tr
-from gothic_editor.ui.widgets import label, make_entry, MUTED, PANEL, BORDER, INPUT, TXT, ACCENT
+from gothic_editor.ui.widgets import label, MUTED
 from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
-from gothic_editor.ui.widgets.buttons import PropertyButton
 from gothic_editor.ui.widgets.item_binding import ItemBindingTile
+from .hierarchy import CategoryRow, HierarchyBrowser, HierarchyCategory, HierarchyRow
 
 
-class RecipeListPanel(Panel):
+class RecipeListPanel(HierarchyBrowser):
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller
-        from gothic_editor.ui.widgets.icons import IconImages
         self.owner, self.origin = self, 'project'
-        self.expanded, self.category_rows, self.grouped = {}, {}, {}
-        self.arrow_frames = IconImages.shared(self).frames('arrow_right.png', 18, MUTED, PANEL, steps=13)
-        self.on_create = controller.add
-        self.search = tk.StringVar(self)
-        make_entry(self, textvariable=self.search).pack(fill='x', padx=12, pady=(12,0))
-        self.separator = tk.Frame(self, bg=BORDER, height=1)
-        self.separator.pack(fill='x', padx=12, pady=15)
-        heading = tk.Frame(self, bg=PANEL)
-        heading.pack(fill='x', padx=12)
-        label(heading, tr('recipes.categories_heading'), font=('Arial',10,'bold')).pack(side='left')
-        plus = tk.Label(heading, text='+', bg=INPUT, fg=ACCENT, font=('Arial',14,'bold'), width=2, cursor='hand2')
-        plus.pack(side='right')
-        plus.bind('<Button-1>', lambda _:controller.category_action('create'))
-        self.categories_separator = tk.Frame(self, bg=BORDER, height=1)
-        self.categories_separator.pack(fill='x', padx=12, pady=15)
+        self.category_rows, self.grouped = {}, {}
+        self.add_header_action(lambda: controller.category_action('create'), tr('recipes.add_category'))
         self.area = ScrollableArea(self)
         self.area.pack(fill='both', expand=True)
         self.search.trace_add('write', lambda *_: self.populate())
 
     def populate(self):
-        from types import SimpleNamespace
         from gothic_editor.core.recipe_categories import RecipeCategories
-        from .hierarchy import CategoryRow
         position = self.area.canvas.yview()
         for child in self.area.content.winfo_children():
             child.destroy()
@@ -57,35 +41,28 @@ class RecipeListPanel(Panel):
                        (query in category['name'].casefold() or query in (r['id']+' '+r['name']).casefold())]
             if query and not matches and query not in category['name'].casefold():continue
             self.grouped[category['id']] = matches
-            row = CategoryRow(self, self.area.content, SimpleNamespace(key=category['id'], title=category['name'], icon='', children=()), 0)
-            row.pack_configure(pady=(25 if len(self.category_rows) > 1 else 0, 0))
-            if category['id']:
-                for widget in [row, row.title_label, row.arrow, row.title_label.master]:
-                    widget.bind('<Button-3>', lambda event, code=category['id']:self.category_context(event, code))
+            CategoryRow(self, self.area.content, HierarchyCategory(category['id'], category['name']), 0)
         self.area.canvas.yview_moveto(position[0] if position else 0)
 
-    def category_title(self, category):return category.title
+    def bind_category(self, row, category):
+        super().bind_category(row, category)
+        row.header.bind_row('<Button-3>', lambda event: self.category_context(event, category.key))
 
-    def can_create(self, category):return True
-
-    def count(self, category):return len(self.grouped.get(category.key, []))
+    def count(self, category):
+        return len(self.grouped.get(category.key, []))
 
     def row_item(self, parent, recipe, level):
-        button = PropertyButton(parent, lambda: self.controller.select(recipe), text=recipe['name'], align='left')
-        button.pack(fill='x', padx=(26,5))
-        button.set_selected(self.controller.current is not None and recipe['id']==self.controller.current['id'])
-        button.bind('<Button-3>', lambda event:self.recipe_context(event, recipe))
-
-    def popup(self, event, commands):
-        menu = tk.Menu(self, tearoff=False, bg=INPUT, fg=TXT)
-        for title, command in commands:menu.add_command(label=title, command=command)
-        try:menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            menu.grab_release()
+        row = HierarchyRow(parent, recipe['name'], level)
+        current = self.controller.current
+        row.set_selected(current is not None and recipe['id'] == current['id'])
+        row.bind_activate(lambda: self.controller.select(recipe))
+        row.bind_row('<Button-3>', lambda event: self.recipe_context(event, recipe))
 
     def category_context(self, event, code):
-        self.popup(event, [(tr('recipes.'+key), lambda action=key:self.controller.category_action(action, code))
-                           for key in ('edit','duplicate','delete')])
+        commands = [(tr('recipes.' + key), lambda action=key: self.controller.category_action(action, code))
+                    for key in ('edit', 'duplicate', 'delete')] if code else []
+        commands.append((tr('recipes.add_recipe'), lambda: self.controller.add(code)))
+        self.popup(event, commands)
 
     def recipe_context(self, event, recipe):
         self.controller.select(recipe)

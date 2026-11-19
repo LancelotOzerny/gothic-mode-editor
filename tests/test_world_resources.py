@@ -233,6 +233,27 @@ class WorldUITests(WorldFixture,unittest.TestCase):
             self.store.replace('model','House.3ds',self.replacement,'architecture')
             app.world._changed()
             self.assertTrue(app.world.current.overridden)
+
+            from gothic_editor.ui.panels.hierarchy import CategoryRow, HierarchyRow
+            panel = app.world_panel
+            branch = panel.category_rows['architecture']
+            row = panel.rows['model:house.3ds']
+            self.assertIsInstance(branch, CategoryRow)
+            self.assertIsInstance(row, HierarchyRow)
+            self.assertIs(branch.master, panel.area.content)
+            self.assertIs(panel.import_button.master, panel.heading_bar)
+            self.assertIn('Проект', row.title_label.cget('text'))
+            with patch.object(panel, 'popup') as popup:
+                panel.context(None, 'model:house.3ds')
+            self.assertTrue(row.selected)
+            self.assertEqual(popup.call_args.args[1][-1][1], panel.on_remove)
+            panel.search.set('')
+            self.assertFalse(panel.category_rows['architecture'].opened)
+            panel.category_rows['architecture'].toggle()
+            panel.rebuild()
+            self.assertTrue(panel.category_rows['architecture'].opened)
+            self.assertTrue(panel.rows['model:house.3ds'].selected)
+
             from gothic_editor.core.project_selection import ProjectSelection
             ProjectSelection(app.repo.root,'Worlds').add('House.3ds')
             with patch('gothic_editor.ui.controllers.world.messagebox.askyesno',return_value=False):

@@ -85,15 +85,21 @@ class HierarchyUiTests(unittest.TestCase):
                 self.assertTrue(app._save_editors())
                 self.assertEqual(app.repo.item_hierarchy.row(group.key)['name'],'Protection')
                 row = app.hierarchy.sections['project'].category_rows[group.key]
-                self.assertEqual(str(row.icon_label.cget('image')),str(row.group_icons['#3a4d66']))
-                self.assertEqual(row.group_icons['#3a4d66'].width(),18)
+                def check_icon(color):
+                    from gothic_editor.ui.widgets import ACCENT
+                    icon = app.hierarchy.icons.frames('editor/union.png', 18, ACCENT, color)[0]
+                    self.assertEqual(str(row.icon_label.cget('image')), str(icon))
+                    self.assertEqual(icon.width(), 18)
+
+                check_icon('#3a4d66')
                 category_row = app.hierarchy.sections['project'].category_rows['potions']
                 self.assertFalse(category_row.icon_label.cget('image'))
                 app.hierarchy.selected_node = None
-                row.set_hover(True)
-                self.assertEqual(str(row.icon_label.cget('image')),str(row.group_icons['#26364a']))
-                row.set_hover(False)
-                self.assertEqual(str(row.icon_label.cget('image')),str(row.group_icons[row.cget('bg')]))
+                row.refresh_selection()
+                row.header.set_hover(True)
+                check_icon('#26364a')
+                row.header.set_hover(False)
+                check_icon(row.cget('bg'))
                 self.assertFalse(any(widget.cget('text')=='+' for widget in row.header.winfo_children()
                                      if 'text' in widget.keys()))
                 app.properties.node_name.delete(0,'end')
