@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import tempfile
 from time import monotonic
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -248,11 +249,21 @@ class WorldUITests(WorldFixture,unittest.TestCase):
             self.assertTrue(row.selected)
             self.assertEqual(popup.call_args.args[1][-1][1], panel.on_remove)
             panel.search.set('')
-            self.assertFalse(panel.category_rows['architecture'].opened)
-            panel.category_rows['architecture'].toggle()
+            branch = panel.category_rows['architecture']
+            self.assertFalse(branch.opened)
+            panel.navigate(SimpleNamespace(widget=panel, keysym='Right'))
+            self.assertFalse(branch.opened)
+            panel.select_category('architecture')
+            self.assertFalse(branch.opened)
+            panel.navigate(SimpleNamespace(widget=panel, keysym='Right'))
             panel.rebuild()
             self.assertTrue(panel.category_rows['architecture'].opened)
+            self.assertFalse(panel.rows['model:house.3ds'].selected)
+            panel.navigate(SimpleNamespace(widget=panel, keysym='Down'))
             self.assertTrue(panel.rows['model:house.3ds'].selected)
+            panel.navigate(SimpleNamespace(widget=panel, keysym='Up'))
+            panel.navigate(SimpleNamespace(widget=panel, keysym='Left'))
+            self.assertFalse(panel.category_rows['architecture'].opened)
 
             from gothic_editor.core.project_selection import ProjectSelection
             ProjectSelection(app.repo.root,'Worlds').add('House.3ds')

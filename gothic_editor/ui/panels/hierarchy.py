@@ -26,6 +26,7 @@ class HierarchyBrowser(Panel):
     def __init__(self, parent):
         super().__init__(parent)
         self.expanded = {}
+        self.active_category = None
         self.icons = IconImages.shared(self)
         self.search = tk.StringVar(self)
         self.heading_bar = tk.Frame(self, bg=PANEL, height=FIELD_HEIGHT)
@@ -34,6 +35,8 @@ class HierarchyBrowser(Panel):
         label(self.heading_bar, tr('hierarchy.title'), font=('Arial', 10, 'bold')).pack(side='left')
         make_entry(self, textvariable=self.search).pack(fill='x', padx=10, pady=(0, 10), ipady=6)
         self._context_menu = None
+        self.configure(takefocus=True)
+        self.bind_navigation(self)
 
     def add_header_action(self, command, caption):
         button = self.add_button('+', command, parent=self.heading_bar, caption=caption)
@@ -68,10 +71,94 @@ class HierarchyBrowser(Panel):
         return category.title
 
     def is_category_selected(self, category):
-        return False
+        return category.key == self.active_category
+
+    def select_category(self, key):
+        previous = self.category_rows.get(self.active_category)
+        self.active_category = key
+        if previous is not None:
+            previous.refresh_selection()
+        row = self.category_rows.get(key)
+        if row is not None and row is not previous:
+            row.refresh_selection()
 
     def bind_category(self, row, category):
-        row.header.bind_activate(row.toggle)
+        self.bind_activate(row.header, lambda: self.select_category(category.key), exclude=row.arrow)
+        self.bind_disclosure(row)
+
+    def bind_activate(self, row, command, *, exclude=None):
+        def activate(_):
+            self.focus_set()
+            command()
+            return 'break'
+
+        row.on_select = command
+        row.configure(takefocus=True)
+        row.bind_row('<Button-1>', activate, exclude=exclude)
+        row.bind('<Return>', activate)
+        row.bind('<space>', activate)
+        self.bind_navigation(row)
+
+    def bind_navigation(self, widget):
+        for key in ('Up', 'Down', 'Left', 'Right'):
+            widget.bind(f'<{key}>', self.navigate)
+
+    @staticmethod
+    def bind_disclosure(row):
+        row.arrow.bind('<Button-1>', lambda _: row.toggle())
+
+    def navigation_areas(self):
+        return (self.area,)
+
+    def visible_rows(self, container):
+        for child in container.pack_slaves():
+            if isinstance(child, CategoryRow):
+                yield child.header
+                if child.opened:
+                    yield from self.visible_rows(child.content)
+            elif isinstance(child, HierarchyRow):
+                yield child
+
+    def navigate(self, event):
+        rows = [(area, row) for area in self.navigation_areas()
+                for row in self.visible_rows(area.content)]
+        selected = [index for index, (_, row) in enumerate(rows) if row.selected]
+        focused = next((index for index, (_, row) in enumerate(rows) if row is event.widget), None)
+        if event.keysym in ('Left', 'Right'):
+            if len(selected) == 1 and (focused is None or focused == selected[0]):
+                area, row = rows[selected[0]]
+                self.navigate_horizontal(area, row, event.keysym == 'Right')
+        else:
+            step = 1 if event.keysym == 'Down' else -1
+            if focused is None:
+                focused = (selected[-1] if step > 0 else selected[0]) if selected else (
+                    -1 if step > 0 else len(rows))
+            index = focused + step
+            if 0 <= index < len(rows):
+                self.activate_row(*rows[index])
+        return 'break'
+
+    def navigate_horizontal(self, area, row, opened):
+        if isinstance(row.master, CategoryRow) and row.master.opened != opened:
+            row.master.toggle()
+
+    def activate_row(self, area, row):
+        self.focus_set()
+        if row.on_select() is False:
+            return
+        if not row.winfo_exists():
+            row = next((row for row in self.visible_rows(area.content) if row.selected), None)
+        if row is None:
+            return
+        area.update_idletasks()
+        self.focus_set()
+        canvas = area.canvas
+        top = row.winfo_rooty() - canvas.winfo_rooty()
+        bottom = top + row.winfo_height()
+        window = canvas.bbox(area.window)
+        if window is not None and (top < 0 or bottom > canvas.winfo_height()):
+            offset = top if top < 0 else bottom - canvas.winfo_height()
+            canvas.yview_moveto((canvas.canvasy(0) + offset) / max(1, window[3]))
 
 
 class HierarchyRow(tk.Frame):
@@ -104,17 +191,6 @@ class HierarchyRow(tk.Frame):
             if widget is exclude:
                 continue
             widget.bind(sequence, callback)
-
-    def bind_activate(self, command):
-        def activate(_):
-            self.focus_set()
-            command()
-            return 'break'
-
-        self.configure(takefocus=True)
-        self.bind_row('<Button-1>', activate)
-        self.bind('<Return>', activate)
-        self.bind('<space>', activate)
 
     def set_hover(self, hovered):
         self.hovered = hovered
@@ -164,12 +240,6 @@ class CategoryRow(tk.Frame):
         if self.opened:
             self.show_content()
         self.bind('<Destroy>', self.cancel_animation, add='+')
-
-    def select_node(self, event=None):
-        if event is not None and event.state & 1:
-            self.section.owner.toggle_selection(self.category)
-        elif self.section.owner.select_node(self.category) and self.winfo_exists():
-            self.toggle()
 
     def refresh_selection(self):
         owner = self.section.owner
@@ -273,6 +343,7 @@ class HierarchySection(Panel):
                            icon='•' if item.origin == 'project' else '○',
                            fg='#7bd5a9' if item.origin == 'project' else MUTED)
         row.item = item
+        row.on_select = lambda: self.owner.select(row.item)
         row.set_selected(selected)
         self.item_rows[self.owner.item_key(item)] = row
         if selected:
@@ -533,11 +604,15 @@ class HierarchyPanel(HierarchyBrowser):
 
     def bind_category(self, row, category):
         header = row.header
+        header.on_select = lambda: self.select_node(category)
         header.bind_row('<Button-3>', lambda event: self.context_node(event, category))
         header.bind_row('<Button-1>', lambda event: self.press_node(event, category), exclude=row.arrow)
         header.bind_row('<B1-Motion>', self.drag_motion, exclude=row.arrow)
         header.bind_row('<ButtonRelease-1>', self.release_item, exclude=row.arrow)
-        row.arrow.bind('<Button-1>', lambda _: row.toggle())
+        self.bind_disclosure(row)
+
+    def navigation_areas(self):
+        return (section.scroll_area for section in self.sections.values())
 
     def is_category_selected(self, category):
         return self.is_selected(category)
@@ -676,9 +751,10 @@ class HierarchyPanel(HierarchyBrowser):
         self.paint_selection()
         if self.drag_preview is None:
             from gothic_editor.ui.widgets.drag_preview import DragPreview
-            self.drag_preview = DragPreview(self,[value.name if isinstance(value,Category) else value.title
-                                                  for value in values])
-        title = self.store.title(self.store.row(target)) if target else 'В исходные категории'
+            self.drag_preview = DragPreview(self)
+        title = ''
+        if allowed:
+            title = self.store.title(self.store.row(target)) if target else 'В исходные категории'
         self.drag_preview.move(event.x_root,event.y_root,title,allowed)
 
     def cancel_drag(self,event=None):
@@ -702,11 +778,10 @@ class HierarchyPanel(HierarchyBrowser):
                    and self.store.can_move(values,target))
         self.cancel_drag()
         if not drag[3]:
-            if isinstance(drag[2],Category):
-                if not self.select_node(drag[2]):return
-                for section in self.sections.values():
-                    row = section.category_rows.get(drag[2].key)
-                    if row is not None:row.toggle()
-            elif len(self.selection_keys())>1:self.select(drag[2])
+            if len(self.selection_keys()) > 1:
+                if isinstance(drag[2], Category):
+                    self.select_node(drag[2])
+                else:
+                    self.select(drag[2])
             return
         if allowed and self.on_batch is not None:self.on_batch('move',values,target)

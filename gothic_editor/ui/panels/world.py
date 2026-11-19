@@ -63,55 +63,19 @@ class WorldPanel(HierarchyBrowser):
     def bind_category(self, row, category):
         super().bind_category(row, category)
         row.header.bind_row('<Button-3>', lambda event: self.context(event))
-        self.bind_navigation(row.header)
-        row.header.bind('<Right>', lambda event: self.navigate_branch(row, True))
-        row.header.bind('<Left>', lambda event: self.navigate_branch(row, False))
 
-    @staticmethod
-    def visible_rows(container):
-        for child in container.winfo_children():
-            if isinstance(child, CategoryRow):
-                yield child.header
-                if child.opened:
-                    yield from WorldPanel.visible_rows(child.content)
-            elif isinstance(child, HierarchyRow):
-                yield child
-
-    def bind_navigation(self, row):
-        row.bind('<Up>', lambda event: self.navigate(row, -1))
-        row.bind('<Down>', lambda event: self.navigate(row, 1))
-
-    def navigate(self, row, step):
-        rows = list(self.visible_rows(self.area.content))
-        index = rows.index(row) + step
-        if 0 <= index < len(rows):
-            self.focus_row(rows[index])
-        return 'break'
-
-    def navigate_branch(self, row, open_branch):
-        if row.opened != open_branch:
-            row.toggle()
-        elif open_branch:
-            child = next(self.visible_rows(row.content), None)
+    def navigate_horizontal(self, area, row, opened):
+        branch = row.master
+        if isinstance(branch, CategoryRow) and branch.opened != opened:
+            super().navigate_horizontal(area, row, opened)
+        elif opened and isinstance(branch, CategoryRow):
+            child = next(self.visible_rows(branch.content), None)
             if child is not None:
-                self.focus_row(child)
-        elif isinstance(row.master.master, CategoryRow):
-            self.focus_row(row.master.master.header)
-        return 'break'
-
-    def focus_row(self, row):
-        row.focus_set()
-        row.update_idletasks()
-        canvas = self.area.canvas
-        top = row.winfo_rooty() - canvas.winfo_rooty()
-        bottom = top + row.winfo_height()
-        window = canvas.bbox(self.area.window)
-        if window is not None and (top < 0 or bottom > canvas.winfo_height()):
-            offset = top if top < 0 else bottom - canvas.winfo_height()
-            canvas.yview_moveto((canvas.canvasy(0) + offset) / max(1, window[3]))
-        key = next((key for key, entry in self.rows.items() if entry is row), None)
-        if key is not None:
-            self.select(key)
+                self.activate_row(area, child)
+        elif not opened:
+            container = branch.master if isinstance(branch, CategoryRow) else branch
+            if isinstance(container.master, CategoryRow):
+                self.activate_row(area, container.master.header)
 
     def count(self, category):
         return len(self.grouped.get(category.key, ())) + sum(self.count(child) for child in category.children)
@@ -124,11 +88,15 @@ class WorldPanel(HierarchyBrowser):
         value = self.npc_entries[key] if key in self.npc_entries else self.entries[key]
         row = HierarchyRow(parent, self.caption(value), level)
         self.rows[key] = row
-        row.set_selected(key == self.selected)
-        row.bind_activate(lambda: self.select(key))
+        row.set_selected(key == self.selected and self.active_category is None)
+        self.bind_activate(row, lambda: self.select(key))
         row.bind_row('<Button-3>', lambda event: self.context(event, key))
-        row.bind('<Left>', lambda event: self.focus_row(parent.master.header))
-        self.bind_navigation(row)
+
+    def select_category(self, key):
+        super().select_category(key)
+        row = self.rows.get(self.selected)
+        if row is not None:
+            row.set_selected(key is None)
 
     def select(self, key):
         if key in self.npc_entries:
@@ -137,6 +105,7 @@ class WorldPanel(HierarchyBrowser):
             result = self.on_select(self.entries[key])
         if result is False:
             return False
+        self.select_category(None)
         previous = self.rows.get(self.selected)
         if previous is not None:
             previous.set_selected(False)

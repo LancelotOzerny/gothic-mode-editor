@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from gothic_editor.app import EditorApp
@@ -120,6 +121,23 @@ class RecipeUITests(unittest.TestCase):
         self.assertTrue(panel.category_rows['health'].opened)
         panel.category_rows['health'].toggle()
         panel.populate()
+        row = panel.category_rows['health']
+        self.assertFalse(row.opened)
+        def key(keysym):
+            panel.navigate(SimpleNamespace(widget=panel, keysym=keysym))
+
+        key('Right')
+        self.assertFalse(row.opened)
+        panel.select_category('health')
+        self.assertTrue(row.header.selected)
+        self.assertFalse(row.opened)
+        key('Right')
+        self.assertTrue(row.opened)
+        key('Down')
+        self.assertTrue(panel.selected_recipe_row.selected)
+        key('Up')
+        self.assertEqual(panel.active_category, 'health')
+        key('Left')
         self.assertFalse(panel.category_rows['health'].opened)
 
     def test_modal_add_new_assigns_destination_category(self):

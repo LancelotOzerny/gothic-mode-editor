@@ -151,11 +151,14 @@ class MultipleTests(unittest.TestCase):
         self.assertIsNotNone(self.panel.drag_preview)
         self.assertEqual(self.panel.drop_target,(self.group,True))
         self.assertEqual(row.header.cget('bg'),'#315b50')
-        self.assertIn(self.store.row(self.group)['name'],self.panel.drag_preview.status.cget('text'))
+        status = self.panel.drag_preview.status
+        self.assertEqual(status.cget('text'), self.store.row(self.group)['name'])
+        self.assertEqual(status.master.winfo_children(), [status])
         armor = self.panel.sections['project'].category_rows['armor']
         with patch.object(self.panel,'winfo_containing',return_value=armor.title_label):
             self.panel.drag_motion(motion)
         self.assertEqual(self.panel.drop_target,('armor',False))
+        self.assertEqual(status.cget('text'), 'Перенос недоступен')
         self.assertEqual(armor.header.cget('bg'),'#683f48')
         self.assertNotEqual(row.header.cget('bg'),'#315b50')
         popup = self.panel.drag_preview
@@ -165,6 +168,38 @@ class MultipleTests(unittest.TestCase):
         self.assertIsNone(self.panel.drop_target)
         self.assertEqual(armor.header.cget('bg'),armor.cget('bg'))
         self.assertEqual(self.store.location(self.first),'potions')
+
+    def test_category_click_selects_and_only_disclosure_expands(self):
+        self.app.update()
+        section = self.panel.sections['project']
+        category = section.category_rows['potions']
+        category.title_label.event_generate('<ButtonPress-1>', x=2, y=2)
+        category.title_label.event_generate('<ButtonRelease-1>', x=2, y=2)
+        self.assertEqual(self.panel.selected_node, 'potions')
+        self.assertFalse(category.opened)
+
+        self.panel.focus_force()
+        self.panel.event_generate('<KeyPress-Down>')
+        next_category = section.inner.pack_slaves()[1]
+        self.assertEqual(self.panel.selected_node, next_category.category.key)
+        self.panel.event_generate('<KeyPress-Up>')
+        self.assertEqual(self.panel.selected_node, 'potions')
+        self.panel.event_generate('<KeyPress-Right>')
+        self.assertTrue(category.opened)
+        self.app.update_idletasks()
+
+        group = section.category_rows[self.group]
+        group.arrow.event_generate('<ButtonPress-1>', x=2, y=2)
+        self.assertTrue(group.opened)
+        self.assertEqual(self.panel.selected_node, 'potions')
+
+        self.panel.event_generate('<KeyPress-Down>')
+        self.assertEqual(self.panel.selected_node, self.group)
+        self.panel.event_generate('<KeyPress-Left>')
+        self.assertFalse(group.opened)
+        self.assertEqual(self.panel.selected_node, self.group)
+        self.panel.event_generate('<KeyPress-Down>')
+        self.assertEqual(self.panel.selected, self.panel.item_key(self.first))
 
     def test_group_drag_keeps_subtree_and_membership(self):
         target = self.store.create_group('potions')

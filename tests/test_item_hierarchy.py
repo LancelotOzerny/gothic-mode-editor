@@ -104,7 +104,7 @@ class HierarchyUiTests(unittest.TestCase):
                                      if 'text' in widget.keys()))
                 app.properties.node_name.delete(0,'end')
                 app.properties.node_name.insert(0,'Protection updated')
-                row.select_node()  # Saving the previous draft can rebuild this very row.
+                app.hierarchy.select_node(row.category)  # Saving the previous draft can rebuild the tree.
                 self.assertEqual(app.repo.item_hierarchy.row(group.key)['name'],'Protection updated')
                 item = app.repo.create_item('potions')
                 controller.move(item,group.key)

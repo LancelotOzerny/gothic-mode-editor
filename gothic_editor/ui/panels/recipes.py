@@ -13,6 +13,7 @@ class RecipeListPanel(HierarchyBrowser):
         self.controller = controller
         self.owner, self.origin = self, 'project'
         self.category_rows, self.grouped = {}, {}
+        self.selected_recipe_row = None
         self.add_header_action(lambda: controller.category_action('create'), tr('recipes.add_category'))
         self.area = ScrollableArea(self)
         self.area.pack(fill='both', expand=True)
@@ -24,6 +25,7 @@ class RecipeListPanel(HierarchyBrowser):
         for child in self.area.content.winfo_children():
             child.destroy()
         self.category_rows, self.grouped = {}, {}
+        self.selected_recipe_row = None
         query = self.search.get().strip().casefold()
         if self.controller.error:
             label(self.area.content, self.controller.error, wraplength=270).pack(fill='x', padx=12)
@@ -51,11 +53,18 @@ class RecipeListPanel(HierarchyBrowser):
     def count(self, category):
         return len(self.grouped.get(category.key, []))
 
+    def select_category(self, key):
+        super().select_category(key)
+        if self.selected_recipe_row is not None:
+            self.selected_recipe_row.set_selected(key is None)
+
     def row_item(self, parent, recipe, level):
         row = HierarchyRow(parent, recipe['name'], level)
         current = self.controller.current
-        row.set_selected(current is not None and recipe['id'] == current['id'])
-        row.bind_activate(lambda: self.controller.select(recipe))
+        if current is not None and recipe['id'] == current['id']:
+            self.selected_recipe_row = row
+            row.set_selected(self.active_category is None)
+        self.bind_activate(row, lambda: self.controller.select(recipe))
         row.bind_row('<Button-3>', lambda event: self.recipe_context(event, recipe))
 
     def category_context(self, event, code):

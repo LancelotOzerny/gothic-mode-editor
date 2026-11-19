@@ -61,7 +61,7 @@ class RecipeController:
     def select(self, recipe, persisted=True):
         same_recipe = self.current is not None and recipe['id'] == self.current['id']
         if not self.app._save_editors():
-            return
+            return False
         if same_recipe:
             recipe = self.current
         elif persisted:
@@ -70,6 +70,7 @@ class RecipeController:
         self.current = deepcopy(recipe)
         self.persisted = persisted
         self.panel.show(self.current)
+        self.app.recipe_list.select_category(None)
         self.app.recipe_list.expanded[('project', self.current.get('category',''))] = True
         self.app.recipe_list.populate()
 
