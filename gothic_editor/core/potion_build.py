@@ -9,7 +9,7 @@ from .daedalus_merge import (
     DaedalusMergeError, ScriptTree, declaration_text, definitions, target_path,
 )
 from .potion_components import PotionComponents
-from .scripts import load_text,parse_items
+from .scripts import load_text,parse_items,replace_field
 from .action_build import prepare_actions
 from .item_layout import project_scripts
 from .categories import classify
@@ -23,7 +23,7 @@ def apply_potions(project: Path, content: Path):
     for path in (project_scripts(project)/'Content').rglob('*'):
         if path.is_file() and path.suffix.lower()=='.d':
             script_items.extend(item for item in parse_items(path,'project')
-                                if classify(item) in ('scrolls','runes') and item.editor_metadata.get('item_actions'))
+                                if classify(item) in ('scrolls','runes','documents') and item.editor_metadata.get('item_actions'))
     if not replacements and not additions and not helpers and not script_items:
         return []
     tree = ScriptTree(content)
@@ -32,7 +32,8 @@ def apply_potions(project: Path, content: Path):
         replacements,additions,helpers=store.generated(handlers)
         helpers.extend(action_sources)
     changes = defaultdict(list)
-    helpers.extend(configure_scroll_cast(script_items,handlers,tree,changes))
+    helpers.extend(configure_scroll_cast([item for item in script_items if classify(item) in ('scrolls','runes')],
+                                        handlers,tree,changes))
     requests = {}
     missing = []
 
@@ -57,6 +58,12 @@ def apply_potions(project: Path, content: Path):
     for name, source in replacements.items():
         if not request(name, 'instance', source, str(store.root / name)):
             missing.append(name)
+    for item in script_items:
+        handler=handlers.get(item.instance.casefold())
+        if classify(item)=='documents' and handler:
+            source=replace_field(item.text,'on_state[0]',handler)
+            if not request(item.instance,'instance',source,str(item.path)):
+                missing.append(item.instance)
     if missing:
         raise DaedalusMergeError('Не найдены оригинальные INSTANCE: ' + ', '.join(sorted(missing)))
 

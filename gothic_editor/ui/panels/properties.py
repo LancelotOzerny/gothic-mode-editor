@@ -28,6 +28,7 @@ class PropertiesPanel(Panel):
         self._schema=None
         self._loading=False
         self.appearance_holder=None
+        self.original_actions=None
         self.error_labels={}
         self.editor=PropertyEditor(self)
         self.bind('<Destroy>',lambda event:self.editor.reset() if event.widget is self else None,add='+')
@@ -63,6 +64,7 @@ class PropertiesPanel(Panel):
         self.sections={}
         self._schema=None
         self.appearance_holder=None
+        self.original_actions=None
         if item is None:
             self.info.config(text=tr('properties.select_in_hierarchy'))
             return
@@ -105,6 +107,7 @@ class PropertiesPanel(Panel):
                         if property_key(key) not in known:
                             self.render_field(frame.body,PropertyField(key,key),item.fields[key])
         self._attach_action_parameters()
+        self._show_original_actions(item)
         if self.on_appearance is not None and classify(item) in EDITABLE_CATEGORIES and 'appearance' in self.sections:
             self.appearance_holder=tk.Frame(self.sections['appearance'].body,bg=PANEL)
             self.appearance_holder.pack(fill='x')
@@ -149,12 +152,32 @@ class PropertiesPanel(Panel):
                 self.initial[key]=value
                 self.editor.watch(key,entry.value_variable)
             self._attach_action_parameters()
+            self._show_original_actions(item)
             if self.appearance_holder is not None:
                 for child in self.appearance_holder.winfo_children():child.destroy()
                 self.on_appearance(self.appearance_holder,item)
             if self.editable:self.set_save_status('properties.saved')
             else:self.save_status.config(text='')
         finally:self._loading=False
+
+    def _show_original_actions(self,item):
+        """Display source callbacks without turning them into additional calls."""
+        if self.original_actions is not None:self.original_actions.destroy()
+        self.original_actions=None
+        if classify(item) not in ('potions','documents') or 'actions' not in self.sections:return
+        callbacks=[(key,value.strip()) for key,value in item.fields.items()
+                   if re.fullmatch(r'on_state\[[0-3]\]',key,re.I) and value.strip() not in ('','0')]
+        if not callbacks:return
+        parent=self.sections['actions'].body
+        holder=tk.Frame(parent,bg=PANEL)
+        self.original_actions=holder
+        children=parent.winfo_children()
+        if len(children)>1:holder.pack(before=children[0],fill='x',padx=8,pady=(4,8))
+        else:holder.pack(fill='x',padx=8,pady=(4,8))
+        label(holder,'Исходные действия (сохраняются)',fg=MUTED,anchor='w').pack(fill='x')
+        for key,value in sorted(callbacks):
+            field=create_field(holder,value=f'{key}: {value}',readonly=True)
+            field.pack(fill='x',pady=(3,0))
 
     def _attach_action_parameters(self):
         if 'parameters' in self.sections:
