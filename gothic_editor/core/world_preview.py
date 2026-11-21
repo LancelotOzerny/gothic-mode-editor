@@ -22,8 +22,8 @@ PRESET_ARCHIVES = frozenset(('lensflare.zen', 'dialogcams.zen', 'lightpresets.ze
 
 def is_location_zen(path: str | Path) -> bool:
     """Keep known engine preset archives out of the playable location list."""
-    path = Path(path)
-    return path.suffix.casefold() == '.zen' and path.name.casefold() not in PRESET_ARCHIVES
+    name = Path(path.name).name if isinstance(path, VdfEntry) else Path(path).name
+    return Path(name).suffix.casefold() == '.zen' and name.casefold() not in PRESET_ARCHIVES
 
 
 def available_locations(game: str | Path):
