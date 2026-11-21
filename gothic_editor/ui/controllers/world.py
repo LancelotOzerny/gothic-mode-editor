@@ -32,12 +32,29 @@ class WorldController:
         selected=ProjectSelection(repo.root,'Worlds').read()
         self.app.world_panel.set_resources([value for value in self.catalog if value.overridden or value.name.casefold() in selected])
 
+    def _resource_paths(self,kind,name):
+        store=self.store
+        logical=resource_name(name,kind)
+        path=store._target(logical,kind)
+        paths=[store.manifest,path]
+        if kind=='model':paths.append(path.with_suffix('.mrm'))
+        existing=store.overrides(kind).get(logical.casefold())
+        if existing is not None:paths.append(existing)
+        return paths
+
+    def _remember(self,paths,operation):
+        saved=self.app.history.capture(paths)
+        result=operation()
+        self.app.history.record(saved)
+        return result
+
     def add(self):
         self.refresh()
         options=self.catalog
         def choose(index):
             resource=options[index]
-            ProjectSelection(self.app.repo.root,'Worlds').add(resource.name)
+            selection=ProjectSelection(self.app.repo.root,'Worlds')
+            self._remember((selection.path,),lambda:selection.add(resource.name))
             window.destroy()
             self.refresh()
             self.select(resource)
@@ -64,8 +81,12 @@ class WorldController:
                 'Удалить объект из списка проекта и отменить замену его модели? '
                 'Глобальные замены текстур сохранятся; их можно отменить отдельно.',parent=self.app):return
         try:
-            self.store.remove('model',resource.name)
-            ProjectSelection(self.app.repo.root,'Worlds').remove(resource.name)
+            selection=ProjectSelection(self.app.repo.root,'Worlds')
+            paths=[*self._resource_paths('model',resource.name),selection.path]
+            def remove():
+                self.store.remove('model',resource.name)
+                selection.remove(resource.name)
+            self._remember(paths,remove)
             self.current=None
             self.app._cancel_model_load()
             self.app.repo.refresh()
@@ -117,18 +138,22 @@ class WorldController:
         resource = self.current
         if resource is None:return
         source = filedialog.askopenfilename(parent=self.app, title='Заменить модель', filetypes=[('Готовая модель Gothic (MRM)', '*.mrm'),('3DS', '*.3ds')])
-        if source:self._confirm(lambda:self.store.replace('model', resource.name, source, resource.category))
+        if source:self._confirm(lambda:self._remember(self._resource_paths('model',resource.name),
+            lambda:self.store.replace('model',resource.name,source,resource.category)))
 
     def reset_model(self):
         resource = self.current
-        if resource is not None:self._confirm(lambda:self.store.remove('model', resource.name))
+        if resource is not None:self._confirm(lambda:self._remember(self._resource_paths('model',resource.name),
+            lambda:self.store.remove('model',resource.name)))
 
     def replace_texture(self, name):
         source = filedialog.askopenfilename(parent=self.app, title='Заменить текстуру', filetypes=[('TGA / TEX', '*.tga *.tex')])
-        if source:self._confirm(lambda:self.store.replace('texture', name, source))
+        if source:self._confirm(lambda:self._remember(self._resource_paths('texture',name),
+            lambda:self.store.replace('texture',name,source)))
 
     def reset_texture(self, name):
-        self._confirm(lambda:self.store.remove('texture', name))
+        self._confirm(lambda:self._remember(self._resource_paths('texture',name),
+            lambda:self.store.remove('texture',name)))
 
     def texture_overridden(self, name):
         return resource_name(name, 'texture').casefold() in self.store.overrides('texture')
