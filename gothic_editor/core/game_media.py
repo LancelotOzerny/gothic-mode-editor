@@ -49,6 +49,7 @@ class GameMedia:
         if kind not in KINDS:raise ValueError('Неизвестный тип медиа')
         folder = self.root / kind
         if not folder.is_dir():return []
+        self.files.checked(folder)
         return sorted((path for path in folder.iterdir()
                        if path.is_file() and not path.is_symlink()
                        and path.suffix.casefold()==('.tex' if kind=='images' else '.bik')),
@@ -67,7 +68,7 @@ class GameMedia:
             texture=read_texture(source.read_bytes())
             data=write_ztex(texture)
         else:
-            if source.suffix.casefold()!='.bik' or source.open('rb').read(4)!=b'BIKi':
+            if source.suffix.casefold()!='.bik' or not source.read_bytes()[:3]==b'BIK':
                 raise ValueError('Требуется видеоролик Gothic в формате BIK')
             data=None
         target.parent.mkdir(parents=True, exist_ok=True)
