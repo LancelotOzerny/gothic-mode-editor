@@ -82,6 +82,26 @@ class GameMediaTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             GameMedia.export_file(resource,Path(self.temp.name)/'bad.mp4')
 
+    def test_external_bink_frame_queue(self):
+        from gothic_editor.core.bink_process import BinkProcessDecoder
+        from queue import Queue
+        from types import SimpleNamespace
+        decoder=SimpleNamespace(error=None,queue=Queue(),finished=False,number=0)
+        self.assertIs(BinkProcessDecoder.next_frame(decoder),False)
+        decoder.queue.put(bytes([10,20,30]))
+        self.assertEqual(BinkProcessDecoder.next_frame(decoder),bytes([10,20,30]))
+        self.assertEqual(decoder.number,1)
+        decoder.finished=True
+        self.assertIsNone(BinkProcessDecoder.next_frame(decoder))
+
+    def test_external_bink_exact_reader(self):
+        import io
+        from gothic_editor.core.bink_process import BinkProcessDecoder
+        stream=io.BytesIO(b'abcde')
+        self.assertEqual(BinkProcessDecoder._exact(stream,3),b'abc')
+        with self.assertRaises(EOFError):
+            BinkProcessDecoder._exact(stream,3)
+
     def test_bink_dll_architecture_detection(self):
         from gothic_editor.core.bink_decoder import dll_compatible
         for machine,bits in ((0x14c,32),(0x8664,64)):
