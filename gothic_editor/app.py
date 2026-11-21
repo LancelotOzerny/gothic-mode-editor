@@ -25,6 +25,7 @@ from gothic_editor.ui.controllers.tool_runner import ToolRunner
 from gothic_editor.ui.widgets.icons import IconImages
 from gothic_editor.ui.widgets.dock import BottomDock
 from gothic_editor.ui.panels.resources import ResourcesPanel
+from gothic_editor.ui.windows.game_media import GameMediaWindow
 from .core.recent_projects import RecentProjects
 from .core.categories import classify, EDITABLE_CATEGORIES
 from gothic_editor.ui.panels.welcome import WelcomeScreen
@@ -54,6 +55,7 @@ class EditorApp(tk.Tk):
         localization.set_language(self.settings.get_value('interface.general.language'))
         self.settings_window=None
         self.spreadsheet_window=None
+        self.media_window=None
         self._dock_resize_after=None
         self._bottom_tab_specs={}
         self._bottom_tab_variables={}
@@ -130,6 +132,7 @@ class EditorApp(tk.Tk):
         edit.add_command(label='Отменить',accelerator='Ctrl+Z',command=lambda:self.undo_redo(False))
         edit.add_command(label='Повторить',accelerator='Ctrl+Y',command=lambda:self.undo_redo(True))
         menu.add_cascade(label='Правка',menu=edit)
+        project.add_command(label='Медиа игры',command=self.show_game_media)
         menu.add_cascade(label=tr('app.project'),menu=project)
         view=tk.Menu(menu,tearoff=False)
         windows=tk.Menu(view,tearoff=False)
@@ -146,6 +149,16 @@ class EditorApp(tk.Tk):
         self.config(menu=menu)
         self.main_menu=menu
         if previous is not None:previous.destroy()
+
+    def show_game_media(self):
+        if not self.need_project():return
+        window=self.media_window
+        if window is not None and window.winfo_exists():
+            window.lift()
+            return
+        if not self._save_editors():return
+        self.media_window=GameMediaWindow(self)
+        self.media_window.show_centered()
 
     def show_spreadsheet(self,operation):
         if not self.need_project():return
