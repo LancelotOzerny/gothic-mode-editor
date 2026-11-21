@@ -11,6 +11,8 @@ from pathlib import Path
 import re
 import struct
 
+from .zen_binsafe import BinSafeError, read_binsafe
+
 
 _HEADER_BYTES = 16 * 1024
 _MAX_ASCII_BYTES = 128 * 1024 * 1024
@@ -80,14 +82,14 @@ def _header(stream):
         _, count, hash_offset = struct.unpack('<III', raw)
         if hash_offset < stream.tell():
             raise ZenWorldError('Некорректное положение таблицы BIN_SAFE.')
-        return int(version_line[4:]), archiver, encoding, save_line.endswith('1'), count
+        return int(version_line[4:]), archiver, encoding, save_line.endswith('1'), count, hash_offset
     count = None
     for _ in range(32):
         part = line()
         if re.fullmatch(r'objects \d+', part):
             count = int(part.split()[1])
         if part == 'END':
-            return int(version_line[4:]), archiver, encoding, save_line.endswith('1'), count
+            return int(version_line[4:]), archiver, encoding, save_line.endswith('1'), count, None
     raise ZenWorldError('Не найден конец заголовка объектов ZEN.')
 
 
@@ -101,7 +103,18 @@ def inspect_zen(path: str | Path, *, include_objects: bool = True) -> ZenWorldIn
     if source.suffix.casefold() != '.zen':
         raise ZenWorldError('Выберите файл мира с расширением .ZEN.')
     with source.open('rb') as stream:
-        version, archiver, encoding, saved, count = _header(stream)
+        version, archiver, encoding, saved, count, hash_offset = _header(stream)
+        if encoding == 'BIN_SAFE' and include_objects:
+            try:
+                entries, has_mesh, has_tree = read_binsafe(
+                    stream, stream.tell(), hash_offset, source.stat().st_size)
+            except BinSafeError as exc:
+                raise ZenWorldError(str(exc)) from exc
+            objects = tuple(ZenWorldObject(
+                entry.name, entry.classes, entry.index, entry.parent_index,
+                entry.properties) for entry in entries)
+            return ZenWorldInfo(source, encoding, archiver, version, saved, count,
+                                objects, has_mesh, has_tree, True)
         if encoding != 'ASCII' or not include_objects:
             return ZenWorldInfo(source, encoding, archiver, version, saved, count, (), False, False, False)
         if source.stat().st_size > _MAX_ASCII_BYTES:
