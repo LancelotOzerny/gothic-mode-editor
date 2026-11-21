@@ -4,6 +4,7 @@ import os,tkinter as tk
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tkinter import filedialog,messagebox,ttk
+from . import __version__
 from .core.project import ProjectRepository
 from .core.edit_history import EditHistory
 from .ui.widgets import BG,PANEL,TXT,MUTED,label,Tooltip
@@ -74,7 +75,7 @@ class EditorApp(tk.Tk):
         self.terminal_height=self.settings.get_value('interface.terminal.height')
         self.icons=IconImages(self)
         self._tool_runner=ToolRunner(self,lambda message:self.terminal.append(message),self._tool_completed)
-        self.title('Gothic Editor — 0.2')
+        self.title(f'Gothic Editor — v{__version__}')
         width,height=self.settings.get_value('interface.general.window_size')
         width,height=max(870,width),max(540,height)
         x=max(0,(self.winfo_screenwidth()-width)//2)
