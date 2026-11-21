@@ -162,6 +162,7 @@ class WorldPreviewPanel(tk.Frame):
                 pass
         if not self._closed:
             self.canvas.pack(fill='both', expand=True, before=self._footer)
+            self._update_chunk_status()
             self.queue_draw()
             self._log_message('[ZEN] OpenGL отключён: ' + reason +
                               '. Переключился на Tkinter.', error=True)
@@ -274,6 +275,9 @@ class WorldPreviewPanel(tk.Frame):
         else:
             self.reset_camera()
             self._update_chunk_status()
+            self._log_message(
+                '[ZEN] Отображаю геометрию MeshAndBsp. Отдельные модели VOB '
+                '(например, части построек) пока не загружаются.')
             if self._scene.vertices:
                 lows = tuple(min(vertex[axis] for vertex in self._scene.vertices)
                              for axis in range(3))
