@@ -27,6 +27,7 @@ class WorldPreviewWindow(tk.Toplevel):
         self._focus = None
         self._camera_center = None
         self._camera_target = None
+        self._world_height = 0.0
         self._animation_id = None
         self._solid = True
         settings = getattr(parent, 'settings', None)
@@ -144,6 +145,7 @@ class WorldPreviewWindow(tk.Toplevel):
         self._focus = None
         self._camera_center = None
         self._camera_target = None
+        self._world_height = 0.0
         if self._animation_id is not None:
             self.after_cancel(self._animation_id)
             self._animation_id = None
@@ -179,10 +181,13 @@ class WorldPreviewWindow(tk.Toplevel):
         try:
             self._world = future.result()
             self._focus = self._world.origin
-            self._camera_center = self._chunk_center(self._focus)
-            self._camera_target = self._camera_center
             self._scene = self._world.view(self._focus, self._chunk_radius,
                                            self._triangle_limit)
+            if self._scene.vertices:
+                ys = [v[1] for v in self._scene.vertices]
+                self._world_height = (min(ys) + max(ys)) / 2
+            self._camera_center = self._chunk_center(self._focus)
+            self._camera_target = self._camera_center
         except Exception as exc:
             self.status.configure(text='Ошибка чтения ZEN: ' + str(exc))
             self._log_exception('Ошибка загрузки', exc)
@@ -217,14 +222,8 @@ class WorldPreviewWindow(tk.Toplevel):
 
     def _chunk_center(self, focus):
         size = self._world.chunk_size
-        # Camera frame is based on the chunk grid, not sampled faces.
-        # Preserve a stable height while navigating horizontally.
-        if self._world.vertices:
-            ys = [v[1] for v in self._scene.vertices] if self._scene and self._scene.vertices else [0.0]
-            height = (min(ys) + max(ys)) / 2
-        else:
-            height = 0.0
-        return ((focus[0] + 0.5) * size, height, (focus[1] + 0.5) * size)
+        return ((focus[0] + 0.5) * size, self._world_height,
+                (focus[1] + 0.5) * size)
 
     def toggle_surfaces(self):
         self._solid = not self._solid
@@ -325,6 +324,9 @@ class WorldPreviewWindow(tk.Toplevel):
                      if self._world is not None else None)
             # Draw back-to-front so near edges remain legible.
             faces = sorted(scene.faces, key=lambda f: sum(points[i][2] for i in f))
+            # Keep animation responsive while many Tk polygons are present.
+            if self._animation_id is not None and len(faces) > 1200:
+                faces = faces[::max(1, len(faces)//1200)]
             for a, b, c in faces:
                 triangle = (points[a], points[b], points[c])
                 if all(p[0] < -10 for p in triangle) or all(p[0] > w+10 for p in triangle):
