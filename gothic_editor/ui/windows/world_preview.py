@@ -6,13 +6,14 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog
 
-from gothic_editor.core.world_preview import load_world_wireframe, project_wireframe
+from gothic_editor.core.world_preview import (load_world_wireframe, project_wireframe,
+    available_locations, is_location_zen)
 
 
 class WorldPreviewWindow(tk.Toplevel):
     def __init__(self, parent, game=None):
         super().__init__(parent)
-        self.title('Просмотр мира Gothic — каркас')
+        self.title('Редактор локаций Gothic — просмотр геометрии')
         self.geometry('1020x710')
         self.configure(bg='#191e29')
         self._executor = ThreadPoolExecutor(max_workers=1)
@@ -28,10 +29,21 @@ class WorldPreviewWindow(tk.Toplevel):
         self.zoom = 1.0
         self.pan_x = self.pan_y = 0.0
         self._game = Path(game) if game else None
+        self._location_paths = []
         header = tk.Frame(self, bg='#232b39')
         header.pack(fill='x')
-        tk.Button(header, text='Открыть .ZEN', command=self.choose_file,
+        tk.Button(header, text='Открыть файл .ZEN', command=self.choose_file,
                   bg='#334155', fg='white', relief='flat').pack(side='left', padx=12, pady=10)
+        tk.Label(header, text='Локация:', bg='#232b39',
+                 fg='#cbd5e1').pack(side='left', padx=(14, 4))
+        self.location_value = tk.StringVar(self)
+        self.location_menu = tk.OptionMenu(header, self.location_value, '')
+        self.location_menu.configure(bg='#334155', fg='white', relief='flat',
+                                     highlightthickness=0, width=24)
+        self.location_menu.pack(side='left', padx=4)
+        self.location_value.trace_add('write', self._selected_location)
+        tk.Button(header, text='Обновить список', command=self.refresh_locations,
+                  bg='#334155', fg='white', relief='flat').pack(side='left', padx=4)
         tk.Button(header, text='Сбросить камеру', command=self.reset_camera,
                   bg='#334155', fg='white', relief='flat').pack(side='left', padx=4)
         self.status = tk.Label(header, text='Выберите файл .ZEN из папки Gothic',
@@ -53,7 +65,29 @@ class WorldPreviewWindow(tk.Toplevel):
                           bg='#232b39', fg='#94a3b8', anchor='center')
         footer.pack(fill='x', pady=0, ipady=7)
         self.protocol('WM_DELETE_WINDOW', self.close)
+        self.refresh_locations()
         self.queue_draw()
+
+    def refresh_locations(self):
+        self._location_paths = available_locations(self._game) if self._game else []
+        menu = self.location_menu['menu']
+        menu.delete(0, 'end')
+        for index, path in enumerate(self._location_paths):
+            label = path.stem
+            menu.add_command(label=label, command=lambda i=index: self._load_selection(i))
+        if self._location_paths:
+            self.status.configure(text=f'Найдено локаций: {len(self._location_paths)}. Выберите мир.')
+        else:
+            self.status.configure(text='В папке Gothic не найдены игровые .ZEN. Выберите файл вручную.')
+
+    def _load_selection(self, index):
+        path = self._location_paths[index]
+        self.location_value.set(path.stem)
+        self.open_file(path)
+
+    def _selected_location(self, *_):
+        # Explicit menu action triggers loading; the trace is reserved for future state.
+        pass
 
     def choose_file(self):
         options = {}
@@ -66,6 +100,11 @@ class WorldPreviewWindow(tk.Toplevel):
             self.open_file(path)
 
     def open_file(self, path):
+        if not is_location_zen(path):
+            self.status.configure(text='Служебный ZEN (пресеты Gothic), не игровая локация: ' + Path(path).name)
+            self._scene = None
+            self.queue_draw()
+            return
         if self._future is not None:
             self.status.configure(text='Завершите загрузку текущего мира перед открытием другого.')
             return
