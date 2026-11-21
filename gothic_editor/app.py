@@ -763,6 +763,7 @@ class EditorApp(tk.Tk):
             self.viewer.master.master.paneconfigure(self.viewer.master,hide=True)
         else:
             self.viewer.master.master.paneconfigure(self.viewer.master,hide=False)
+        self.world_panel.preview_button.configure(state='normal' if mode=='world' else 'disabled')
         self.world_panel.on_add=self.npcs.add if mode=='npc' else self.world.add
         self.world_panel.on_remove=self.npcs.remove if mode=='npc' else self.world.remove
         inspector.pack(fill='both',expand=True)
