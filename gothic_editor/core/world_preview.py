@@ -252,3 +252,30 @@ def face_color(vertices, face):
     strength = 0.36 + 0.64*abs((nx*0.28 + ny*0.84 + nz*0.46)/length)
     channels = tuple(int(base*strength) for base in (139, 161, 177))
     return '#%02x%02x%02x' % channels
+
+
+def camera_chunk(center, chunk_size):
+    """Current X/Z chunk from world-space camera center (negative safe)."""
+    return floor(center[0] / chunk_size), floor(center[2] / chunk_size)
+
+
+def move_camera(center, forward, right, yaw, distance):
+    """Move along horizontal camera-aligned forward/right axes."""
+    dx = (right*cos(yaw) - forward*sin(yaw)) * distance
+    dz = (right*sin(yaw) + forward*cos(yaw)) * distance
+    return center[0]+dx, center[1], center[2]+dz
+
+
+def drag_camera(center, dx_pixels, dy_pixels, width, height, yaw, pitch,
+                zoom, span):
+    """Translate the camera by a screen-space drag, preserving the world anchor."""
+    scale = min(width, height) * 0.85 * zoom / max(span, 1e-6)
+    # Horizontal plane is edge-on at pitch=0: clamp that singularity.
+    sp = sin(pitch)
+    if abs(sp) < 0.15:
+        sp = -0.15 if sp <= 0 else 0.15
+    u = -dx_pixels / scale
+    v = -dy_pixels / (sp * scale)
+    dx = u*cos(yaw) - v*sin(yaw)
+    dz = u*sin(yaw) + v*cos(yaw)
+    return center[0]+dx, center[1], center[2]+dz
