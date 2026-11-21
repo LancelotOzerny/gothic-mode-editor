@@ -9,10 +9,26 @@ from dataclasses import dataclass
 from math import cos, sin, isfinite
 from pathlib import Path
 
-from .zen_world import load_zen_geometry
+from .zen_world import load_zen_geometry, ZenWorldError
 
 
 MAX_PREVIEW_TRIANGLES = 3500
+
+# These ZenGin archives store shared presets, not playable level meshes.
+PRESET_ARCHIVES = frozenset(('lensflare.zen', 'dialogcams.zen', 'lightpresets.zen'))
+
+
+def is_location_zen(path: str | Path) -> bool:
+    """Keep known engine preset archives out of the playable location list."""
+    path = Path(path)
+    return path.suffix.casefold() == '.zen' and path.name.casefold() not in PRESET_ARCHIVES
+
+
+def available_locations(game: str | Path):
+    """List loose worlds; game resource archives are deliberately not unpacked."""
+    from .zen_world import discover_zen
+    return [path for path in discover_zen(game) if is_location_zen(path)]
+
 
 
 @dataclass(frozen=True)
@@ -42,6 +58,8 @@ def prepare_wireframe(geometry, limit=MAX_PREVIEW_TRIANGLES):
 
 def load_world_wireframe(path: str | Path):
     """Worker-thread entry point: never touches Tk widgets."""
+    if not is_location_zen(path):
+        raise ZenWorldError('Это служебный архив Gothic с пресетами, а не игровая локация.')
     geometry = load_zen_geometry(path, include_triangles=True)
     return prepare_wireframe(geometry)
 
