@@ -1,8 +1,8 @@
 """Read-only, bounded inspection of ZenGin world archives.
 
-Only ASCII archives expose VOB properties in this first iteration. Binary
-archives are identified but deliberately not misinterpreted as text. This
-module does not rewrite or unpack game files.
+ASCII and BIN_SAFE archives expose VOB properties. Unannotated BINARY
+archives support metadata inspection only. Large mesh payloads are not
+decoded; this module does not rewrite or unpack game files.
 """
 from __future__ import annotations
 
@@ -96,8 +96,8 @@ def _header(stream):
 def inspect_zen(path: str | Path, *, include_objects: bool = True) -> ZenWorldInfo:
     """Inspect a loose .ZEN file without changing it or loading binary meshes.
 
-    BIN_SAFE and BINARY support header discovery only; geometry extraction and
-    VOB properties require a separate format-aware decoder.
+    ASCII and BIN_SAFE can return VOB properties. BINARY is header-only.
+    Geometry payloads are deliberately not decoded yet.
     """
     source = Path(path)
     if source.suffix.casefold() != '.zen':
