@@ -143,22 +143,22 @@ def project_wireframe(scene, width, height, yaw, pitch, zoom, pan_x=0.0, pan_y=0
     if not isfinite(radius) or radius < 1e-6:
         radius = 1.0
     scale = min(width, height) * 0.85 * zoom / radius
-    cy, sy = cos(yaw), sin(yaw)
-    cp, sp = cos(pitch), sin(pitch)
+    cos_yaw, sin_yaw = cos(yaw), sin(yaw)
+    cos_pitch, sin_pitch = cos(pitch), sin(pitch)
     result = []
     for vx, vy, vz in vertices:
         x, y, z = vx-center[0], vy-center[1], vz-center[2]
-        rx, rz = x*cy+z*sy, -x*sy+z*cy
-        ry = y*cp-rz*sp
-        depth = y*sp+rz*cp
+        rx, rz = x*cos_yaw+z*sin_yaw, -x*sin_yaw+z*cos_yaw
+        ry = y*cos_pitch-rz*sin_pitch
+        depth = y*sin_pitch+rz*cos_pitch
         sx = width/2 + rx*scale + pan_x
-        sy = height/2 - ry*scale + pan_y
-        if not all(isfinite(v) for v in (sx, sy, depth)):
+        screen_y = height/2 - ry*scale + pan_y
+        if not all(isfinite(v) for v in (sx, screen_y, depth)):
             raise ValueError(
                 'Некорректные координаты модели ZEN: '
                 f'вершина=({vx!r}, {vy!r}, {vz!r}), '
                 f'границы={tuple(zip(lo, hi))!r}, '
                 f'масштаб={scale!r}, камера=({yaw!r}, {pitch!r}, {zoom!r}), '
                 f'экран=({width}, {height})')
-        result.append((sx, sy, depth))
+        result.append((sx, screen_y, depth))
     return tuple(result)
