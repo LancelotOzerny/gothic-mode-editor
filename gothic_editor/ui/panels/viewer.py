@@ -170,7 +170,7 @@ class ModelViewer(tk.Canvas):
             return
         width, height = max(1,w-20), max(1,h-110)
         # Keep rotation responsive; render at native resolution once dragging ends.
-        factor = max(1, (max(width,height)+479)//480) if preview else 1
+        factor = max(2, (max(width,height)+319)//320) if preview else 1
         rw, rh = max(1,width//factor), max(1,height//factor)
         key=(self._scene_revision,w,h,self.angle_x,self.angle_y,self.zoom,self.textured,factor)
         self._wanted_key=key
@@ -190,7 +190,8 @@ class ModelViewer(tk.Canvas):
     def _frame_ready(self,key,ppm):
         wanted=self._wanted_key
         if wanted is None or key[0]!=self._scene_revision:return
-        if key!=wanted and wanted in self._frames:return
+        # Skip obsolete frames: decoding and upscaling them blocks Tk on the UI thread.
+        if key!=wanted:return
         picture=tk.PhotoImage(master=self,data=ppm,format='PPM')
         self._frames[key]=picture.zoom(key[7]) if key[7]>1 else picture
         self._frames.move_to_end(key)
