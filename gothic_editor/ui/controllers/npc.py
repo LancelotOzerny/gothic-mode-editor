@@ -46,7 +46,10 @@ class NpcController:
         options=self.items
         def choose(index):
             npc=options[index]
-            ProjectSelection(self.app.repo.root,'NPC').add(npc.instance)
+            selection=ProjectSelection(self.app.repo.root,'NPC')
+            saved=self.app.history.capture((selection.path,))
+            selection.add(npc.instance)
+            self.app.history.record(saved)
             window.destroy()
             self.show_list()
             self.select(npc)
@@ -68,8 +71,11 @@ class NpcController:
         if not messagebox.askyesno('Удалить из проекта',
                 'Удалить NPC из списка проекта и отменить изменения его свойств?',parent=self.app):return
         try:
+            selection=ProjectSelection(self.app.repo.root,'NPC')
+            saved=self.app.history.capture((self.store.path,selection.path))
             self.store.save(npc.instance,{})
-            ProjectSelection(self.app.repo.root,'NPC').remove(npc.instance)
+            selection.remove(npc.instance)
+            self.app.history.record(saved)
             self.deselect()
             self.stamp=None
             self.app._cancel_model_load()
@@ -119,7 +125,9 @@ class NpcController:
             baseline=self.catalog.base[self.current.instance.casefold()]
             defaults=self.values(baseline)
             updates={key:value for key,value in values.items() if value!=defaults[key]}
+            saved=self.app.history.capture((self.store.path,))
             self.store.save(self.current.instance,updates)
+            self.app.history.record(saved)
             changed_model=any(values[key]!=self.initial[key] for key in ('visual','body','head','armor'))
             self.current=self.store.apply(baseline,updates)
             self.items=[self.current if value.instance==self.current.instance else value for value in self.items]
@@ -140,7 +148,9 @@ class NpcController:
         if self.current is None:return
         try:
             npc=self.current
+            saved=self.app.history.capture((self.store.path,))
             self.store.save(npc.instance,{})
+            self.app.history.record(saved)
             # Reset fields without saving the previous draft back over the reset.
             self.deselect()
             self.items=[self.catalog.base[npc.instance.casefold()] if value.instance==npc.instance else value for value in self.items]
