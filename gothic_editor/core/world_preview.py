@@ -201,17 +201,17 @@ def load_world_wireframe(path: str | Path | VdfEntry, chunk_size=6000):
     return build_world_chunks(geometry, chunk_size)
 
 
-def project_wireframe(scene, width, height, yaw, pitch, zoom, pan_x=0.0, pan_y=0.0):
+def project_wireframe(scene, width, height, yaw, pitch, zoom, pan_x=0.0, pan_y=0.0, *, center=None, span=None):
     """Project 3D world coordinates to screen; return vertex screen positions."""
     if not scene.vertices:
         return ()
     vertices = scene.vertices
     lo = tuple(min(v[axis] for v in vertices) for axis in range(3))
     hi = tuple(max(v[axis] for v in vertices) for axis in range(3))
-    center = tuple((low + high) / 2 for low, high in zip(lo, hi))
+    center = tuple((low + high) / 2 for low, high in zip(lo, hi)) if center is None else center
     # Tiny but non-zero world bounds can cause division to overflow to inf.
     # Badly decoded geometry frequently consists of subnormal float values.
-    radius = max(high - low for low, high in zip(lo, hi))
+    radius = max(high - low for low, high in zip(lo, hi)) if span is None else span
     if not isfinite(radius) or radius < 1e-6:
         radius = 1.0
     scale = min(width, height) * 0.85 * zoom / radius
@@ -234,3 +234,21 @@ def project_wireframe(scene, width, height, yaw, pitch, zoom, pan_x=0.0, pan_y=0
                 f'экран=({width}, {height})')
         result.append((sx, screen_y, depth))
     return tuple(result)
+
+
+def face_color(vertices, face):
+    """Muted directional shading from world-space triangle normal."""
+    from math import sqrt
+    a, b, c = (vertices[i] for i in face)
+    u = tuple(b[i] - a[i] for i in range(3))
+    v = tuple(c[i] - a[i] for i in range(3))
+    nx = u[1]*v[2]-u[2]*v[1]
+    ny = u[2]*v[0]-u[0]*v[2]
+    nz = u[0]*v[1]-u[1]*v[0]
+    length = sqrt(nx*nx + ny*ny + nz*nz)
+    if length < 1e-9:
+        return '#344151'
+    # Double-sided, since winding may vary in world meshes.
+    strength = 0.36 + 0.64*abs((nx*0.28 + ny*0.84 + nz*0.46)/length)
+    channels = tuple(int(base*strength) for base in (139, 161, 177))
+    return '#%02x%02x%02x' % channels
