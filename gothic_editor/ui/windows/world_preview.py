@@ -131,7 +131,7 @@ class WorldPreviewWindow(tk.Toplevel):
     def _log_exception(self, phase, exc):
         detail = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         source = getattr(self, '_loading_source', '(файл не выбран)')
-        self._log_message(f'[ZEN] {phase}: {source}\\n{detail}', error=True)
+        self._log_message(f'[ZEN] {phase}: {source}\n{detail}', error=True)
 
     def _poll(self):
         self._poll_id = None
