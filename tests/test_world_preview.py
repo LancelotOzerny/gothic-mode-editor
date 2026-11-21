@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from gothic_editor.core.world_preview import (
     MAX_PREVIEW_TRIANGLES, prepare_wireframe, project_wireframe,
-    available_locations, is_location_zen, load_world_wireframe, build_world_chunks,
+    available_locations, is_location_zen, load_world_wireframe, build_world_chunks, face_color,
 )
 
 
@@ -138,6 +138,67 @@ class WorldPreviewTests(unittest.TestCase):
         self.assertTrue(all(math.isfinite(v) for point in result for v in point))
         for index in range(3):
             self.assertEqual(result[index], result[index + 3])
+
+    def test_fixed_camera_frame_keeps_scale_when_changing_chunks(self):
+        geometry = SimpleNamespace(
+            vertices=((0., 0., 0.), (100., 0., 0.), (0., 0., 100.),
+                      (12000., 0., 0.), (12100., 0., 0.), (12000., 0., 100.)),
+            triangles=((0, 1, 2), (3, 4, 5)),
+            vertex_count=6, triangle_count=2)
+        world = build_world_chunks(geometry, 6000)
+        scene_left = world.view((0, 0), radius=0)
+        scene_right = world.view((2, 0), radius=0)
+        left = project_wireframe(scene_left, 800, 600, .4, -.3, 1.,
+                                 center=(3000., 0., 3000.), span=6000)
+        right = project_wireframe(scene_right, 800, 600, .4, -.3, 1.,
+                                  center=(15000., 0., 3000.), span=6000)
+        left_edge = math.dist(left[0][:2], left[1][:2])
+        right_edge = math.dist(right[0][:2], right[1][:2])
+        self.assertAlmostEqual(left_edge, right_edge, places=6)
+
+    def test_surface_shading_valid_for_flat_and_degenerate_faces(self):
+        scene = prepare_wireframe(self.geometry)
+        for face in scene.faces:
+            shade = face_color(scene.vertices, face)
+            self.assertRegex(shade, r'^#[0-9a-f]{6}
+        scene = prepare_wireframe(self.geometry)
+        first = project_wireframe(scene, 600, 400, 0., 0., 1.)
+        second = project_wireframe(scene, 600, 400, 0., 0., 2., 10, -20)
+        self.assertEqual(len(first), len(scene.vertices))
+        self.assertAlmostEqual(second[0][0] - 300, (first[0][0] - 300) * 2 + 10)
+        self.assertAlmostEqual(second[0][1] - 200, (first[0][1] - 200) * 2 - 20)
+        self.assertTrue(all(math.isfinite(value) for point in second for value in point))
+
+    def test_invalid_preview_limit(self):
+        with self.assertRaises(ValueError):
+            prepare_wireframe(self.geometry, 0)
+        with self.assertRaises(ValueError):
+            prepare_wireframe(self.geometry, MAX_PREVIEW_TRIANGLES + 1)
+
+    def test_service_zen_files_are_not_locations(self):
+        with TemporaryDirectory() as temporary:
+            folder = Path(temporary) / '_work' / 'data' / 'Worlds'
+            folder.mkdir(parents=True)
+            for name in ('Lensflare.zen', 'DialogCams.zen',
+                         'LIGHTPRESETS.zen', 'NEWWORLD.ZEN'):
+                (folder / name).write_bytes(b'')
+            self.assertEqual([path.name for path in available_locations(temporary)],
+                             ['NEWWORLD.ZEN'])
+            for name in ('Lensflare.zen', 'DialogCams.zen', 'LIGHTPRESETS.zen'):
+                self.assertFalse(is_location_zen(name))
+                with self.assertRaisesRegex(ValueError, 'служебный архив'):
+                    load_world_wireframe(folder / name)
+
+    def test_empty_geometry(self):
+        empty = SimpleNamespace(vertices=(), triangles=(), vertex_count=0, triangle_count=0)
+        scene = prepare_wireframe(empty)
+        self.assertEqual(project_wireframe(scene, 400, 300, 0, 0, 1), ())
+
+
+if __name__ == '__main__':
+    unittest.main()
+)
+        self.assertEqual(face_color(scene.vertices, (0, 0, 0)), '#344151')
 
     def test_projection_center_pan_and_zoom(self):
         scene = prepare_wireframe(self.geometry)
