@@ -25,7 +25,7 @@ from gothic_editor.ui.controllers.tool_runner import ToolRunner
 from gothic_editor.ui.widgets.icons import IconImages
 from gothic_editor.ui.widgets.dock import BottomDock
 from gothic_editor.ui.panels.resources import ResourcesPanel
-from gothic_editor.ui.panels.media import MediaPanel, MediaPropertiesPanel
+from gothic_editor.ui.panels.media import MediaPanel, MediaPropertiesPanel, MediaPreview
 from gothic_editor.core.game_media import GameMedia
 from .core.recent_projects import RecentProjects
 from .core.categories import classify, EDITABLE_CATEGORIES
@@ -225,6 +225,7 @@ class EditorApp(tk.Tk):
         self.viewer=ModelViewer(middle)
         self.viewer.on_texture_mode=self._texture_mode_changed
         self.viewer.pack(fill='both',expand=True)
+        self.media_viewer=MediaPreview(middle)
         from .core.item_options import item_options
         inspector=tk.Frame(panes,bg=PANEL)
         panes.add(inspector,width=350,minsize=240)
@@ -738,6 +739,12 @@ class EditorApp(tk.Tk):
     def _show_resource_panels(self,mode):
         if mode!='items':self.viewer.set_inventory_source(None)
         self._resource_browser=mode
+        if mode=='media':
+            self.viewer.pack_forget()
+            self.media_viewer.pack(fill='both',expand=True)
+        else:
+            self.media_viewer.pack_forget()
+            self.viewer.pack(fill='both',expand=True)
         self.hierarchy.pack_forget()
         self.world_panel.pack_forget()
         self.media_panel.pack_forget()
@@ -779,7 +786,9 @@ class EditorApp(tk.Tk):
         self.recipes.deselect()
         self.recipe_properties.show(None)
         if mode=='recipes':self.recipes.load()
-        if mode=='media':self.load_media(keep=False)
+        if mode=='media':
+            self.load_media(keep=False)
+            self.media_viewer.show(None)
         self.properties.show(None)
         self.world_properties.show(None)
         self.npc_properties.show(None)
@@ -803,13 +812,16 @@ class EditorApp(tk.Tk):
                 row=next((x for x in all_resources if x.kind==selected.kind and
                           x.name.casefold()==selected.name.casefold()),None)
                 self.media_properties.show(row)
-            else:self.media_properties.show(None)
+                self.media_viewer.show(row)
+            else:
+                self.media_properties.show(None)
+                self.media_viewer.show(None)
         except (OSError,ValueError) as exc:
             messagebox.showerror('Медиа',str(exc),parent=self)
 
     def select_media(self,resource):
         self.media_properties.show(resource)
-        self.viewer.set_mesh(caption=resource.name)
+        self.media_viewer.show(resource)
 
     def _texture_mode_changed(self):
         camera=(self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom)
