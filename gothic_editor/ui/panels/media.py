@@ -92,108 +92,142 @@ class MediaPanel(HierarchyBrowser):
 
 
 class MediaPreview(Panel):
-    """Reuse the editor's central viewport for the selected image."""
+    """Image preview or an embedded video player with an initially paused frame."""
     def __init__(self,parent):
         super().__init__(parent,bg=BG)
         self.resource=None
+        self.game=None
         self.texture=None
         self.photo=None
         self.caption='Выберите изображение'
+        self._video_decoder=None
+        self._video_temp=None
+        self._video_after=None
+        self._video_paused=True
         self.canvas=tk.Canvas(self,bg=BG,highlightthickness=0)
         self.canvas.pack(fill='both',expand=True)
         self.canvas.bind('<Configure>',self.redraw)
-        self._video_decoder=None
-        self._video_paused=False
-        self._video_after=None
-        self._video_temp=None
+        self.controls=tk.Frame(self,bg=PANEL)
+        self.play_button=tk.Button(self.controls,text='▶',command=self.pause_video,
+                                   bg=PANEL,fg=TXT,relief='flat')
+        self.play_button.pack(side='left',padx=8,pady=8)
+        self.stop_button=tk.Button(self.controls,text='■',command=self.stop_video,
+                                   bg=PANEL,fg=TXT,relief='flat')
+        self.stop_button.pack(side='left',padx=8)
+        self.video_status=label(self.controls,'',fg=MUTED)
+        self.video_status.pack(side='left',padx=12)
         self.bind('<Destroy>',self._close_video,add='+')
-
-    def play_video(self,game):
-        """Render the installed game's Bink decoder output on our own Tk canvas."""
-        import tempfile
-        from gothic_editor.core.bink_decoder import BinkDecoder
-        resource=self.resource
-        if resource is None or resource.kind!='videos':return
-        self._close_video()
-        try:
-            source=resource.source
-            if isinstance(source,Path):
-                path=source
-            else:
-                self._video_temp=tempfile.TemporaryDirectory(prefix='gothic-video-')
-                path=Path(self._video_temp.name)/resource.name
-                path.write_bytes(source.read_bytes())
-            self._video_decoder=BinkDecoder(game,path)
-            self._video_paused=False
-            self._video_frame()
-        except Exception:
-            self._close_video()
-            raise
-
-    def pause_video(self):
-        if self._video_decoder is not None:
-            self._video_paused=not self._video_paused
-            if self._video_paused and self._video_after is not None:
-                self.after_cancel(self._video_after)
-                self._video_after=None
-            if not self._video_paused:self._video_frame()
-
-    def _video_frame(self):
-        decoder=self._video_decoder
-        if decoder is None or self._video_paused:return
-        data=decoder.next_frame()
-        if data is None:
-            self._close_video()
-            return
-        ppm=f'P6\n{decoder.width} {decoder.height}\n255\n'.encode('ascii')+data
-        self.photo=tk.PhotoImage(master=self,data=ppm,format='PPM')
-        self.texture=None
-        self.canvas.delete('all')
-        self.canvas.create_image(self.canvas.winfo_width()//2,
-                                 self.canvas.winfo_height()//2,image=self.photo)
-        self.canvas.create_text(12,10,text=f'{decoder.number}/{decoder.frames}',
-                                anchor='nw',fill=MUTED)
-        self._video_after=self.after(decoder.interval_ms,self._video_frame)
 
     def _close_video(self,event=None):
         if event is not None and event.widget is not self:return
-        after=self._video_after
-        self._video_after=None
-        if after is not None:
-            try:self.after_cancel(after)
+        if self._video_after is not None:
+            try:self.after_cancel(self._video_after)
             except tk.TclError:pass
+            self._video_after=None
         decoder=self._video_decoder
         self._video_decoder=None
         if decoder is not None:decoder.close()
-        if self.resource is not None and self.resource.kind=='videos':
-            self.caption='Видео остановлено'
-            self.photo=None
-            if event is None:self.redraw()
         temporary=self._video_temp
         self._video_temp=None
         if temporary is not None:
             try:temporary.cleanup()
             except OSError:pass
+        self._video_paused=True
 
-    def show(self,resource):
+    def _load_video(self):
+        from gothic_editor.core.bink_decoder import BinkDecoder
+        import tempfile
+        resource=self.resource
+        self._close_video()
+        if resource is None or resource.kind!='videos':return
+        try:
+            if isinstance(resource.source,Path):
+                source=resource.source
+            else:
+                self._video_temp=tempfile.TemporaryDirectory(prefix='gothic-video-')
+                source=Path(self._video_temp.name)/resource.name
+                source.write_bytes(resource.source.read_bytes())
+            self._video_decoder=BinkDecoder(self.game,source)
+            self._video_paused=True
+            self._next_video_frame()
+        except (OSError,ValueError) as exc:
+            self._close_video()
+            self.caption=str(exc)
+
+    def _next_video_frame(self):
+        decoder=self._video_decoder
+        if decoder is None:return
+        data=decoder.next_frame()
+        if data is None:
+            self._video_paused=True
+            self.play_button.configure(text='▶')
+            self.video_status.configure(text='Конец видео')
+            return
+        scale=max(1,(decoder.width+max(1,self.canvas.winfo_width())-1)//
+                  max(1,self.canvas.winfo_width()),
+                  (decoder.height+max(1,self.canvas.winfo_height())-1)//
+                  max(1,self.canvas.winfo_height()))
+        out_w=(decoder.width+scale-1)//scale
+        out_h=(decoder.height+scale-1)//scale
+        pixels=bytearray()
+        for y in range(0,decoder.height,scale):
+            for x in range(0,decoder.width,scale):
+                offset=(y*decoder.width+x)*3
+                pixels.extend(data[offset:offset+3])
+        ppm=f'P6\n{out_w} {out_h}\n255\n'.encode('ascii')+pixels
+        self.photo=tk.PhotoImage(master=self,data=ppm,format='PPM')
+        self.redraw()
+        self.video_status.configure(text=f'{decoder.number} / {decoder.frames}')
+        if not self._video_paused:
+            self._video_after=self.after(decoder.interval_ms,self._next_video_frame)
+
+    def pause_video(self):
+        if self._video_decoder is None:return
+        if self._video_paused and self._video_decoder.number>=self._video_decoder.frames:
+            self._load_video()
+        self._video_paused=not self._video_paused
+        self.play_button.configure(text='▶' if self._video_paused else 'Ⅱ')
+        if self._video_paused:
+            if self._video_after is not None:
+                self.after_cancel(self._video_after)
+                self._video_after=None
+        else:
+            self._video_after=self.after(self._video_decoder.interval_ms,self._next_video_frame)
+
+    def stop_video(self):
+        if self.resource is not None and self.resource.kind=='videos':
+            self._load_video()
+            self.redraw()
+
+    def show(self,resource,game=None):
         self._close_video()
         self.resource=resource
+        self.game=game
         self.texture=None
         self.photo=None
-        if resource is not None and resource.kind=='images':
-            try:self.texture=read_texture(resource.source.read_bytes())
-            except (OSError,ValueError) as exc:
-                self.caption='Ошибка чтения: '+str(exc)
-            else:self.caption=''
+        self.controls.pack_forget()
+        if resource is None:
+            self.caption='Выберите изображение'
+        elif resource.kind=='videos':
+            self.caption='Загрузка первого кадра BIK…'
+            self.controls.pack(side='bottom',fill='x')
+            self.play_button.configure(text='▶')
+            self.video_status.configure(text='Пауза')
+            self._load_video()
+            state='normal' if self._video_decoder is not None else 'disabled'
+            self.play_button.configure(state=state)
+            self.stop_button.configure(state=state)
         else:
-            self.caption='Выберите изображение' if resource is None else 'Видео BIK: предпросмотр недоступен'
+            try:self.texture=read_texture(resource.source.read_bytes())
+            except (OSError,ValueError) as exc:self.caption='Ошибка чтения: '+str(exc)
+            else:self.caption=''
         self.redraw()
 
     def redraw(self,_event=None):
         self.canvas.delete('all')
         width=max(1,self.canvas.winfo_width())
         height=max(1,self.canvas.winfo_height())
-        if self._video_decoder is not None and self.photo is not None:
+        if self.photo is not None and self.resource is not None and self.resource.kind=='videos':
             self.canvas.create_image(width//2,height//2,image=self.photo)
             return
         if self.texture is None:
@@ -205,13 +239,11 @@ class MediaPreview(Panel):
                   (texture.height+height-31)//max(1,height-30))
         out_w=(texture.width+scale-1)//scale
         out_h=(texture.height+scale-1)//scale
-        rgb=bytearray(out_w*out_h*3)
-        pos=0
+        rgb=bytearray()
         for y in range(0,texture.height,scale):
             for x in range(0,texture.width,scale):
                 offset=(y*texture.width+x)*4
-                rgb[pos:pos+3]=texture.pixels[offset:offset+3]
-                pos+=3
+                rgb.extend(texture.pixels[offset:offset+3])
         ppm=f'P6\n{out_w} {out_h}\n255\n'.encode('ascii')+rgb
         try:self.photo=tk.PhotoImage(master=self,data=ppm,format='PPM')
         except tk.TclError as exc:
@@ -253,13 +285,9 @@ class MediaPropertiesPanel(Panel):
                          self.replace)
         group.add_button('Экспортировать PNG' if resource.kind=='images' else 'Экспортировать BIK',
                          self.export)
-        if resource.kind=='videos':
-            group.add_button('Воспроизвести BIK',self.play)
-            group.add_button('Пауза / продолжить',self.app.media_viewer.pause_video)
-            group.add_button('Остановить',self.app.media_viewer._close_video)
         if resource.overridden:group.add_button('Отменить замену',self.remove)
         if resource.kind=='videos':
-            label(group.body,'Встроенный просмотр использует Bink-библиотеку Gothic. Звук пока не поддерживается.',
+            label(group.body,'Управление воспроизведением находится под видео.',
                   fg=MUTED,wraplength=280).pack(fill='x',padx=8,pady=8)
         else:
             label(group.body,'Изображение показано в центральном окне.',
@@ -279,11 +307,6 @@ class MediaPropertiesPanel(Panel):
         try:GameMedia.export_file(row,destination)
         except (OSError,ValueError) as exc:
             messagebox.showerror('Экспорт медиа',str(exc),parent=self)
-
-    def play(self):
-        try:self.app.media_viewer.play_video(self.app.repo.game)
-        except (OSError,ValueError) as exc:
-            messagebox.showerror('Просмотр BIK',str(exc),parent=self)
 
     def replace(self):
         row=self.current
