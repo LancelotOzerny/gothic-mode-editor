@@ -36,6 +36,13 @@ class EditHistory:
         path = Path(path).absolute()
         if path != self.root and self.root not in path.parents:
             raise ValueError('История доступна только для ресурсов проекта')
+        resolved=path.resolve()
+        if resolved != self.root and self.root not in resolved.parents:
+            raise ValueError('Нельзя работать со ссылками вне проекта')
+        for part in (path,*path.parents):
+            if part == self.root.parent:break
+            if part.is_symlink() or getattr(part,'is_junction',lambda:False)():
+                raise ValueError('История не поддерживает ссылки')
         return path
 
     def _snapshot(self, path):
