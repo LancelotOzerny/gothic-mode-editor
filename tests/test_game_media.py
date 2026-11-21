@@ -72,7 +72,8 @@ class GameMediaTests(unittest.TestCase):
         from gothic_editor.core.textures import Texture, write_ztex
         for width, height, expected in (
             (2, 2, (4, 4)), (4, 3, (4, 4)),
-            (5, 7, (8, 8)), (1920, 1080, (1920, 1080))
+            (5, 7, (4, 8)), (1920, 1080, (2048, 1024)),
+            (1600, 1024, (2048, 1024))
         ):
             with self.subTest(size=(width, height)):
                 pixels=bytes((75, 130, 220, 255)) * (width * height)
@@ -81,6 +82,22 @@ class GameMediaTests(unittest.TestCase):
                 decoded=read_ztex(encoded)
                 self.assertEqual((decoded.width, decoded.height), expected)
                 self.assertEqual(struct.unpack_from('<I', encoded, 8)[0], 10)
+
+    def test_build_repairs_non_power_of_two_legacy_dxt(self):
+        from gothic_editor.core.textures import Texture
+        # A correctly framed old TEX can still crash ZenGin if non-power-of-two.
+        rgba = bytes((120, 30, 180, 255)) * (12 * 8)
+        from gothic_editor.core.textures import _encode_dxt_block
+        data=bytearray(b'ZTEX'+struct.pack('<8I',0,10,12,8,1,12,8,0))
+        for y in range(0,8,4):
+            for x in range(0,12,4):
+                data.extend(_encode_dxt_block(rgba,12,8,x,y,False))
+        path=self.media.path('images','LOADING.TGA')
+        path.parent.mkdir(parents=True,exist_ok=True)
+        path.write_bytes(data)
+        fixed=self.media.collect_images()['_work/data/Textures/_compiled/LOADING-C.TEX']
+        self.assertEqual((read_ztex(fixed).width,read_ztex(fixed).height),(16,8))
+        self.assertEqual(path.read_bytes(),data)
 
     def test_small_legacy_tex_is_repaired_at_build(self):
         rgba=bytes((100, 50, 20, 255))*4
