@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from gothic_editor.core.world_preview import (
     MAX_PREVIEW_TRIANGLES, prepare_wireframe, project_wireframe,
-    available_locations, is_location_zen, load_world_wireframe,
+    available_locations, is_location_zen, load_world_wireframe, build_world_chunks,
 )
 
 
@@ -60,6 +60,55 @@ class WorldPreviewTests(unittest.TestCase):
         self.assertEqual(scene.discarded_triangles, 1)
         self.assertEqual(scene.faces, ())
         self.assertEqual(project_wireframe(scene, 800, 600, 0., 0., 1.), ())
+
+    def test_spatial_chunks_only_show_nearby_faces(self):
+        geometry = SimpleNamespace(
+            vertices=((0., 0., 0.), (100., 0., 0.), (0., 0., 100.),
+                      (6000., 0., 0.), (6100., 0., 0.), (6000., 0., 100.),
+                      (18000., 0., 0.), (18100., 0., 0.), (18000., 0., 100.)),
+            triangles=((0, 1, 2), (3, 4, 5), (6, 7, 8)),
+            vertex_count=9, triangle_count=3)
+        world = build_world_chunks(geometry, 6000)
+        self.assertEqual(set(world.chunks), {(0, 0), (1, 0), (3, 0)})
+        near = world.view((0, 0), radius=0)
+        self.assertEqual(len(near.faces), 1)
+        self.assertEqual(near.vertices, geometry.vertices[:3])
+        wider = world.view((0, 0), radius=1)
+        self.assertEqual(len(wider.faces), 2)
+        far = world.view((3, 0), radius=0)
+        self.assertEqual(far.vertices, geometry.vertices[6:9])
+
+    def test_visible_chunk_triangle_budget(self):
+        vertices = []
+        faces = []
+        for chunk in range(4):
+            for face in range(40):
+                first = len(vertices)
+                x = chunk * 6000 + face
+                vertices.extend(((x, 0., 0.), (x+1, 0., 0.), (x, 0., 1.)))
+                faces.append((first, first+1, first+2))
+        geometry = SimpleNamespace(
+            vertices=tuple(vertices), triangles=tuple(faces),
+            vertex_count=len(vertices), triangle_count=len(faces))
+        world = build_world_chunks(geometry, 6000)
+        self.assertEqual(len(world.chunks), 4)
+        scene = world.view((1, 0), radius=2, triangle_limit=13)
+        self.assertEqual(len(scene.faces), 13)
+        self.assertTrue(all(max(face) < len(scene.vertices) for face in scene.faces))
+        self.assertTrue(all(math.isfinite(x) for point in
+                            project_wireframe(scene, 800, 600, 0.55, -0.45, 1.)
+                            for x in point))
+        with self.assertRaises(ValueError):
+            build_world_chunks(geometry, 0)
+
+    def test_chunked_view_excludes_invalid_geometry(self):
+        geometry = SimpleNamespace(
+            vertices=((0., 0., 0.), (1., 0., 0.), (0., 0., 1.),
+                      (float('nan'), 0., 1.)),
+            triangles=((0, 1, 2), (0, 1, 3)), vertex_count=4, triangle_count=2)
+        world = build_world_chunks(geometry, 6000)
+        self.assertEqual(world.discarded_triangles, 1)
+        self.assertEqual(len(world.view((0, 0), radius=0).faces), 1)
 
     def test_subnormal_bounds_do_not_overflow_projection(self):
         # A world decoded with subnormal floats used to yield infinite scale.
