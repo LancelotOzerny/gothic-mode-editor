@@ -154,6 +154,23 @@ class IncrementalPersistenceTests(unittest.TestCase):
             self.assertEqual(repo.project_items,[updated])
             self.assertEqual(repo.items,[updated])
 
+    def test_project_only_refresh_preserves_game_items_without_scanning_installation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo=ProjectRepository()
+            repo.create(Path(temporary)/'project','Test')
+            game=Item('ItFo_Game',Path(temporary)/'game/Items/original.d','game',
+                      'INSTANCE ItFo_Game(C_Item) { mainflag=ITEM_KAT_FOOD; }',
+                      {'mainflag':'ITEM_KAT_FOOD'},0,0)
+            repo.game_items=[game]
+            repo.items=[game]
+            with patch('gothic_editor.core.project.os.walk',
+                       side_effect=AssertionError('Game meshes were rescanned')), \
+                 patch.object(repo.archive_models,'refresh',
+                              side_effect=AssertionError('Archives were rescanned')):
+                repo.refresh(project_only=True)
+            self.assertIn(game,repo.game_items)
+            self.assertIn(game,repo.items)
+
     def test_copy_game_item_does_not_rescan_installation(self):
         with tempfile.TemporaryDirectory() as temporary:
             repo=ProjectRepository()
