@@ -30,7 +30,7 @@ class WorldPreviewWindow(tk.Toplevel):
         self.zoom = 1.0
         self.pan_x = self.pan_y = 0.0
         self._game = Path(game) if game else None
-        self._log = getattr(getattr(parent, 'terminal', None), 'append', None)
+        self._reported_draw_error = None
         self._location_paths = []
         header = tk.Frame(self, bg='#232b39')
         header.pack(fill='x')
@@ -112,10 +112,26 @@ class WorldPreviewWindow(tk.Toplevel):
             return
         self.status.configure(text='Чтение геометрии: ' + Path(path.name).name)
         self._scene = None
+        self._reported_draw_error = None
         self.queue_draw()
         self._loading_source = str(path.archive / path.name) if hasattr(path, 'archive') else str(path)
         self._future = self._executor.submit(load_world_wireframe, path)
         self._poll_id = self.after(50, self._poll)
+
+    def _log_message(self, message, *, error=False):
+        """Write to the main Gothic Editor bottom terminal, on the Tk thread."""
+        app = self.master
+        terminal = getattr(app, 'terminal', None)
+        if terminal is None:
+            return
+        terminal.append(message)
+        if error and hasattr(app, 'show_terminal'):
+            app.show_terminal()
+
+    def _log_exception(self, phase, exc):
+        detail = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        source = getattr(self, '_loading_source', '(файл не выбран)')
+        self._log_message(f'[ZEN] {phase}: {source}\\n{detail}', error=True)
 
     def _poll(self):
         self._poll_id = None
@@ -129,16 +145,24 @@ class WorldPreviewWindow(tk.Toplevel):
             self._scene = future.result()
         except Exception as exc:
             self.status.configure(text='Ошибка чтения ZEN: ' + str(exc))
-            detail = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-            if self._log is not None:
-                self._log('[ZEN] Ошибка загрузки: ' + self._loading_source + '\n' + detail)
-            if hasattr(self.master, 'show_terminal'):
-                self.master.show_terminal()
+            self._log_exception('Ошибка загрузки', exc)
         else:
             self.reset_camera()
             self.status.configure(text=(f'Вершин: {self._scene.total_vertices:,}  ·  '
                 f'Треугольников: {self._scene.total_triangles:,}  ·  '
                 f'Показано: {len(self._scene.faces):,}'))
+            skipped = self._scene.discarded_triangles
+            if skipped:
+                self._log_message(
+                    f'[ZEN] {self._loading_source}: пропущено {skipped:,} '
+                    'треугольников с некорректными координатами или индексами.',
+                    error=True)
+            if not self._scene.faces:
+                self.status.configure(text='В ZEN нет пригодных для показа треугольников. Подробности в терминале.')
+                self._log_message(
+                    f'[ZEN] Нет пригодной геометрии: {self._loading_source}. '
+                    'Проверьте формат и правильность чтения MSH.',
+                    error=True)
         self.queue_draw()
 
     def reset_camera(self):
@@ -205,9 +229,13 @@ class WorldPreviewWindow(tk.Toplevel):
                 coords = [coordinate for p in triangle for coordinate in p[:2]]
                 self.canvas.create_polygon(*coords, fill='', outline='#6f8fa8',
                                            width=1, tags='scene')
-        except (ValueError, IndexError) as exc:
+        except (ValueError, IndexError, OverflowError, tk.TclError) as exc:
             self.canvas.create_text(w/2, h/2, text='Ошибка отображения: ' + str(exc),
                                     fill='#fca5a5', tags='scene')
+            signature = (type(exc).__name__, str(exc))
+            if signature != self._reported_draw_error:
+                self._reported_draw_error = signature
+                self._log_exception('Ошибка отображения', exc)
 
     def close(self):
         self._closed = True
