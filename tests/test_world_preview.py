@@ -61,6 +61,31 @@ class WorldPreviewTests(unittest.TestCase):
         self.assertEqual(scene.faces, ())
         self.assertEqual(project_wireframe(scene, 800, 600, 0., 0., 1.), ())
 
+    def test_fast_chunk_selection_matches_complete_scene(self):
+        vertices = []
+        faces = []
+        for chunk in range(5):
+            for i in range(4):
+                base = len(vertices)
+                x = chunk * 6000 + i
+                vertices.extend(((x, 0., 0.), (x + 1, 0., 0.),
+                                 (x, 0., 1.)))
+                faces.append((base, base + 1, base + 2))
+        geometry = SimpleNamespace(
+            vertices=tuple(vertices), triangles=tuple(faces),
+            vertex_count=len(vertices), triangle_count=len(faces))
+        world = build_world_chunks(geometry, 6000)
+        self.assertEqual(world.visible_chunk_keys((2, 0), radius=1),
+                         ((2, 0), (1, 0), (3, 0)))
+        self.assertEqual(world.visible_chunk_keys((2, 0), radius=2,
+                                                  triangle_limit=9),
+                         ((2, 0), (1, 0)))
+        keys = world.visible_chunk_keys((2, 0), radius=1)
+        self.assertEqual(sum(len(world.chunks[key]) for key in keys),
+                         len(world.view_complete((2, 0), radius=1).faces))
+        with self.assertRaises(ValueError):
+            world.visible_chunk_keys((2, 0), radius=8)
+
     def test_opengl_keeps_all_faces_in_visible_chunks(self):
         # The old sampler drew a handful of disconnected triangles,
         # leaving holes even in continuous terrain.
