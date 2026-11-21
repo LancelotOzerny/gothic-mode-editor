@@ -34,6 +34,72 @@ MAX_IMAGE = 32 * 1024 * 1024
 MAX_VIDEO = 512 * 1024 * 1024
 
 
+def _decode_image_windows(source):
+    """Use Windows' built-in image decoder when Pillow is not installed."""
+    import os
+    import struct
+    import subprocess
+    import sys
+    import tempfile
+    if sys.platform!='win32':
+        raise ValueError('Для PNG/JPEG установите Pillow: pip install Pillow')
+    script=r"""
+Add-Type -AssemblyName System.Drawing
+$image=[System.Drawing.Image]::FromFile($env:GE_MEDIA_SOURCE)
+try {
+    if ($image.Width -gt 8192 -or $image.Height -gt 8192 -or
+        ($image.Width * $image.Height) -gt 16777216) { throw 'Изображение слишком большое' }
+    $bmp=[System.Drawing.Bitmap]::new($image.Width,$image.Height,
+                                     [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    try {
+        $graphics=[System.Drawing.Graphics]::FromImage($bmp)
+        try { $graphics.DrawImage($image,0,0,$bmp.Width,$bmp.Height) }
+        finally { $graphics.Dispose() }
+        $rect=[System.Drawing.Rectangle]::new(0,0,$bmp.Width,$bmp.Height)
+        $bits=$bmp.LockBits($rect,[System.Drawing.Imaging.ImageLockMode]::ReadOnly,
+                            [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+        try {
+            $raw=New-Object byte[] ($bmp.Width*$bmp.Height*4)
+            for ($y=0; $y -lt $bmp.Height; $y++) {
+                $scan=[System.IntPtr]::Add($bits.Scan0,$y*$bits.Stride)
+                [System.Runtime.InteropServices.Marshal]::Copy(
+                    $scan,$raw,$y*$bmp.Width*4,$bmp.Width*4)
+            }
+            $stream=[System.IO.File]::Create($env:GE_MEDIA_OUTPUT)
+            try {
+                $writer=[System.IO.BinaryWriter]::new($stream)
+                $writer.Write([int]$bmp.Width)
+                $writer.Write([int]$bmp.Height)
+                $writer.Write($raw)
+                $writer.Flush()
+            } finally { $stream.Dispose() }
+        } finally { $bmp.UnlockBits($bits) }
+    } finally { $bmp.Dispose() }
+} finally { $image.Dispose() }
+"""
+    with tempfile.TemporaryDirectory(prefix='gothic-media-') as temporary:
+        target=Path(temporary)/'rgba.bin'
+        env=os.environ.copy()
+        env['GE_MEDIA_SOURCE']=str(source.resolve())
+        env['GE_MEDIA_OUTPUT']=str(target)
+        try:
+            result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',script],
+                                  env=env,capture_output=True,timeout=60)
+        except (OSError,subprocess.TimeoutExpired) as exc:
+            raise ValueError('Не удалось конвертировать изображение средствами Windows') from exc
+        if result.returncode!=0 or not target.is_file():
+            raise ValueError('Ошибка конвертации PNG/JPEG: '+
+                             result.stderr.decode('utf-8',errors='replace')[-400:])
+        data=target.read_bytes()
+    if len(data)<8:raise ValueError('Некорректный результат конвертации')
+    width,height=struct.unpack_from('<II',data)
+    if width>8192 or height>8192 or width*height>16_777_216 or len(data)!=8+width*height*4:
+        raise ValueError('Некорректный размер изображения')
+    pixels=bytearray(data[8:])
+    pixels[0::4],pixels[2::4]=pixels[2::4],pixels[0::4]
+    return Texture(width,height,bytes(pixels))
+
+
 class GameMedia:
     def __init__(self, project):
         self.project = Path(project).resolve()
@@ -125,15 +191,18 @@ class GameMedia:
             return self.import_file('images',name,source)
         if source.suffix.lower() not in ('.png','.jpg','.jpeg'):
             raise ValueError('Выберите PNG, JPEG, TGA или TEX')
+        if not source.is_file():raise FileNotFoundError(source)
+        if source.stat().st_size>MAX_IMAGE:raise ValueError('Изображение слишком большое')
         try:
             from PIL import Image
-        except ImportError as exc:
-            raise ValueError('Для конвертации PNG/JPEG необходим Pillow (pip install Pillow).') from exc
-        with Image.open(source) as image:
-            if image.width>8192 or image.height>8192 or image.width*image.height>16_777_216:
-                raise ValueError('Изображение слишком большое')
-            image=image.convert('RGBA')
-            texture=Texture(image.width,image.height,image.tobytes())
+        except ImportError:
+            texture=_decode_image_windows(source)
+        else:
+            with Image.open(source) as image:
+                if image.width>8192 or image.height>8192 or image.width*image.height>16_777_216:
+                    raise ValueError('Изображение слишком большое')
+                image=image.convert('RGBA')
+                texture=Texture(image.width,image.height,image.tobytes())
         target=self.path('images',name)
         target.parent.mkdir(parents=True,exist_ok=True)
         temp=target.with_name('.media-'+uuid4().hex+'.tmp')
