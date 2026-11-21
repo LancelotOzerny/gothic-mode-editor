@@ -220,6 +220,7 @@ class EditorApp(tk.Tk):
         self.recipes=RecipeController(self)
         self.recipe_list=RecipeListPanel(sidebar,self.recipes)
         self.world_panel=WorldPanel(sidebar,self.world.select,self.npcs.select)
+        self.world_panel.on_preview_world=self.world.open_world_preview
         self.media_panel=MediaPanel(sidebar,self.select_media,self.load_media_category,self.import_media)
         middle=tk.Frame(panes,bg='#191e29')
         panes.add(middle,width=550,minsize=250)
