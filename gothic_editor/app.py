@@ -93,9 +93,7 @@ class EditorApp(tk.Tk):
         self._build_menu();self._build_layout()
         self.show_welcome()
         self.bind('<Control-o>',lambda e:self.open_project())
-        self.bind('<Control-z>',lambda e:self._history_shortcut(False,e))
-        self.bind('<Control-y>',lambda e:self._history_shortcut(True,e))
-        self.bind('<Control-Shift-Z>',lambda e:self._history_shortcut(True,e))
+        self.bind('<Control-KeyPress>',self._history_keypress,add='+')
         self.bind('<Control-s>',lambda e:self._save_editors())
         self.bind('<Control-KeyPress>',self._save_shortcut,add='+')
         self.bind('<Alt-F4>',lambda e:self.destroy())
@@ -866,6 +864,16 @@ class EditorApp(tk.Tk):
             path=result.path
             if path not in before and self.repo.components.owns(path):path=path.parent
             self.history.record(before,(path,))
+
+    def _history_keypress(self,event):
+        key=event.keysym.lower()
+        # Windows virtual-key codes refer to physical keys regardless of layout.
+        if self.tk.call('tk','windowingsystem')=='win32':
+            key={90:'z',89:'y'}.get(event.keycode,key)
+        if key in ('z','cyrillic_ya'):
+            return self._history_shortcut(bool(event.state & 1),event)
+        if key in ('y','cyrillic_en'):
+            return self._history_shortcut(True,event)
 
     def _history_shortcut(self,redo,event):
         focused=self.focus_get()
