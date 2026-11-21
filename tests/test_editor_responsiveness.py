@@ -158,14 +158,15 @@ class IncrementalPersistenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             repo=ProjectRepository()
             repo.create(Path(temporary)/'project','Test')
-            source=Item('ItPo_Game',Path(temporary)/'game/Items/source.d','game',
-                        'INSTANCE ItPo_Game(C_Item) { name="Game"; mainflag=ITEM_KAT_POTIONS; };',
-                        {'name':'"Game"','mainflag':'ITEM_KAT_POTIONS'},0,0)
+            repo.game=Path(temporary)/'game'
+            source=Item('ItFo_Game',repo.game/'Items/source.d','game',
+                        'INSTANCE ItFo_Game(C_Item) { name="Game"; mainflag=ITEM_KAT_FOOD; }',
+                        {'name':'"Game"','mainflag':'ITEM_KAT_FOOD'},0,0)
             repo.game_items=[source]
             repo.items=[source]
             with patch.object(repo,'refresh',side_effect=AssertionError('Full scan')):
                 copied=repo.copy_to_project(source)
-            self.assertEqual(copied.instance,'ItPo_Game')
+            self.assertEqual(copied.instance,'ItFo_Game')
             self.assertEqual(copied.origin,'project')
             self.assertIn(copied,repo.project_items)
 
