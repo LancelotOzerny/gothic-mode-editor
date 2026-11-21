@@ -10,7 +10,7 @@ from gothic_editor.core.fly_camera import FlyCamera
 import tkinter as tk
 from tkinter import filedialog
 
-from gothic_editor.core.world_preview import (load_world_wireframe, project_wireframe,
+from gothic_editor.core.world_preview import (load_world_with_vobs, project_wireframe,
     available_locations, is_location_zen, face_color, camera_chunk,
     move_camera, drag_camera)
 
@@ -26,6 +26,7 @@ class WorldPreviewPanel(tk.Frame):
         self._draw_id = None
         self._scene = None
         self._world = None
+        self._vobs = None
         self._focus = None
         self._camera_center = None
         self._camera_target = None
@@ -176,6 +177,7 @@ class WorldPreviewPanel(tk.Frame):
             self._game = game
             self._scene = None
             self._world = None
+            self._vobs = None
             self._focus = None
             self.refresh_locations()
             self.queue_draw()
@@ -233,7 +235,15 @@ class WorldPreviewPanel(tk.Frame):
         self._reported_draw_error = None
         self.queue_draw()
         self._loading_source = str(path.archive / path.name) if hasattr(path, 'archive') else str(path)
-        self._future = self._executor.submit(load_world_wireframe, path, self._chunk_size)
+        repo = getattr(self._app, 'repo', None)
+        sources = {}
+        if repo is not None:
+            sources.update(repo.archive_models.entries)
+            # Project overrides and local source meshes take priority.
+            sources.update({Path(name).name.casefold(): source
+                            for name, source in repo.mesh_index.items()})
+        self._future = self._executor.submit(
+            load_world_with_vobs, path, self._chunk_size, sources)
         self._poll_id = self.after(50, self._poll)
 
     def _log_message(self, message, *, error=False):
@@ -260,7 +270,7 @@ class WorldPreviewPanel(tk.Frame):
             return
         future, self._future = self._future, None
         try:
-            self._world = future.result()
+            self._world, self._vobs = future.result()
             self._focus = self._world.origin
             self._scene = self._select_scene(self._focus)
             if self._scene.vertices:
@@ -275,9 +285,11 @@ class WorldPreviewPanel(tk.Frame):
         else:
             self.reset_camera()
             self._update_chunk_status()
-            self._log_message(
-                '[ZEN] Отображаю геометрию MeshAndBsp. Отдельные модели VOB '
-                '(например, части построек) пока не загружаются.')
+            if self._vobs is not None:
+                self._log_message(
+                    f'[ZEN] VOB: загружено {len(self._vobs.objects):,} объектов, '
+                    f'{len(self._vobs.models):,} моделей; '
+                    f'пропущено {self._vobs.skipped:,}. {self._vobs.status}')
             if self._scene.vertices:
                 lows = tuple(min(vertex[axis] for vertex in self._scene.vertices)
                              for axis in range(3))
@@ -547,6 +559,7 @@ class WorldPreviewPanel(tk.Frame):
         if self._gl_view is not None:
             view = self._gl_view
             view.world = self._world
+            view.vobs = self._vobs
             view.focus = self._focus
             view.radius = self._chunk_radius
             view.fly = self._fly_mode
