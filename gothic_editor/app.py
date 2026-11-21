@@ -60,7 +60,8 @@ class EditorApp(tk.Tk):
         self.register_bottom_tab('terminal','terminal.title',lambda parent:TerminalPanel(parent,self.hide_terminal))
         self.register_bottom_tab('resources','resources.title',lambda parent:ResourcesPanel(
             parent,lambda:self.repo.resource_editor_path,lambda:self.hide_bottom_tab('resources'),
-            on_changed=lambda:self.refresh(project_only=True),before_change=lambda:self._save_editors()))
+            on_changed=lambda:self.refresh(project_only=True),before_change=lambda:self._save_editors(),
+            history=lambda:self.history))
         self.terminal_visible=self._bottom_tab_variables['terminal']
         self.resources_visible=self._bottom_tab_variables['resources']
         self.terminal_visible.set(True)
@@ -126,6 +127,10 @@ class EditorApp(tk.Tk):
             submenu=tk.Menu(project,tearoff=False)
             submenu.add_command(label='xlsx',command=lambda current=operation:self.show_spreadsheet(current))
             project.add_cascade(label=title,menu=submenu)
+        edit=tk.Menu(menu,tearoff=False)
+        edit.add_command(label='Отменить',accelerator='Ctrl+Z',command=lambda:self.undo_redo(False))
+        edit.add_command(label='Повторить',accelerator='Ctrl+Y',command=lambda:self.undo_redo(True))
+        menu.add_cascade(label='Правка',menu=edit)
         menu.add_cascade(label=tr('app.project'),menu=project)
         view=tk.Menu(menu,tearoff=False)
         windows=tk.Menu(view,tearoff=False)
@@ -849,6 +854,8 @@ class EditorApp(tk.Tk):
                 paths.append(path.parent if self.repo.components.owns(path) else path)
             elif item.origin=='game':
                 paths.append(self.repo._destination_for(item))
+                if classify(item)=='potions':
+                    paths.append(self.repo.root/'Assets'/'Items'/'Potions'/item.instance)
         return self.history.capture(paths)
 
     def _history_record(self,before,result=None):
