@@ -122,7 +122,7 @@ class ItemHierarchyController:
         for value in values:
             if saved is None:break
             if not isinstance(value,HierarchyNode):
-                current=app._history_capture(value)
+                current=app._history_capture(value,whole=action=='delete')
                 if current is None:saved=None
                 else:saved.update(current)
         original_items={(item.origin,item.instance.casefold()) for item in app.repo.project_items}
