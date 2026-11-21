@@ -82,6 +82,20 @@ class GameMediaTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             GameMedia.export_file(resource,Path(self.temp.name)/'bad.mp4')
 
+    def test_bink_dll_architecture_detection(self):
+        from gothic_editor.core.bink_decoder import dll_compatible
+        for machine,bits in ((0x14c,32),(0x8664,64)):
+            with self.subTest(machine=machine):
+                header=bytearray(256)
+                header[:2]=b'MZ'
+                struct.pack_into('<I',header,0x3c,128)
+                header[128:132]=b'PE\\0\\0'
+                struct.pack_into('<H',header,132,machine)
+                path=Path(self.temp.name)/'test.dll'
+                path.write_bytes(header)
+                self.assertTrue(dll_compatible(path,bits))
+                self.assertFalse(dll_compatible(path,64 if bits==32 else 32))
+
     def test_png_and_jpeg_replace_into_gothic_texture(self):
         try:
             from PIL import Image
