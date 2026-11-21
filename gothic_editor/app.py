@@ -370,6 +370,9 @@ class EditorApp(tk.Tk):
         except Exception as exc:messagebox.showerror(tr('app.open_error'),str(exc))
 
     def show_project(self,reset_hierarchy=False):
+        if self.media_window is not None and self.media_window.winfo_exists():
+            self.media_window.destroy()
+            self.media_window=None
         self._show_editor()
         self._cancel_model_load()
         self.current=None
