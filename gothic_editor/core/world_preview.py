@@ -15,6 +15,9 @@ from .zen_world import load_zen_geometry, ZenWorldError
 
 
 MAX_PREVIEW_TRIANGLES = 3500
+# OpenGL can draw whole chunks. Avoid arbitrary triangle sampling, which makes
+# terrain and castle walls look like scattered pieces.
+MAX_OPENGL_TRIANGLES = 200_000
 
 # These ZenGin archives store shared presets, not playable level meshes.
 PRESET_ARCHIVES = frozenset(('lensflare.zen', 'dialogcams.zen', 'lightpresets.zen'))
@@ -115,6 +118,45 @@ class ChunkedWorld:
     total_triangles: int
     discarded_triangles: int
     origin: tuple[int, int]
+
+    def visible_triangle_count(self, focus=None, radius=1):
+        focus = self.origin if focus is None else focus
+        return sum(len(faces) for (x, z), faces in self.chunks.items()
+                   if abs(x-focus[0]) <= radius and abs(z-focus[1]) <= radius)
+
+    def view_complete(self, focus=None, radius=1,
+                      triangle_limit=MAX_OPENGL_TRIANGLES):
+        """Select complete nearby chunks, never random faces within a chunk.
+
+        If a chunk exceeds the budget it is omitted entirely. This is safer
+        than leaving random holes in the terrain. Return a regular render
+        scene; the caller can compare its face count with visible_triangle_count.
+        """
+        if not 0 <= radius <= 5 or not 1 <= triangle_limit <= MAX_OPENGL_TRIANGLES:
+            raise ValueError('Некорректные настройки полной геометрии.')
+        focus = self.origin if focus is None else focus
+        nearby = [
+            key for key in self.chunks
+            if abs(key[0]-focus[0]) <= radius and abs(key[1]-focus[1]) <= radius
+        ]
+        nearby.sort(key=lambda key: (
+            (key[0]-focus[0])**2 + (key[1]-focus[1])**2, key))
+        selected = []
+        remaining = triangle_limit
+        for key in nearby:
+            pool = self.chunks[key]
+            if len(pool) <= remaining:
+                selected.extend(pool)
+                remaining -= len(pool)
+        if not selected:
+            return WireframeScene((), (), self.total_vertices,
+                                  self.total_triangles, self.discarded_triangles)
+        used = sorted({index for face in selected for index in face})
+        mapping = {source: index for index, source in enumerate(used)}
+        return WireframeScene(
+            tuple(self.vertices[index] for index in used),
+            tuple(tuple(mapping[index] for index in face) for face in selected),
+            self.total_vertices, self.total_triangles, self.discarded_triangles)
 
     def view(self, focus=None, radius=1, triangle_limit=3500):
         if radius < 0 or radius > 5 or not 1 <= triangle_limit <= 10000:
