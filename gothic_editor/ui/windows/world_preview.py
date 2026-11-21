@@ -32,6 +32,8 @@ class WorldPreviewPanel(tk.Frame):
         self._world_height = 0.0
         self._animation_id = None
         self._solid = True
+        self._gl_view = None
+        self._gl_error = None
         self._fly_mode = False
         self._fly_camera = FlyCamera()
         self._pressed = set()
@@ -105,9 +107,47 @@ class WorldPreviewPanel(tk.Frame):
         footer = tk.Label(self, text='Полёт: WASD — движение  ·  ПКМ — взгляд  ·  Q/E — вниз/вверх  ·  Shift — ускорение  ·  Home — сброс  ·  колесо — скорость',
                           bg='#232b39', fg='#94a3b8', anchor='center')
         footer.pack(fill='x', pady=0, ipady=7)
+        self._try_enable_opengl(footer)
         self.refresh_locations()
         self.queue_draw()
         self._tick_id = self.after(33, self._tick)
+
+    def _try_enable_opengl(self, footer):
+        """Use hardware depth testing if installed, retaining Tk as fallback."""
+        view = None
+        try:
+            from gothic_editor.ui.panels.world_opengl import WorldOpenGLFrame
+            view = WorldOpenGLFrame(self)
+            view.configure(takefocus=True)
+            view.pack(fill='both', expand=True, before=footer)
+            # OpenGLFrame owns its own Tk context and refresh loop.
+            view.bind('<ButtonPress-1>', lambda event: self.begin_drag(event, 'rotate'))
+            view.bind('<B1-Motion>', self.drag)
+            view.bind('<ButtonRelease-1>', self.end_drag)
+            view.bind('<ButtonPress-3>', self.right_press)
+            view.bind('<B3-Motion>', self.right_motion)
+            view.bind('<ButtonRelease-3>', self.right_release)
+            view.bind('<MouseWheel>', lambda event: self.change_zoom(
+                1.12 if event.delta > 0 else 1/1.12))
+            view.bind('<Button-4>', lambda event: self.change_zoom(1.12))
+            view.bind('<Button-5>', lambda event: self.change_zoom(1/1.12))
+            view.bind('<KeyPress>', self._key_down, add='+')
+            view.bind('<KeyRelease>', self._key_up, add='+')
+            view.bind('<FocusOut>', self._clear_keys, add='+')
+            view.bind('<Button-1>', lambda event: view.focus_set(), add='+')
+            self._gl_view = view
+            self.canvas.pack_forget()
+        except (ImportError, OSError, RuntimeError, tk.TclError) as exc:
+            self._gl_error = str(exc)
+            if view is not None:
+                try:
+                    view.destroy()
+                except tk.TclError:
+                    pass
+            self._gl_view = None
+
+    def _input_surface(self):
+        return self._gl_view if self._gl_view is not None else self.canvas
 
     def set_game(self, game):
         game = Path(game) if game else None
@@ -251,7 +291,7 @@ class WorldPreviewPanel(tk.Frame):
 
     def toggle_camera(self):
         self._fly_mode = not self._fly_mode
-        self.canvas.focus_set()
+        self._input_surface().focus_set()
         self._pressed.clear()
         self._fly_mouse = None
         self.camera_button.config(
@@ -283,7 +323,7 @@ class WorldPreviewPanel(tk.Frame):
         self._fly_mouse = None
 
     def right_press(self, event):
-        self.canvas.focus_set()
+        self._input_surface().focus_set()
         if self._fly_mode:
             self._fly_mouse = (event.x, event.y)
         else:
@@ -470,6 +510,17 @@ class WorldPreviewPanel(tk.Frame):
 
     def _draw(self):
         self._draw_id = None
+        if self._gl_view is not None:
+            view = self._gl_view
+            view.scene = self._scene
+            view.fly = self._fly_mode
+            view.camera = self._fly_camera
+            view.center = self._camera_center or (0., 0., 0.)
+            view.yaw, view.pitch, view.zoom = self.yaw, self.pitch, self.zoom
+            view.span = (self._world.chunk_size * (2*self._chunk_radius+1)
+                         if self._world is not None else 6000.)
+            view.solid = self._solid
+            return
         self.canvas.delete('scene')
         w = max(2, self.canvas.winfo_width())
         h = max(2, self.canvas.winfo_height())
