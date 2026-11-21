@@ -14,6 +14,8 @@ class MediaPanel(Panel):
         super().__init__(parent)
         self.on_select, self.on_load = on_select, on_load
         label(self, 'Медиа', font=('Arial',10,'bold')).pack(fill='x', padx=12, pady=12)
+        label(self,'ПКМ на категории → Загрузить все файлы медиа',
+              fg=MUTED,wraplength=260).pack(fill='x',padx=12,pady=(0,9))
         self.search=tk.StringVar(self)
         make_entry(self,textvariable=self.search).pack(fill='x',padx=10,pady=(0,10),ipady=6)
         style=ttk.Style(self)
@@ -143,6 +145,9 @@ class MediaPropertiesPanel(Panel):
         group.add_field('Категория',value=CATEGORIES[resource.category],readonly=True)
         label(group.body,'Заменён в проекте' if resource.overridden else 'Оригинал Gothic',
               fg=MUTED).pack(fill='x',padx=8,pady=6)
+        origin=resource.source
+        origin_label=(origin.archive.name if hasattr(origin,'archive') else str(origin))
+        group.add_field('Источник',value=origin_label,readonly=True)
         group.add_button('Заменить изображение' if resource.kind=='images' else 'Заменить видео BIK',
                          self.replace)
         if resource.overridden:group.add_button('Отменить замену',self.remove)
@@ -150,30 +155,8 @@ class MediaPropertiesPanel(Panel):
             label(group.body,'Видео BIK. Предпросмотр видео пока недоступен.',
                   fg=MUTED,wraplength=280).pack(fill='x',padx=8,pady=8)
         else:
-            self.preview_frame=self.add_group('Предпросмотр',parent=self.area.content)
-            self.picture=label(self.preview_frame.body,'Загрузка изображения…',fg=MUTED)
-            self.picture.pack(fill='x',padx=8,pady=8)
-            self.after_idle(lambda current=resource:self.preview(current))
-
-    def preview(self,resource):
-        if self.current!=resource or not self.picture.winfo_exists():return
-        try:
-            source=resource.source
-            data=source.read_bytes()
-            texture=read_texture(data)
-            factor=max(1,(max(texture.width,texture.height)+279)//280)
-            width=(texture.width+factor-1)//factor
-            height=(texture.height+factor-1)//factor
-            rgb=bytearray()
-            for y in range(0,texture.height,factor):
-                for x in range(0,texture.width,factor):
-                    offset=(y*texture.width+x)*4
-                    rgb.extend(texture.pixels[offset:offset+3])
-            ppm=f'P6\n{width} {height}\n255\n'.encode('ascii')+rgb
-            self.photo=tk.PhotoImage(master=self,data=ppm,format='PPM')
-            self.picture.configure(image=self.photo,text='')
-        except (OSError,ValueError,tk.TclError) as exc:
-            self.picture.configure(text='Нет предпросмотра: '+str(exc),image='')
+            label(group.body,'Изображение показано в центральном окне.',
+                  fg=MUTED,wraplength=280).pack(fill='x',padx=8,pady=8)
 
     def replace(self):
         row=self.current
