@@ -201,12 +201,12 @@ class GameMedia:
             texture=read_texture(resource.source.read_bytes())
             width,height=texture.width,texture.height
             stride=width*4
-            rows=b''.join(b'\\x00'+texture.pixels[y*stride:(y+1)*stride]
+            rows=b''.join(b'\x00'+texture.pixels[y*stride:(y+1)*stride]
                           for y in range(height))
             def chunk(kind,payload):
                 return (struct.pack('>I',len(payload))+kind+payload+
                         struct.pack('>I',zlib.crc32(kind+payload)&0xffffffff))
-            data=(b'\\x89PNG\\r\\n\\x1a\\n'+
+            data=(b'\x89PNG\r\n\x1a\n'+
                   chunk(b'IHDR',struct.pack('>IIBBBBB',width,height,8,6,0,0,0))+
                   chunk(b'IDAT',zlib.compress(rows))+
                   chunk(b'IEND',b''))
