@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import struct
 
+from .zen_geometry import parse_mesh_and_bsp, ZenGeometryError
+
 
 class BinSafeError(ValueError):
     pass
@@ -114,7 +116,7 @@ def _skip(stream, size, end):
     stream.seek(size, 1)
 
 
-def read_binsafe(stream, payload_start, hash_offset, file_size):
+def read_binsafe(stream, payload_start, hash_offset, file_size, *, include_geometry=False):
     """Return (VOBs, has_mesh, has_tree) from a validated BIN_SAFE payload.
 
     Reads only until the hash table; large geometry blocks are skipped.
@@ -129,6 +131,7 @@ def read_binsafe(stream, payload_start, hash_offset, file_size):
     has_mesh = False
     has_tree = False
     records = 0
+    geometry = None
     while stream.tell() < hash_offset:
         tag = _exact(stream, 1, hash_offset)[0]
         if tag == 1:
@@ -159,6 +162,12 @@ def read_binsafe(stream, payload_start, hash_offset, file_size):
                 record = BinSafeVob(name, classes, index, parent, {})
                 objects.append(record)
             stack.append((index if is_vob else None, is_vob, record))
+            if name == 'MeshAndBsp':
+                try:
+                    geometry, _ = parse_mesh_and_bsp(
+                        stream, hash_offset, include_triangles=include_geometry)
+                except ZenGeometryError as exc:
+                    raise BinSafeError(str(exc)) from exc
         elif tag == 18:
             if not stack:
                 raise BinSafeError('BIN_SAFE: поле вне объекта.')
@@ -176,4 +185,4 @@ def read_binsafe(stream, payload_start, hash_offset, file_size):
             raise BinSafeError('BIN_SAFE: неизвестный маркер: ' + str(tag))
     if stack:
         raise BinSafeError('BIN_SAFE: незакрытые объекты.')
-    return tuple(objects), has_mesh, has_tree
+    return tuple(objects), has_mesh, has_tree, geometry
