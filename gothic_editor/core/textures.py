@@ -290,7 +290,16 @@ def write_ztex(texture):
         raise ValueError('Некорректный размер данных изображения')
     alpha = any(value < 255 for value in texture.pixels[3::4])
     kind = 12 if alpha else 10
-    levels = texture.mipmaps
+    # ZenGin accepts compressed mipmaps only while both sides remain >= 4
+    # and divisible by 4. 2x2/1x1 DXT levels make in-game surfaces white.
+    levels = []
+    for level in texture.mipmaps:
+        if (level.width < 4 or level.height < 4 or
+                level.width % 4 or level.height % 4):
+            break
+        levels.append(level)
+    if not levels:
+        raise ValueError('Для текстуры Gothic DXT требуются размеры не меньше 4x4, кратные четырём')
     data = bytearray(b'ZTEX' + struct.pack(
         '<8I', 0, kind, texture.width, texture.height, len(levels),
         texture.width, texture.height, 0))
