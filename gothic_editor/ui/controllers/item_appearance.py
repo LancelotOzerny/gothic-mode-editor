@@ -52,11 +52,13 @@ class ItemAppearanceController:
             if not self.app.properties.save(automatic=True):return
             item=next((current for current in self.app.repo.items
                        if current.instance.casefold()==item.instance.casefold()),item)
+            saved=self.app._history_capture(item,whole=True)
             item = self._component(item)
             operation(item, ItemAssetManager(self.app.repo.root))
             self.app.repo.refresh()
             updated = next(current for current in self.app.repo.project_items
                            if current.instance.casefold() == item.instance.casefold())
+            self.app._history_record(saved,updated)
             self.app.update_hierarchy()
             self.app.hierarchy.choose(updated)
             self.app.select(updated)
