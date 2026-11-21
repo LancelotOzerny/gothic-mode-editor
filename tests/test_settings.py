@@ -43,6 +43,21 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(store.load().get_value('resources.gothic.game_path'), '')
         self.assertFalse(store.path.with_suffix('.tmp').exists())
 
+    def test_world_chunk_settings_are_persistent_and_validated(self):
+        key_size = 'interface.world_chunks.size'
+        key_radius = 'interface.world_chunks.radius'
+        key_limit = 'interface.world_chunks.triangle_limit'
+        store = SettingsStore(self.root / 'chunk-settings.json')
+        self.assertEqual(store.load().get_value(key_size), 6000)
+        self.assertEqual(store.load().get_value(key_radius), 1)
+        self.assertEqual(store.load().get_value(key_limit), 3500)
+        store.save(EditorSettings({key_size: 12000, key_radius: 2, key_limit: 5000}))
+        loaded = store.load()
+        self.assertEqual((loaded.get_value(key_size), loaded.get_value(key_radius),
+                          loaded.get_value(key_limit)), (12000, 2, 5000))
+        store.path.write_text(json.dumps({key_radius: 100}), encoding='utf-8')
+        self.assertEqual(store.load().get_value(key_radius), 1)
+
     def test_invalid_saved_value_falls_back_without_losing_valid_values(self):
         store = SettingsStore(self.root / 'settings.json')
         store.path.write_text(json.dumps({'interface.general.window_size': ['bad', 900],
