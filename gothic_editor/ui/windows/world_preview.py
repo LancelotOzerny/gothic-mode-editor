@@ -137,7 +137,7 @@ class WorldPreviewPanel(tk.Frame):
             view.bind('<Button-1>', lambda event: view.focus_set(), add='+')
             self._gl_view = view
             self.canvas.pack_forget()
-        except (ImportError, OSError, RuntimeError, tk.TclError) as exc:
+        except Exception as exc:
             self._gl_error = str(exc)
             if view is not None:
                 try:
@@ -145,6 +145,23 @@ class WorldPreviewPanel(tk.Frame):
                 except tk.TclError:
                     pass
             self._gl_view = None
+            self.canvas.pack(fill='both', expand=True, before=footer)
+            self._log_message(
+                '[ZEN] OpenGL недоступен: ' + self._gl_error +
+                '. Использую Tkinter. Для OpenGL: pip install -r requirements-opengl.txt')
+
+    def _disable_opengl(self, reason):
+        view, self._gl_view = self._gl_view, None
+        if view is not None:
+            try:
+                view.destroy()
+            except tk.TclError:
+                pass
+        if not self._closed:
+            self.canvas.pack(fill='both', expand=True, before=self.canvas.master.winfo_children()[-1])
+            self.queue_draw()
+            self._log_message('[ZEN] OpenGL отключён: ' + reason +
+                              '. Переключился на Tkinter.', error=True)
 
     def _input_surface(self):
         return self._gl_view if self._gl_view is not None else self.canvas
