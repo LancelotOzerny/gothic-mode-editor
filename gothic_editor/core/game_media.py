@@ -68,7 +68,9 @@ class GameMedia:
             texture=read_texture(source.read_bytes())
             data=write_ztex(texture)
         else:
-            if source.suffix.casefold()!='.bik' or not source.read_bytes()[:3]==b'BIK':
+            with source.open('rb') as stream:
+                header=stream.read(3)
+            if source.suffix.casefold()!='.bik' or header!=b'BIK':
                 raise ValueError('Требуется видеоролик Gothic в формате BIK')
             data=None
         target.parent.mkdir(parents=True, exist_ok=True)
