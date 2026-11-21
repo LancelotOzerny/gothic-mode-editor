@@ -36,16 +36,36 @@ class WorldOpenGLFrame(OpenGLFrame):
         self.span = 6000.0
         self.solid = True
         self.animate = True
+        self._failed = False
+
+    def _failed_context(self, exc):
+        if self._failed:
+            return
+        self._failed = True
+        self.animate = False
+        # Return to the Tk renderer on the event loop.
+        self.after_idle(lambda: self.master._disable_opengl(str(exc)))
 
     def initgl(self):
-        glClearColor(0.098, 0.118, 0.161, 1.0)
-        glEnable(GL_DEPTH_TEST)
-        glDepthFunc(GL_LEQUAL)
-        # World polygons can have inconsistent winding. Double-sided for now.
-        from OpenGL.GL import GL_CULL_FACE
-        glDisable(GL_CULL_FACE)
+        try:
+            glClearColor(0.098, 0.118, 0.161, 1.0)
+            glEnable(GL_DEPTH_TEST)
+            glDepthFunc(GL_LEQUAL)
+            # World polygons can have inconsistent winding. Double-sided.
+            from OpenGL.GL import GL_CULL_FACE
+            glDisable(GL_CULL_FACE)
+        except Exception as exc:
+            self._failed_context(exc)
 
     def redraw(self):
+        if self._failed:
+            return
+        try:
+            self._redraw_scene()
+        except Exception as exc:
+            self._failed_context(exc)
+
+    def _redraw_scene(self):
         width, height = max(1, self.winfo_width()), max(1, self.winfo_height())
         glViewport(0, 0, width, height)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
