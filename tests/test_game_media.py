@@ -111,6 +111,15 @@ class GameMediaTests(unittest.TestCase):
                 self.assertEqual((texture.width,texture.height),(4,3))
                 self.assertEqual(path.name,'LOADING-C.TEX')
 
+    def test_imported_selection_persists_after_reopen(self):
+        from gothic_editor.core.project_selection import ProjectSelection
+        chosen=ProjectSelection(self.project,'Media')
+        chosen.add('images:STARTSCREEN-C.TEX')
+        reopened=ProjectSelection(self.project,'Media')
+        self.assertIn('images:startscreen-c.tex',reopened.read())
+        self.assertTrue(reopened.path.is_file())
+        self.assertEqual(reopened.path.parent.name,'Media')
+
     def test_catalog_uses_game_resources_and_project_overrides(self):
         from types import SimpleNamespace
         source=Path(self.temp.name)/'original.tga'
