@@ -25,7 +25,8 @@ from gothic_editor.ui.controllers.tool_runner import ToolRunner
 from gothic_editor.ui.widgets.icons import IconImages
 from gothic_editor.ui.widgets.dock import BottomDock
 from gothic_editor.ui.panels.resources import ResourcesPanel
-from gothic_editor.ui.windows.game_media import GameMediaWindow
+from gothic_editor.ui.panels.media import MediaPanel, MediaPropertiesPanel
+from gothic_editor.core.game_media import GameMedia
 from .core.recent_projects import RecentProjects
 from .core.categories import classify, EDITABLE_CATEGORIES
 from gothic_editor.ui.panels.welcome import WelcomeScreen
@@ -55,7 +56,8 @@ class EditorApp(tk.Tk):
         localization.set_language(self.settings.get_value('interface.general.language'))
         self.settings_window=None
         self.spreadsheet_window=None
-        self.media_window=None
+        self._media_loaded=set()
+        self._media_resources=[]
         self._dock_resize_after=None
         self._bottom_tab_specs={}
         self._bottom_tab_variables={}
@@ -132,7 +134,6 @@ class EditorApp(tk.Tk):
         edit.add_command(label='Отменить',accelerator='Ctrl+Z',command=lambda:self.undo_redo(False))
         edit.add_command(label='Повторить',accelerator='Ctrl+Y',command=lambda:self.undo_redo(True))
         menu.add_cascade(label='Правка',menu=edit)
-        project.add_command(label='Медиа игры',command=self.show_game_media)
         menu.add_cascade(label=tr('app.project'),menu=project)
         view=tk.Menu(menu,tearoff=False)
         windows=tk.Menu(view,tearoff=False)
@@ -149,16 +150,6 @@ class EditorApp(tk.Tk):
         self.config(menu=menu)
         self.main_menu=menu
         if previous is not None:previous.destroy()
-
-    def show_game_media(self):
-        if not self.need_project():return
-        window=self.media_window
-        if window is not None and window.winfo_exists():
-            window.lift()
-            return
-        if not self._save_editors():return
-        self.media_window=GameMediaWindow(self)
-        self.media_window.show_centered()
 
     def show_spreadsheet(self,operation):
         if not self.need_project():return
@@ -195,7 +186,7 @@ class EditorApp(tk.Tk):
         header.columnconfigure(2,weight=1,uniform='header_side')
         mode_frame=tk.Frame(header,bg=BG);mode_frame.grid(row=0,column=0,sticky='w')
         label(mode_frame,tr('app.mode'),bg=BG,font=('Arial',11)).pack(side='left',padx=(0,10))
-        self.mode=create_field(mode_frame,'choice',options=((tr('app.items'),'items'),('Мир','world'),('NPC','npc'),(tr('recipes.title'),'recipes')),caption=tr('app.mode'))
+        self.mode=create_field(mode_frame,'choice',options=((tr('app.items'),'items'),('Мир','world'),('NPC','npc'),(tr('recipes.title'),'recipes'),('Медиа','media')),caption=tr('app.mode'))
         self.mode.current(0);self.mode.pack(side='left')
         self.mode.bind('<<ComboboxSelected>>',lambda _:self._switch_resource_browser(self.mode.get()))
         actions=tk.Frame(header,bg=BG);actions.grid(row=0,column=1,padx=16)
@@ -228,6 +219,7 @@ class EditorApp(tk.Tk):
         self.recipes=RecipeController(self)
         self.recipe_list=RecipeListPanel(sidebar,self.recipes)
         self.world_panel=WorldPanel(sidebar,self.world.select,self.npcs.select)
+        self.media_panel=MediaPanel(sidebar,self.select_media,self.load_media_category)
         middle=tk.Frame(panes,bg='#191e29')
         panes.add(middle,width=550,minsize=250)
         self.viewer=ModelViewer(middle)
@@ -242,6 +234,7 @@ class EditorApp(tk.Tk):
         self.world_properties=WorldPropertiesPanel(inspector,self.world)
         self.npc_properties=NpcPropertiesPanel(inspector,self.npcs)
         self.recipe_properties=RecipePropertiesPanel(inspector,self.recipes)
+        self.media_properties=MediaPropertiesPanel(inspector,self)
         self._show_resource_panels('items')
         self.bottom_dock=BottomDock(self.workspace)
         for key,(title_key,factory) in self._bottom_tab_specs.items():
@@ -370,9 +363,6 @@ class EditorApp(tk.Tk):
         except Exception as exc:messagebox.showerror(tr('app.open_error'),str(exc))
 
     def show_project(self,reset_hierarchy=False):
-        if self.media_window is not None and self.media_window.winfo_exists():
-            self.media_window.destroy()
-            self.media_window=None
         self._show_editor()
         self._cancel_model_load()
         self.current=None
@@ -747,13 +737,15 @@ class EditorApp(tk.Tk):
         self._resource_browser=mode
         self.hierarchy.pack_forget()
         self.world_panel.pack_forget()
+        self.media_panel.pack_forget()
         self.properties.pack_forget()
         self.world_properties.pack_forget()
+        self.media_properties.pack_forget()
         self.npc_properties.pack_forget()
         self.recipe_list.pack_forget()
         self.recipe_properties.pack_forget()
-        (self.recipe_list if mode=='recipes' else self.world_panel if mode!='items' else self.hierarchy).pack(fill='both',expand=True)
-        inspector=self.recipe_properties if mode=='recipes' else self.npc_properties if mode=='npc' else self.world_properties if mode=='world' else self.properties
+        (self.media_panel if mode=='media' else self.recipe_list if mode=='recipes' else self.world_panel if mode!='items' else self.hierarchy).pack(fill='both',expand=True)
+        inspector=self.media_properties if mode=='media' else self.recipe_properties if mode=='recipes' else self.npc_properties if mode=='npc' else self.world_properties if mode=='world' else self.properties
         # Let the recipe form use the central area as well as the inspector.
         if mode=='recipes':
             self.viewer.master.master.paneconfigure(self.viewer.master,hide=True)
@@ -784,11 +776,36 @@ class EditorApp(tk.Tk):
         self.recipes.deselect()
         self.recipe_properties.show(None)
         if mode=='recipes':self.recipes.load()
+        if mode=='media':self.load_media(keep=False)
         self.properties.show(None)
         self.world_properties.show(None)
         self.npc_properties.show(None)
+        self.media_properties.show(None)
         self._show_resource_panels(mode)
-        self.viewer.set_mesh(caption={'world':'Выберите объект мира','npc':'Выберите NPC'}.get(mode,tr('app.select_item')))
+        self.viewer.set_mesh(caption={'world':'Выберите объект мира','npc':'Выберите NPC','media':'Выберите медиа'}.get(mode,tr('app.select_item')))
+
+    def load_media_category(self,category):
+        self._media_loaded.add(category)
+        self.load_media(keep=True)
+
+    def load_media(self,keep=False):
+        if self.repo.root is None:return
+        selected=self.media_properties.current if keep else None
+        try:
+            all_resources=GameMedia(self.repo.root).catalog(self.repo.archive_models,self.repo.game)
+            self._media_resources=all_resources
+            self.media_panel.set_resources(all_resources,self._media_loaded)
+            if selected is not None:
+                row=next((x for x in all_resources if x.kind==selected.kind and
+                          x.name.casefold()==selected.name.casefold()),None)
+                self.media_properties.show(row)
+            else:self.media_properties.show(None)
+        except (OSError,ValueError) as exc:
+            messagebox.showerror('Медиа',str(exc),parent=self)
+
+    def select_media(self,resource):
+        self.media_properties.show(resource)
+        self.viewer.set_mesh(caption=resource.name)
 
     def _texture_mode_changed(self):
         camera=(self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom)
