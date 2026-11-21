@@ -41,6 +41,21 @@ class GameMediaTests(unittest.TestCase):
         self.assertEqual(self.media.videos(), [path])
         self.assertFalse(any('Intro.bik' in name for name in BuildAssetService(self.project).collect()))
 
+    def test_png_and_jpeg_replace_into_gothic_texture(self):
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest('Pillow is optional; Windows uses its native decoder')
+        for suffix in ('.png','.jpg'):
+            with self.subTest(suffix=suffix):
+                source=Path(self.temp.name)/('replacement'+suffix)
+                image=Image.new('RGB',(4,3),(200,50,20))
+                image.save(source)
+                path=self.media.replace_image('LOADING.TGA',source)
+                texture=read_ztex(path.read_bytes())
+                self.assertEqual((texture.width,texture.height),(4,3))
+                self.assertEqual(path.name,'LOADING-C.TEX')
+
     def test_catalog_uses_game_resources_and_project_overrides(self):
         from types import SimpleNamespace
         source=Path(self.temp.name)/'original.tga'
