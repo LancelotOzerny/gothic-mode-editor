@@ -251,6 +251,8 @@ class WorldPreviewWindow(tk.Toplevel):
             text='Камера: полёт' if self._fly_mode else 'Камера: обзор')
         if self._fly_mode and self._world is not None:
             self._reset_fly()
+            self._refresh_fly_chunks()
+        self._update_chunk_status()
         self.queue_draw()
 
     def _key_down(self, event):
@@ -351,11 +353,14 @@ class WorldPreviewWindow(tk.Toplevel):
     def _update_chunk_status(self):
         if self._world is None or self._scene is None:
             return
+        camera_hint = (
+            f' · Скорость: {self._fly_camera.speed/100:.1f} м/с'
+            if self._fly_mode else '')
         self.status.configure(
             text=f'Чанк {self._focus[0]}, {self._focus[1]} · '
                  f'Видимых полигонов: {len(self._scene.faces):,} · '
-                 f'Участков: {len(self._world.chunks)} · '
-                 f'Размер: {self._world.chunk_size} см')
+                 f'Участков: {len(self._world.chunks)}'
+                 f'{camera_hint}')
 
     def move_focus(self, dx, dz):
         if self._world is None:
