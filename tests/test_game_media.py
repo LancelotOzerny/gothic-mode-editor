@@ -89,7 +89,7 @@ class GameMediaTests(unittest.TestCase):
                 header=bytearray(256)
                 header[:2]=b'MZ'
                 struct.pack_into('<I',header,0x3c,128)
-                header[128:132]=b'PE\\0\\0'
+                header[128:132]=b'PE\0\0'
                 struct.pack_into('<H',header,132,machine)
                 path=Path(self.temp.name)/'test.dll'
                 path.write_bytes(header)
