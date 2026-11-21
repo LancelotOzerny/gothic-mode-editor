@@ -61,6 +61,16 @@ class WorldPreviewTests(unittest.TestCase):
         self.assertEqual(scene.faces, ())
         self.assertEqual(project_wireframe(scene, 800, 600, 0., 0., 1.), ())
 
+    def test_subnormal_bounds_do_not_overflow_projection(self):
+        # A world decoded with subnormal floats used to yield infinite scale.
+        tiny = SimpleNamespace(
+            vertices=((0., 0., 0.), (1e-45, 0., 0.), (0., 1e-45, 0.)),
+            triangles=((0, 1, 2),), vertex_count=3, triangle_count=1)
+        scene = prepare_wireframe(tiny)
+        points = project_wireframe(scene, 900, 600, 0.55, -0.45, 1.)
+        self.assertEqual(len(points), 3)
+        self.assertTrue(all(math.isfinite(value) for point in points for value in point))
+
     def test_projection_center_pan_and_zoom(self):
         scene = prepare_wireframe(self.geometry)
         first = project_wireframe(scene, 600, 400, 0., 0., 1.)
