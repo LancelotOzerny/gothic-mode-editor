@@ -304,7 +304,9 @@ class ProjectRepository:
             destination.write_bytes((text.rstrip()+'\n\n'+item.text+';\n').encode(codec))
         else:
             destination.write_bytes((ITEM_OVERRIDES_HEADER+'\n\n'+item.text+';\n').encode(item.encoding))
-        self.refresh()
+        # Only the written script changed; rescanning the full Gothic installation is unnecessary.
+        self._replace_project_file(destination,parse_items(destination,'project'))
+        self.options_cache.clear()
         return next(current for current in self.project_items if current.instance.casefold()==item.instance.casefold())
 
     def _destination_for(self,item:Item):
