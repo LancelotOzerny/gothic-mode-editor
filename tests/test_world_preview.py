@@ -160,44 +160,7 @@ class WorldPreviewTests(unittest.TestCase):
         scene = prepare_wireframe(self.geometry)
         for face in scene.faces:
             shade = face_color(scene.vertices, face)
-            self.assertRegex(shade, r'^#[0-9a-f]{6}
-        scene = prepare_wireframe(self.geometry)
-        first = project_wireframe(scene, 600, 400, 0., 0., 1.)
-        second = project_wireframe(scene, 600, 400, 0., 0., 2., 10, -20)
-        self.assertEqual(len(first), len(scene.vertices))
-        self.assertAlmostEqual(second[0][0] - 300, (first[0][0] - 300) * 2 + 10)
-        self.assertAlmostEqual(second[0][1] - 200, (first[0][1] - 200) * 2 - 20)
-        self.assertTrue(all(math.isfinite(value) for point in second for value in point))
-
-    def test_invalid_preview_limit(self):
-        with self.assertRaises(ValueError):
-            prepare_wireframe(self.geometry, 0)
-        with self.assertRaises(ValueError):
-            prepare_wireframe(self.geometry, MAX_PREVIEW_TRIANGLES + 1)
-
-    def test_service_zen_files_are_not_locations(self):
-        with TemporaryDirectory() as temporary:
-            folder = Path(temporary) / '_work' / 'data' / 'Worlds'
-            folder.mkdir(parents=True)
-            for name in ('Lensflare.zen', 'DialogCams.zen',
-                         'LIGHTPRESETS.zen', 'NEWWORLD.ZEN'):
-                (folder / name).write_bytes(b'')
-            self.assertEqual([path.name for path in available_locations(temporary)],
-                             ['NEWWORLD.ZEN'])
-            for name in ('Lensflare.zen', 'DialogCams.zen', 'LIGHTPRESETS.zen'):
-                self.assertFalse(is_location_zen(name))
-                with self.assertRaisesRegex(ValueError, 'служебный архив'):
-                    load_world_wireframe(folder / name)
-
-    def test_empty_geometry(self):
-        empty = SimpleNamespace(vertices=(), triangles=(), vertex_count=0, triangle_count=0)
-        scene = prepare_wireframe(empty)
-        self.assertEqual(project_wireframe(scene, 400, 300, 0, 0, 1), ())
-
-
-if __name__ == '__main__':
-    unittest.main()
-)
+            self.assertRegex(shade, r'^#[0-9a-f]{6}$')
         self.assertEqual(face_color(scene.vertices, (0, 0, 0)), '#344151')
 
     def test_projection_center_pan_and_zoom(self):
@@ -208,6 +171,16 @@ if __name__ == '__main__':
         self.assertAlmostEqual(second[0][0] - 300, (first[0][0] - 300) * 2 + 10)
         self.assertAlmostEqual(second[0][1] - 200, (first[0][1] - 200) * 2 - 20)
         self.assertTrue(all(math.isfinite(value) for point in second for value in point))
+
+    def test_automatic_chunk_switching_from_camera_position(self):
+        from gothic_editor.core.world_preview import camera_chunk, move_camera, drag_camera
+        self.assertEqual(camera_chunk((5999., 20., 0.), 6000), (0, 0))
+        self.assertEqual(camera_chunk((6000., 20., -1.), 6000), (1, -1))
+        center = move_camera((5900., 20., 0.), 0, 1, 0., 200.)
+        self.assertEqual(camera_chunk(center, 6000), (1, 0))
+        shifted = drag_camera((5900., 20., 0.), -100, 0, 800, 600, 0., -.5, 1., 6000)
+        self.assertGreater(shifted[0], 5900.)
+        self.assertTrue(all(math.isfinite(v) for v in shifted))
 
     def test_invalid_preview_limit(self):
         with self.assertRaises(ValueError):
