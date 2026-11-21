@@ -263,6 +263,31 @@ class ApplicationDraftTests(unittest.TestCase):
                     app.destroy()
 
 
+class UndoRedoApplicationTests(unittest.TestCase):
+    def test_item_edit_is_restored_without_changing_game_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            with patch('gothic_editor.app.SettingsStore',return_value=SettingsStore(root/'settings.json')):
+                app=EditorApp()
+            try:
+                app.repo.create(root/'project','Test')
+                item=temporary_item(app.repo)
+                app.show_project(reset_hierarchy=True)
+                app.hierarchy.choose(item)
+                app.select(item)
+                app.save_fields(item,{'value':'2'},autosave=True)
+                self.assertEqual(app.current.fields['value'],'2')
+                app.undo_redo()
+                restored=next(value for value in app.repo.project_items if value.instance==item.instance)
+                self.assertEqual(restored.fields['value'],'1')
+                app.undo_redo(True)
+                restored=next(value for value in app.repo.project_items if value.instance==item.instance)
+                self.assertEqual(restored.fields['value'],'2')
+            finally:
+                app.properties.show(None)
+                app.destroy()
+
+
 class RenderSchedulingTests(unittest.TestCase):
     def test_only_latest_camera_is_queued_and_scene_is_sent_once(self):
         owner=SimpleNamespace(after=Mock(return_value='poll'),after_cancel=Mock())
