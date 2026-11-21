@@ -117,10 +117,10 @@ def _skip(stream, size, end):
 
 
 def read_binsafe(stream, payload_start, hash_offset, file_size, *, include_geometry=False):
-    """Return (VOBs, has_mesh, has_tree) from a validated BIN_SAFE payload.
+    """Return (VOBs, has_mesh, has_tree, geometry) from a BIN_SAFE payload.
 
-    Reads only until the hash table; large geometry blocks are skipped.
-    This is an object/position inspector, not a geometry mesh extractor.
+    Reads only until the hash table. Optional geometry output includes triangle
+    vertices/indices; materials and BSP remain unsupported.
     """
     if hash_offset < payload_start or hash_offset > file_size:
         raise BinSafeError('BIN_SAFE: неверное смещение таблицы имён.')
