@@ -24,8 +24,8 @@ class BinSafeVob:
     properties: dict[str, str]
 
 
-_WANTED = frozenset(('vobName', 'visual', 'trafoOSToWSPos', 'presetName',
-                     'itemInstance'))
+_WANTED = frozenset(('vobName', 'visual', 'trafoOSToWSPos',
+                     'trafoOSToWSRot', 'showVisual', 'presetName', 'itemInstance'))
 _MAX_NAMES = 100_000
 _MAX_OBJECTS = 1_000_000
 _MAX_DEPTH = 512
@@ -85,6 +85,14 @@ def _value(stream, kind, end, keep):
         return None
     if kind in (9, 16):
         length = _u16(stream, end)
+        if keep and length <= 256:
+            raw = _exact(stream, length, end)
+            if kind == 9:
+                return raw.hex()
+            if length % 4 == 0:
+                return ' '.join(str(value) for value in
+                                struct.unpack('<' + 'f' * (length // 4), raw))
+            return None
         _skip(stream, length, end)
         return None
     sizes = {2: 4, 3: 4, 4: 1, 5: 2, 6: 4, 7: 12, 8: 4, 17: 4}
