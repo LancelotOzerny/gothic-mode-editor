@@ -120,8 +120,11 @@ class ItemHierarchyController:
                 'Предметы внутри удаляемых групп сохранятся, если не выбраны отдельно.',parent=app):return
         saved=app._history_capture()
         for value in values:
+            if saved is None:break
             if not isinstance(value,HierarchyNode):
-                saved.update(app._history_capture(value))
+                current=app._history_capture(value)
+                if current is None:saved=None
+                else:saved.update(current)
         original_items={(item.origin,item.instance.casefold()) for item in app.repo.project_items}
         completed = 0
         try:
