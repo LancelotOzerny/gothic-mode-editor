@@ -4,7 +4,7 @@ import re
 from uuid import uuid4
 
 from .asset_files import AssetFiles
-from .textures import read_texture, write_ztex, Texture
+from .textures import read_texture, read_ztex, write_ztex, Texture
 from dataclasses import dataclass
 
 KINDS = ('images', 'videos')
@@ -276,8 +276,17 @@ class GameMedia:
         path.unlink()
 
     def collect_images(self):
-        return {'_work/data/Textures/_compiled/'+path.name:path.read_bytes()
-                for path in self.entries('images')}
+        files = {}
+        for path in self.entries('images'):
+            data = path.read_bytes()
+            # Repair unsafe uncompressed TEX files created by older editor versions
+            # in the build output, without changing the user's editable assets.
+            texture = read_ztex(data)
+            kind = int.from_bytes(data[8:12], 'little')
+            if kind not in (10, 12):
+                data = write_ztex(texture)
+            files['_work/data/Textures/_compiled/' + path.name] = data
+        return files
 
     def videos(self):
         """BIK files are distributed separately; ZenGin reads them as loose files."""
