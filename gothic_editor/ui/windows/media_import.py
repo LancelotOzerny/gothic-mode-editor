@@ -72,7 +72,7 @@ class MediaImportWindow(EditorDialog):
                 for x in range(0,texture.width,scale):
                     offset=(y*texture.width+x)*4
                     pixels.extend(texture.pixels[offset:offset+3])
-            ppm=f'P6\\n{width} {height}\\n255\\n'.encode('ascii')+pixels
+            ppm=f'P6\n{width} {height}\n255\n'.encode('ascii')+pixels
             self.picture=tk.PhotoImage(master=self,data=ppm,format='PPM')
             self.canvas.create_image(155,170,image=self.picture)
             self.caption.config(text=f'{row.name} • {texture.width} × {texture.height}')
