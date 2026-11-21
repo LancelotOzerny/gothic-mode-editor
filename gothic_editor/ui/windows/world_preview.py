@@ -27,6 +27,7 @@ class WorldPreviewPanel(tk.Frame):
         self._scene = None
         self._world = None
         self._vobs = None
+        self._show_vobs = True
         self._focus = None
         self._camera_center = None
         self._camera_target = None
@@ -80,6 +81,9 @@ class WorldPreviewPanel(tk.Frame):
         self.surface_button = tk.Button(header, text='Поверхности', command=self.toggle_surfaces,
                   bg='#334155', fg='white', relief='flat')
         self.surface_button.pack(side='left', padx=4)
+        self.vob_button = tk.Button(header, text='VOB: вкл', command=self.toggle_vobs,
+                                   bg='#334155', fg='white', relief='flat')
+        self.vob_button.pack(side='left', padx=4)
         self.camera_button = tk.Button(header, text='Камера: обзор', command=self.toggle_camera,
                   bg='#334155', fg='white', relief='flat')
         self.camera_button.pack(side='left', padx=4)
@@ -413,6 +417,12 @@ class WorldPreviewPanel(tk.Frame):
         return ((focus[0] + 0.5) * size, self._world_height,
                 (focus[1] + 0.5) * size)
 
+    def toggle_vobs(self):
+        self._show_vobs = not self._show_vobs
+        self.vob_button.configure(text='VOB: вкл' if self._show_vobs else 'VOB: выкл')
+        self._update_chunk_status()
+        self.queue_draw()
+
     def toggle_surfaces(self):
         self._solid = not self._solid
         self.surface_button.config(text='Поверхности' if self._solid else 'Каркас')
@@ -452,10 +462,15 @@ class WorldPreviewPanel(tk.Frame):
                  if self._gl_view is not None else len(self._scene.faces))
         skipped = (f' / {available:,} · ограничение GPU'
                    if self._gl_view is not None and shown < available else '')
+        vob_count = (sum(len(indices) for (x, z), indices in self._vobs.chunks.items()
+                         if abs(x-self._focus[0]) <= self._chunk_radius and
+                            abs(z-self._focus[1]) <= self._chunk_radius)
+                     if self._gl_view is not None and self._vobs is not None
+                     and self._show_vobs else 0)
         self.status.configure(
             text=f'Чанк {self._focus[0]}, {self._focus[1]} · '
                  f'Треугольников: {shown:,}{skipped} · '
-                 f'{backend}{camera_hint}')
+                 f'VOB: {vob_count:,} · {backend}{camera_hint}')
 
     def move_focus(self, dx, dz):
         if self._world is None:
@@ -559,7 +574,7 @@ class WorldPreviewPanel(tk.Frame):
         if self._gl_view is not None:
             view = self._gl_view
             view.world = self._world
-            view.vobs = self._vobs
+            view.vobs = self._vobs if self._show_vobs else None
             view.focus = self._focus
             view.radius = self._chunk_radius
             view.fly = self._fly_mode
