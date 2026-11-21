@@ -187,7 +187,7 @@ class EditorApp(tk.Tk):
         header.columnconfigure(2,weight=1,uniform='header_side')
         mode_frame=tk.Frame(header,bg=BG);mode_frame.grid(row=0,column=0,sticky='w')
         label(mode_frame,tr('app.mode'),bg=BG,font=('Arial',11)).pack(side='left',padx=(0,10))
-        self.mode=create_field(mode_frame,'choice',options=((tr('app.items'),'items'),('Мир','world'),('NPC','npc'),(tr('recipes.title'),'recipes'),('Медиа','media')),caption=tr('app.mode'))
+        self.mode=create_field(mode_frame,'choice',options=((tr('app.items'),'items'),('Мир','world'),('Редактор локаций','locations'),('NPC','npc'),(tr('recipes.title'),'recipes'),('Медиа','media')),caption=tr('app.mode'))
         self.mode.current(0);self.mode.pack(side='left')
         self.mode.bind('<<ComboboxSelected>>',lambda _:self._switch_resource_browser(self.mode.get()))
         actions=tk.Frame(header,bg=BG);actions.grid(row=0,column=1,padx=16)
@@ -220,7 +220,6 @@ class EditorApp(tk.Tk):
         self.recipes=RecipeController(self)
         self.recipe_list=RecipeListPanel(sidebar,self.recipes)
         self.world_panel=WorldPanel(sidebar,self.world.select,self.npcs.select)
-        self.world_panel.on_preview_world=self.world.open_world_preview
         self.media_panel=MediaPanel(sidebar,self.select_media,self.load_media_category,self.import_media)
         middle=tk.Frame(panes,bg='#191e29')
         panes.add(middle,width=550,minsize=250)
@@ -763,7 +762,6 @@ class EditorApp(tk.Tk):
             self.viewer.master.master.paneconfigure(self.viewer.master,hide=True)
         else:
             self.viewer.master.master.paneconfigure(self.viewer.master,hide=False)
-        self.world_panel.preview_button.configure(state='normal' if mode=='world' else 'disabled')
         self.world_panel.on_add=self.npcs.add if mode=='npc' else self.world.add
         self.world_panel.on_remove=self.npcs.remove if mode=='npc' else self.world.remove
         inspector.pack(fill='both',expand=True)
@@ -771,6 +769,13 @@ class EditorApp(tk.Tk):
 
     def _switch_resource_browser(self,mode):
         if not self.repo.root or mode==self._resource_browser:return
+        if mode=='locations':
+            # The location editor owns its own workspace and camera; the main
+            # resource browser remains untouched when the window is closed.
+            self.mode.set_expression(self._resource_browser)
+            from gothic_editor.ui.windows.world_preview import WorldPreviewWindow
+            WorldPreviewWindow(self, self.repo.game)
+            return
         if not self._save_editors():
             self.mode.set_expression(self._resource_browser)
             return
