@@ -267,7 +267,7 @@ class WorldPreviewWindow(tk.Toplevel):
                 fill='#94a3b8', font=('Arial', 13), tags='scene')
             return
         if not scene.faces:
-            self.canvas.create_text(w/2, h/2, text='Геометрия мира пуста',
+            self.canvas.create_text(w/2, h/2, text='В выбранных чанках нет геометрии. Перейдите к соседнему участку (WASD)',
                 fill='#94a3b8', tags='scene')
             return
         try:
