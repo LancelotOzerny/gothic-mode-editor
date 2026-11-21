@@ -99,7 +99,11 @@ class RecipeController:
             if data == self.current and self.persisted:
                 return True
             old = self.current['id'] if self.persisted else None
+            paths=[self.store.path(data['id'])]
+            if old and old!=data['id']:paths.append(self.store.path(old))
+            saved=self.app.history.capture(paths)
             self.store.save(data, old)
+            self.app.history.record(saved)
             self.current = data
             self.persisted = True
             self.items = self.store.load()
@@ -142,7 +146,9 @@ class RecipeController:
                 data = deepcopy(picker.result)
                 data['id'] = self.store.free_id(data['id'])
                 data['category'] = category
+                saved=self.app.history.capture((self.store.path(data['id']),))
                 self.store.save(data)
+                self.app.history.record(saved)
                 self.load()
                 self.select(data)
             except (OSError, ValueError) as exc:
@@ -191,6 +197,7 @@ class RecipeController:
             return
         try:
             data = self.store.duplicate(self.current)
+            self.app.history.record({},(self.store.path(data['id']),))
             self.load()
             self.select(data)
         except (OSError, ValueError) as exc:
@@ -201,7 +208,9 @@ class RecipeController:
             return
         try:
             if self.persisted:
+                saved=self.app.history.capture((self.store.path(self.current['id']),))
                 self.store.delete(self.current['id'])
+                self.app.history.record(saved)
             self.deselect()
             self.panel.show(None)
             self.load()
