@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import filedialog
 
 from gothic_editor.core.world_preview import (load_world_wireframe, project_wireframe,
-    available_locations, is_location_zen)
+    available_locations, is_location_zen, face_color)
 
 
 class WorldPreviewWindow(tk.Toplevel):
@@ -25,6 +25,10 @@ class WorldPreviewWindow(tk.Toplevel):
         self._scene = None
         self._world = None
         self._focus = None
+        self._camera_center = None
+        self._camera_target = None
+        self._animation_id = None
+        self._solid = True
         settings = getattr(parent, 'settings', None)
         self._chunk_size = settings.get_value('interface.world_chunks.size') if settings else 6000
         self._chunk_radius = settings.get_value('interface.world_chunks.radius') if settings else 1
@@ -61,6 +65,9 @@ class WorldPreviewWindow(tk.Toplevel):
                   bg='#334155', fg='white', relief='flat').pack(side='left', padx=2)
         tk.Button(header, text='▼', command=lambda: self.move_focus(0, 1),
                   bg='#334155', fg='white', relief='flat').pack(side='left', padx=2)
+        self.surface_button = tk.Button(header, text='Поверхности', command=self.toggle_surfaces,
+                  bg='#334155', fg='white', relief='flat')
+        self.surface_button.pack(side='left', padx=4)
         tk.Button(header, text='Сбросить камеру', command=self.reset_camera,
                   bg='#334155', fg='white', relief='flat').pack(side='left', padx=4)
         self.status = tk.Label(header, text='Выберите файл .ZEN из папки Gothic',
@@ -135,6 +142,11 @@ class WorldPreviewWindow(tk.Toplevel):
         self._scene = None
         self._world = None
         self._focus = None
+        self._camera_center = None
+        self._camera_target = None
+        if self._animation_id is not None:
+            self.after_cancel(self._animation_id)
+            self._animation_id = None
         self._reported_draw_error = None
         self.queue_draw()
         self._loading_source = str(path.archive / path.name) if hasattr(path, 'archive') else str(path)
@@ -167,6 +179,8 @@ class WorldPreviewWindow(tk.Toplevel):
         try:
             self._world = future.result()
             self._focus = self._world.origin
+            self._camera_center = self._chunk_center(self._focus)
+            self._camera_target = self._camera_center
             self._scene = self._world.view(self._focus, self._chunk_radius,
                                            self._triangle_limit)
         except Exception as exc:
@@ -201,6 +215,35 @@ class WorldPreviewWindow(tk.Toplevel):
                     error=True)
         self.queue_draw()
 
+    def _chunk_center(self, focus):
+        size = self._world.chunk_size
+        # Camera frame is based on the chunk grid, not sampled faces.
+        # Preserve a stable height while navigating horizontally.
+        if self._world.vertices:
+            ys = [v[1] for v in self._scene.vertices] if self._scene and self._scene.vertices else [0.0]
+            height = (min(ys) + max(ys)) / 2
+        else:
+            height = 0.0
+        return ((focus[0] + 0.5) * size, height, (focus[1] + 0.5) * size)
+
+    def toggle_surfaces(self):
+        self._solid = not self._solid
+        self.surface_button.config(text='Поверхности' if self._solid else 'Каркас')
+        self.queue_draw()
+
+    def _animate_camera(self):
+        self._animation_id = None
+        if self._closed or self._camera_center is None or self._camera_target is None:
+            return
+        current = self._camera_center
+        target = self._camera_target
+        self._camera_center = tuple(a + (b - a)*0.38 for a, b in zip(current, target))
+        if max(abs(a-b) for a, b in zip(self._camera_center, target)) < 1:
+            self._camera_center = target
+        self.queue_draw()
+        if self._camera_center != target:
+            self._animation_id = self.after(32, self._animate_camera)
+
     def _update_chunk_status(self):
         if self._world is None or self._scene is None:
             return
@@ -216,9 +259,13 @@ class WorldPreviewWindow(tk.Toplevel):
         self._focus = (self._focus[0] + dx, self._focus[1] + dz)
         self._scene = self._world.view(self._focus, self._chunk_radius,
                                        self._triangle_limit)
+        self._camera_target = self._chunk_center(self._focus)
         self.pan_x = self.pan_y = 0.0
+        if self._animation_id is not None:
+            self.after_cancel(self._animation_id)
+            self._animation_id = None
+        self._animate_camera()
         self._update_chunk_status()
-        self.queue_draw()
 
     def reset_camera(self):
         self.yaw, self.pitch, self.zoom = 0.55, -0.45, 1.0
@@ -271,8 +318,11 @@ class WorldPreviewWindow(tk.Toplevel):
                 fill='#94a3b8', tags='scene')
             return
         try:
-            points = project_wireframe(scene, w, h, self.yaw, self.pitch,
-                                       self.zoom, self.pan_x, self.pan_y)
+            points = project_wireframe(
+                scene, w, h, self.yaw, self.pitch, self.zoom,
+                self.pan_x, self.pan_y, center=self._camera_center,
+                span=self._world.chunk_size * (2*self._chunk_radius+1)
+                     if self._world is not None else None)
             # Draw back-to-front so near edges remain legible.
             faces = sorted(scene.faces, key=lambda f: sum(points[i][2] for i in f))
             for a, b, c in faces:
@@ -282,8 +332,13 @@ class WorldPreviewWindow(tk.Toplevel):
                 if all(p[1] < -10 for p in triangle) or all(p[1] > h+10 for p in triangle):
                     continue
                 coords = [coordinate for p in triangle for coordinate in p[:2]]
-                self.canvas.create_polygon(*coords, fill='', outline='#6f8fa8',
-                                           width=1, tags='scene')
+                if self._solid:
+                    fill = face_color(scene.vertices, (a, b, c))
+                    self.canvas.create_polygon(*coords, fill=fill, outline='',
+                                               tags='scene')
+                else:
+                    self.canvas.create_polygon(*coords, fill='', outline='#6f8fa8',
+                                               width=1, tags='scene')
         except (ValueError, IndexError, OverflowError, tk.TclError) as exc:
             self.canvas.create_text(w/2, h/2, text='Ошибка отображения: ' + str(exc),
                                     fill='#fca5a5', tags='scene')
@@ -294,7 +349,7 @@ class WorldPreviewWindow(tk.Toplevel):
 
     def close(self):
         self._closed = True
-        for callback in (self._draw_id, self._poll_id):
+        for callback in (self._draw_id, self._poll_id, self._animation_id):
             if callback is not None:
                 self.after_cancel(callback)
         self._executor.shutdown(wait=False, cancel_futures=True)
