@@ -90,7 +90,7 @@ public static class GothicBinkBridge {
         }
     }
 }
-'@ -ErrorAction Stop
+'@
 [GothicBinkBridge]::Run($env:GOTHIC_BINK_DLL, $env:GOTHIC_BINK_VIDEO)
 } catch {
     [Console]::Error.WriteLine($_.Exception.ToString())
