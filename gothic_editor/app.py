@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tkinter import filedialog,messagebox,ttk
 from .core.project import ProjectRepository
+from .core.edit_history import EditHistory
 from .ui.widgets import BG,PANEL,TXT,MUTED,label,Tooltip
 from .ui.widgets.form import create_field
 from gothic_editor.ui.panels.hierarchy import HierarchyPanel
@@ -82,6 +83,7 @@ class EditorApp(tk.Tk):
         self.repo.compiler_path=self.settings.get_value(RESOURCE_KEYS['compiler_path'])
         self.repo.resource_editor_path=self.settings.get_value(RESOURCE_KEYS['resource_editor_path'])
         self.current=None
+        self.history=EditHistory()
         self.appearance=ItemAppearanceController(self)
         self._model_executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix='model-loader')
         self._model_future=None
@@ -90,6 +92,8 @@ class EditorApp(tk.Tk):
         self._build_menu();self._build_layout()
         self.show_welcome()
         self.bind('<Control-o>',lambda e:self.open_project())
+        self.bind('<Control-z>',lambda e:self._history_shortcut(False,e))
+        self.bind('<Control-y>',lambda e:self._history_shortcut(True,e))
         self.bind('<Control-s>',lambda e:self._save_editors())
         self.bind('<Control-KeyPress>',self._save_shortcut,add='+')
         self.bind('<Alt-F4>',lambda e:self.destroy())
@@ -360,7 +364,9 @@ class EditorApp(tk.Tk):
         self.world.catalog_stamp=None
         self._show_resource_panels('items')
         self.project_label.config(text=f'{self.repo.name}   |   {self.repo.root}')
-        if reset_hierarchy:self.hierarchy.collapse_all()
+        if reset_hierarchy:
+            self.history.reset(self.repo.root)
+            self.hierarchy.collapse_all()
         self.update_hierarchy()
         self.viewer.set_mesh(caption=tr('app.select_item'))
         self.properties.show(None)
@@ -834,6 +840,56 @@ class EditorApp(tk.Tk):
             self._model_executor.shutdown(wait=False,cancel_futures=True)
         super().destroy()
 
+    def _history_capture(self,item=None):
+        if self.history.root is None:return {}
+        paths=[self.repo.item_hierarchy.path]
+        if item is not None:
+            path=item.path
+            if self.history.root==path or self.history.root in path.parents:
+                paths.append(path.parent if self.repo.components.owns(path) else path)
+            elif item.origin=='game':
+                paths.append(self.repo._destination_for(item))
+        return self.history.capture(paths)
+
+    def _history_record(self,before,result=None):
+        if result is None:
+            self.history.record(before)
+        else:
+            path=result.path
+            if self.repo.components.owns(path):path=path.parent
+            self.history.record(before,(path,))
+
+    def _history_shortcut(self,redo,event):
+        focused=self.focus_get()
+        if isinstance(focused,(tk.Entry,tk.Text,tk.Spinbox,ttk.Entry)):
+            if self.properties.editor.dirty:return
+        self.undo_redo(redo)
+        return 'break'
+
+    def undo_redo(self,redo=False):
+        if self.repo.root is None:return
+        if not (self.history.redo_stack if redo else self.history.undo_stack):return
+        if not self._save_editors():return
+        selected=self.current.instance.casefold() if self.current else None
+        try:
+            if not self.history.apply(redo):return
+            self._cancel_model_load()
+            self.properties.show(None)
+            self.current=None
+            self.repo.item_hierarchy.reload()
+            self.repo.refresh(project_only=True)
+            self.update_hierarchy()
+            item=next((value for value in self.repo.items if value.instance.casefold()==selected),None)
+            if item is not None:
+                self.hierarchy.choose(item)
+                self.select(item)
+            else:
+                self.hierarchy.choose(None)
+                self.viewer.set_mesh(caption=tr('app.select_item'))
+            self.resources.refresh()
+        except (OSError,ValueError) as exc:
+            messagebox.showerror('История изменений',str(exc),parent=self)
+
     def _action(self,method,*args,**kwargs):
         if not self.need_project():return
         try:
@@ -845,8 +901,10 @@ class EditorApp(tk.Tk):
                     first=self.properties.current
                 else:first=next((item for item in self.repo.items if item.instance.casefold()==args[0].instance.casefold()),args[0])
                 args=(first,)+args[1:]
+            saved=self._history_capture(args[0] if args and hasattr(args[0],'instance') else None)
             before={self.hierarchy.item_key(item) for item in self.repo.items}
             result=method(*args,**kwargs)
+            self._history_record(saved,result)
             inserted=result if result is not None and self.hierarchy.item_key(result) not in before else None
             self.update_hierarchy(inserted=inserted)
             if result is not None:
@@ -888,7 +946,9 @@ class EditorApp(tk.Tk):
     def save_fields(self,item,values,autosave=False,**options):
         if classify(item) not in EDITABLE_CATEGORIES:return
         if not autosave:return self._action(self.repo.edit,item,values,**options)
+        saved=self._history_capture(item)
         result=self.repo.edit(item,values,**options)
+        self._history_record(saved,result)
         self.current=result
         self.hierarchy.selected=self.hierarchy.item_key(result)
         self.update_hierarchy(previous=item,updated=result)
