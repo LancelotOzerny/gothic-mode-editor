@@ -57,6 +57,10 @@ class WorldPreviewWindow(tk.Toplevel):
                   bg='#334155', fg='white', relief='flat').pack(side='left', padx=2)
         tk.Button(header, text='Участок ▶', command=lambda: self.move_focus(1, 0),
                   bg='#334155', fg='white', relief='flat').pack(side='left', padx=2)
+        tk.Button(header, text='▲', command=lambda: self.move_focus(0, -1),
+                  bg='#334155', fg='white', relief='flat').pack(side='left', padx=2)
+        tk.Button(header, text='▼', command=lambda: self.move_focus(0, 1),
+                  bg='#334155', fg='white', relief='flat').pack(side='left', padx=2)
         tk.Button(header, text='Сбросить камеру', command=self.reset_camera,
                   bg='#334155', fg='white', relief='flat').pack(side='left', padx=4)
         self.status = tk.Label(header, text='Выберите файл .ZEN из папки Gothic',
