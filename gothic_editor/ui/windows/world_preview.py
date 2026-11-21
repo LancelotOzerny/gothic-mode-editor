@@ -23,6 +23,12 @@ class WorldPreviewWindow(tk.Toplevel):
         self._poll_id = None
         self._draw_id = None
         self._scene = None
+        self._world = None
+        self._focus = None
+        settings = getattr(parent, 'settings', None)
+        self._chunk_size = settings.get_value('interface.world_chunks.size') if settings else 6000
+        self._chunk_radius = settings.get_value('interface.world_chunks.radius') if settings else 1
+        self._triangle_limit = settings.get_value('interface.world_chunks.triangle_limit') if settings else 3500
         self._closed = False
         self._drag = None
         self._drag_mode = None
@@ -47,6 +53,10 @@ class WorldPreviewWindow(tk.Toplevel):
         self.location_value.trace_add('write', self._selected_location)
         tk.Button(header, text='Обновить список', command=self.refresh_locations,
                   bg='#334155', fg='white', relief='flat').pack(side='left', padx=4)
+        tk.Button(header, text='◀ Участок', command=lambda: self.move_focus(-1, 0),
+                  bg='#334155', fg='white', relief='flat').pack(side='left', padx=2)
+        tk.Button(header, text='Участок ▶', command=lambda: self.move_focus(1, 0),
+                  bg='#334155', fg='white', relief='flat').pack(side='left', padx=2)
         tk.Button(header, text='Сбросить камеру', command=self.reset_camera,
                   bg='#334155', fg='white', relief='flat').pack(side='left', padx=4)
         self.status = tk.Label(header, text='Выберите файл .ZEN из папки Gothic',
@@ -64,7 +74,13 @@ class WorldPreviewWindow(tk.Toplevel):
         self.canvas.bind('<MouseWheel>', lambda event: self.change_zoom(1.12 if event.delta > 0 else 1/1.12))
         self.canvas.bind('<Button-4>', lambda event: self.change_zoom(1.12))
         self.canvas.bind('<Button-5>', lambda event: self.change_zoom(1/1.12))
-        footer = tk.Label(self, text='ЛКМ — вращение  ·  ПКМ — сдвиг  ·  Колесо — масштаб  ·  Без текстур и VOB-моделей',
+        for key, dx, dz in (('a', -1, 0), ('d', 1, 0), ('w', 0, -1), ('s', 0, 1)):
+            self.bind('<KeyPress-' + key + '>',
+                      lambda event, x=dx, z=dz: self.move_focus(x, z))
+        self.bind('<FocusIn>', lambda event: self.canvas.focus_set())
+        self.canvas.configure(takefocus=True)
+        self.canvas.bind('<Button-1>', lambda event: self.canvas.focus_set(), add='+')
+        footer = tk.Label(self, text='ЛКМ — вращение  ·  ПКМ — сдвиг  ·  Колесо — масштаб  ·  WASD — переход по чанкам',
                           bg='#232b39', fg='#94a3b8', anchor='center')
         footer.pack(fill='x', pady=0, ipady=7)
         self.protocol('WM_DELETE_WINDOW', self.close)
@@ -113,10 +129,12 @@ class WorldPreviewWindow(tk.Toplevel):
             return
         self.status.configure(text='Чтение геометрии: ' + Path(path.name).name)
         self._scene = None
+        self._world = None
+        self._focus = None
         self._reported_draw_error = None
         self.queue_draw()
         self._loading_source = str(path.archive / path.name) if hasattr(path, 'archive') else str(path)
-        self._future = self._executor.submit(load_world_wireframe, path)
+        self._future = self._executor.submit(load_world_wireframe, path, self._chunk_size)
         self._poll_id = self.after(50, self._poll)
 
     def _log_message(self, message, *, error=False):
@@ -143,15 +161,16 @@ class WorldPreviewWindow(tk.Toplevel):
             return
         future, self._future = self._future, None
         try:
-            self._scene = future.result()
+            self._world = future.result()
+            self._focus = self._world.origin
+            self._scene = self._world.view(self._focus, self._chunk_radius,
+                                           self._triangle_limit)
         except Exception as exc:
             self.status.configure(text='Ошибка чтения ZEN: ' + str(exc))
             self._log_exception('Ошибка загрузки', exc)
         else:
             self.reset_camera()
-            self.status.configure(text=(f'Вершин: {self._scene.total_vertices:,}  ·  '
-                f'Треугольников: {self._scene.total_triangles:,}  ·  '
-                f'Показано: {len(self._scene.faces):,}'))
+            self._update_chunk_status()
             if self._scene.vertices:
                 lows = tuple(min(vertex[axis] for vertex in self._scene.vertices)
                              for axis in range(3))
@@ -176,6 +195,25 @@ class WorldPreviewWindow(tk.Toplevel):
                     f'[ZEN] Нет пригодной геометрии: {self._loading_source}. '
                     'Проверьте формат и правильность чтения MSH.',
                     error=True)
+        self.queue_draw()
+
+    def _update_chunk_status(self):
+        if self._world is None or self._scene is None:
+            return
+        self.status.configure(
+            text=f'Чанк {self._focus[0]}, {self._focus[1]} · '
+                 f'Видимых полигонов: {len(self._scene.faces):,} · '
+                 f'Участков: {len(self._world.chunks)} · '
+                 f'Размер: {self._world.chunk_size} см')
+
+    def move_focus(self, dx, dz):
+        if self._world is None:
+            return
+        self._focus = (self._focus[0] + dx, self._focus[1] + dz)
+        self._scene = self._world.view(self._focus, self._chunk_radius,
+                                       self._triangle_limit)
+        self.pan_x = self.pan_y = 0.0
+        self._update_chunk_status()
         self.queue_draw()
 
     def reset_camera(self):
