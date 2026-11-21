@@ -111,7 +111,7 @@ class EditHistory:
         try:
             for path, before, after in reversed(changes):
                 self._restore(path, after if redo else before)
-                restored.append((path, before if not redo else after))
+                restored.append((path, before if redo else after))
         except OSError:
             for path, state in reversed(restored):
                 self._restore(path, state)
