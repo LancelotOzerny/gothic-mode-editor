@@ -9,6 +9,13 @@ class ItemHierarchyController:
     def __init__(self, app):
         self.app = app
 
+    def _remember_hierarchy(self, operation):
+        history=self.app.history
+        before=history.capture((self.app.repo.item_hierarchy.path,))
+        result=operation()
+        history.record(before)
+        return result
+
     def select(self, node):
         app = self.app
         if not app._save_editors():return False
@@ -21,14 +28,14 @@ class ItemHierarchyController:
         return True
 
     def rename(self, node, name):
-        self.app.repo.item_hierarchy.rename(node.key,name)
+        self._remember_hierarchy(lambda:self.app.repo.item_hierarchy.rename(node.key,name))
         node.name = name.strip()
         self.app.hierarchy.rebuild()
 
     def move(self, item, key):
         if not self.app._save_editors():return
         try:
-            self.app.repo.item_hierarchy.assign(item,key)
+            self._remember_hierarchy(lambda:self.app.repo.item_hierarchy.assign(item,key))
             self.app.update_hierarchy()
             self.app.hierarchy.choose(item)
         except (ValueError,OSError) as exc:messagebox.showerror('Иерархия',str(exc),parent=self.app)
@@ -47,7 +54,7 @@ class ItemHierarchyController:
                 code = group.add_field('Код',value=node.code) if node.kind=='category' else None
                 name = group.add_field('Название',value=node.name)
                 def save():
-                    try:store.rename(key,name.get(),code.get() if code else None)
+                    try:self._remember_hierarchy(lambda:store.rename(key,name.get(),code.get() if code else None))
                     except (OSError,ValueError) as exc:
                         messagebox.showerror('Иерархия',str(exc),parent=dialog)
                         return
@@ -58,12 +65,12 @@ class ItemHierarchyController:
                 dialog.bind('<Escape>',lambda _:dialog.destroy())
                 dialog.show_centered(modal=True)
                 return
-            if action == 'create':key = store.create_group(key)
-            elif action == 'duplicate':key = store.duplicate(key)[key]
+            if action == 'create':key = self._remember_hierarchy(lambda:store.create_group(key))
+            elif action == 'duplicate':key = self._remember_hierarchy(lambda:store.duplicate(key))[key]
             elif action == 'delete':
                 if not messagebox.askyesno('Удалить',
                         'Удалить «'+node.name+'» и вложенные группы? Предметы сохранятся.',parent=app):return
-                store.delete(key)
+                self._remember_hierarchy(lambda:store.delete(key))
                 app.properties.show(None)
                 app.hierarchy.selected_node = None
                 app.update_hierarchy()
