@@ -10,8 +10,8 @@ from gothic_editor.core.textures import read_ztex
 
 
 def tga():
-    header = struct.pack('<BBBHHBHHHHBB', 0, 0, 2, 0, 0, 0, 0, 0, 2, 2, 24, 32)
-    return header + b'\x00\x00\xff' * 4
+    header = struct.pack('<BBBHHBHHHHBB', 0, 0, 2, 0, 0, 0, 0, 0, 4, 4, 24, 32)
+    return header + b'\x00\x00\xff' * 16
 
 
 class GameMediaTests(unittest.TestCase):
@@ -27,7 +27,7 @@ class GameMediaTests(unittest.TestCase):
         source.write_bytes(tga())
         path = self.media.import_file('images', 'STARTSCREEN.TGA', source)
         self.assertEqual(path.name, 'STARTSCREEN-C.TEX')
-        self.assertEqual((read_ztex(path.read_bytes()).width, read_ztex(path.read_bytes()).height), (2, 2))
+        self.assertEqual((read_ztex(path.read_bytes()).width, read_ztex(path.read_bytes()).height), (4, 4))
         packaged = BuildAssetService(self.project).collect()
         self.assertEqual(packaged['_work/data/Textures/_compiled/STARTSCREEN-C.TEX'], path.read_bytes())
         self.media.delete('images', 'STARTSCREEN.TGA')
@@ -41,13 +41,32 @@ class GameMediaTests(unittest.TestCase):
                 encoded = write_ztex(Texture(8, 8, rgba))
                 self.assertEqual(encoded[:4], b'ZTEX')
                 self.assertEqual(struct.unpack_from('<I', encoded, 8)[0], kind)
-                self.assertEqual(struct.unpack_from('<I', encoded, 20)[0], 4)
-                # 1x1, 2x2, 4x4, 8x8 mipmaps => 1+1+1+4 blocks.
-                self.assertEqual(len(encoded), 36 + 7 * (8 if kind == 10 else 16))
+                self.assertEqual(struct.unpack_from('<I', encoded, 20)[0], 2)
+                # ZenGin DXT mipmaps stop at 4x4: 4x4 and 8x8 = 1+4 blocks.
+                self.assertEqual(len(encoded), 36 + 5 * (8 if kind == 10 else 16))
                 decoded = read_ztex(encoded)
                 self.assertEqual((decoded.width, decoded.height), (8, 8))
                 self.assertLess(abs(decoded.pixels[0] - 220), 15)
                 self.assertLess(abs(decoded.pixels[3] - alpha), 18)
+
+    def test_build_repairs_legacy_dxt_with_too_many_levels(self):
+        from gothic_editor.core.textures import Texture, write_ztex, _encode_dxt_block
+        pixels=bytes((30,90,170,255))*64
+        source=Texture(8,8,pixels)
+        correct=write_ztex(source)
+        # Simulate the old editor: 1x1 and 2x2 levels preceding the 4x4 one.
+        extra=b''.join(_encode_dxt_block(level.pixels,level.width,level.height,0,0,False)
+                       for level in reversed(source.mipmaps[2:]))
+        wrong=bytearray(correct)
+        struct.pack_into('<I',wrong,20,4)
+        wrong=wrong[:36]+extra+wrong[36:]
+        path=self.media.path('images','LOADING.TGA')
+        path.parent.mkdir(parents=True,exist_ok=True)
+        path.write_bytes(wrong)
+        rebuilt=self.media.collect_images()['_work/data/Textures/_compiled/LOADING-C.TEX']
+        self.assertEqual(struct.unpack_from('<I',rebuilt,20)[0],2)
+        self.assertEqual(len(rebuilt),len(correct))
+        self.assertEqual(path.read_bytes(),wrong)
 
     def test_build_repairs_legacy_uncompressed_media(self):
         from gothic_editor.core.textures import Texture
@@ -82,7 +101,7 @@ class GameMediaTests(unittest.TestCase):
         GameMedia.export_file(resource,output)
         data=output.read_bytes()
         self.assertTrue(data.startswith(b'\x89PNG\r\n\x1a\n'))
-        self.assertEqual(struct.unpack_from('>II',data,16),(2,2))
+        self.assertEqual(struct.unpack_from('>II',data,16),(4,4))
         offset=8
         chunks={}
         while offset<len(data):
@@ -92,7 +111,7 @@ class GameMediaTests(unittest.TestCase):
             offset+=12+length
         pixels=zlib.decompress(chunks[b'IDAT'])
         self.assertEqual(pixels[0],0)
-        self.assertEqual(len(pixels),2*(1+2*4))
+        self.assertEqual(len(pixels),4*(1+4*4))
 
     def test_bik_is_read_from_vdf_catalog(self):
         from gothic_editor.core.mod_archive import write_mod
