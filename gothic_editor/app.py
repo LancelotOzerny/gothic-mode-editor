@@ -376,6 +376,9 @@ class EditorApp(tk.Tk):
         self.project_label.config(text=f'{self.repo.name}   |   {self.repo.root}')
         if reset_hierarchy:
             self.history.reset(self.repo.root)
+            self._media_loaded.clear()
+            self._media_resources=[]
+            self.media_panel.set_resources([],set())
             self.hierarchy.collapse_all()
         self.update_hierarchy()
         self.viewer.set_mesh(caption=tr('app.select_item'))
@@ -563,7 +566,7 @@ class EditorApp(tk.Tk):
         self.hierarchy.search.set(query)
         if self.repo.root is not None:
             self.show_project()
-            if previous_mode in ('world','npc','recipes'):
+            if previous_mode in ('world','npc','recipes','media'):
                 self._switch_resource_browser(previous_mode)
                 if recipe_id:
                     recipe=next((value for value in self.recipes.items if value['id']==recipe_id),None)
@@ -932,6 +935,8 @@ class EditorApp(tk.Tk):
             self.repo.item_hierarchy.reload()
             self.repo.refresh(project_only=True)
             self.update_hierarchy()
+            if mode=='media':
+                self.load_media(keep=True)
             if mode=='recipes':
                 self.recipes.deselect()
                 self.recipe_properties.show(None)
