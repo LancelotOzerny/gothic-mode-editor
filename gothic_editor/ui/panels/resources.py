@@ -15,7 +15,7 @@ from gothic_editor.ui.widgets.dock import TAB_ACTION_HEIGHT
 
 
 class ResourcesPanel(Panel):
-    def __init__(self,parent,get_editor,on_hide,on_changed=lambda:None,before_change=lambda:True):
+    def __init__(self,parent,get_editor,on_hide,on_changed=lambda:None,before_change=lambda:True,history=None):
         super().__init__(parent,bg=BG)
         self.project=self.folder=self.menu=self._selected=None
         self._tree_paths={}
@@ -24,6 +24,7 @@ class ResourcesPanel(Panel):
         self.columns=0
         self.get_editor=get_editor
         self.on_changed,self.before_change=on_changed,before_change
+        self.history=history
         self.on_hide = on_hide
         self._copied=None
         self._drag = self._preview = self._drop = None
@@ -260,7 +261,10 @@ class ResourcesPanel(Panel):
     def _operation(self,operation,*,source=None):
         try:
             if not self.before_change():return
+            history=self.history() if self.history is not None else None
+            snapshot=history.capture((source,)) if history is not None and source is not None else {}
             result=operation(AssetFiles(self.project))
+            if history is not None:history.record(snapshot,(result,) if result is not None else ())
             if source is not None:
                 if self.folder is not None and self.folder.is_relative_to(source):
                     self.folder = result / self.folder.relative_to(source)
@@ -434,7 +438,7 @@ class ResourcesPanel(Panel):
         if messagebox.askyesno(tr('resources.delete_title'),
                 tr('resources.delete_question',name=path.name)+ ('\n'+tr('resources.delete_contents') if path.is_dir() else ''),
                 parent=self.winfo_toplevel()):
-            self._operation(lambda files:files.delete(path))
+            self._operation(lambda files:files.delete(path),source=path)
 
     def copy_path(self,absolute=False):
         if self._selected is None:return
