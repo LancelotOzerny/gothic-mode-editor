@@ -302,6 +302,36 @@ def _pad_dxt_texture(texture):
     return Texture(padded_width, padded_height, bytes(pixels))
 
 
+def _power_of_two_size(value):
+    """Nearest supported power-of-two dimension, minimum one DXT block."""
+    below = 1 << (value.bit_length() - 1)
+    above = below if below == value else below * 2
+    return max(4, below if value - below <= above - value else above)
+
+
+def _resize_for_gothic(texture):
+    """Resize non-power-of-two dimensions before encoding for old ZenGin."""
+    width = _power_of_two_size(texture.width)
+    height = _power_of_two_size(texture.height)
+    if (width, height) == (texture.width, texture.height):
+        return texture
+    _dimensions(width, height)
+    # Deterministic nearest-neighbour conversion, no Pillow dependency.
+    src_width, src_height = texture.width, texture.height
+    source = texture.pixels
+    output = bytearray(width * height * 4)
+    for y in range(height):
+        sy = min(src_height - 1, (2 * y + 1) * src_height // (2 * height))
+        src_row = sy * src_width * 4
+        out_row = y * width * 4
+        for x in range(width):
+            sx = min(src_width - 1, (2 * x + 1) * src_width // (2 * width))
+            offset = src_row + sx * 4
+            target = out_row + x * 4
+            output[target:target + 4] = source[offset:offset + 4]
+    return Texture(width, height, bytes(output))
+
+
 def write_ztex(texture):
     """Write compressed DXT1/DXT3 ZTEX supported by unpatched Gothic II.
 
@@ -311,7 +341,7 @@ def write_ztex(texture):
     _dimensions(texture.width, texture.height)
     if len(texture.pixels) != texture.width * texture.height * 4:
         raise ValueError('Некорректный размер данных изображения')
-    texture = _pad_dxt_texture(texture)
+    texture = _resize_for_gothic(texture)
     alpha = any(value < 255 for value in texture.pixels[3::4])
     kind = 12 if alpha else 10
     # ZenGin accepts compressed mipmaps only while both sides remain >= 4
