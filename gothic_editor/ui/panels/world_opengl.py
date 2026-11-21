@@ -5,7 +5,7 @@ only when the optional dependencies are available. No engine/game files change.
 """
 from __future__ import annotations
 
-from math import cos, sin, degrees
+from math import degrees
 
 from OpenGL.GL import (
     glBegin, glClear, glClearColor, glColor3f, glDisable, glEnable, glEnd,
@@ -19,6 +19,7 @@ from OpenGL.GLU import gluPerspective
 from pyopengltk import OpenGLFrame
 
 from gothic_editor.core.world_preview import face_color
+from gothic_editor.core.fly_camera import gl_view_rotation
 
 
 class WorldOpenGLFrame(OpenGLFrame):
@@ -86,15 +87,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         if self.fly and self.camera is not None:
             # Match the existing +Z-forward ZenGin camera projection.
             camera = self.camera
-            cy, sy = cos(camera.yaw), sin(camera.yaw)
-            cp, sp = cos(camera.pitch), sin(camera.pitch)
-            view = [
-                cy, -sp*sy, -cp*sy, 0.,
-                0., cp, -sp, 0.,
-                -sy, -sp*cy, -cp*cy, 0.,
-                0., 0., 0., 1.,
-            ]
-            glMultMatrixf(view)
+            glMultMatrixf(gl_view_rotation(camera))
             glTranslatef(-camera.x, -camera.y, -camera.z)
         else:
             glScalef(1., 1., -1.)
