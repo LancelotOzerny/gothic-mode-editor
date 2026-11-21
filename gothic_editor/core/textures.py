@@ -332,6 +332,33 @@ def _resize_for_gothic(texture):
     return Texture(width, height, bytes(output))
 
 
+def validate_gothic_ztex(data):
+    """Reject unsafe/truncated compiled media before it reaches a game build."""
+    if len(data) < 36 or data[:4] != b'ZTEX':
+        raise ValueError('Некорректный заголовок ZTEX')
+    version, kind, width, height, levels, _, _, _ = struct.unpack_from('<8I', data, 4)
+    if version != 0 or kind not in (10, 12):
+        raise ValueError('Требуется DXT1 или DXT3')
+    _dimensions(width, height)
+    if ((width & (width - 1)) or (height & (height - 1)) or
+            width < 4 or height < 4):
+        raise ValueError(f'Небезопасное разрешение {width}x{height}: требуются степени двойки')
+    count = 0
+    sizes = []
+    w, h = width, height
+    while w >= 4 and h >= 4:
+        sizes.append((w // 4) * (h // 4) * (8 if kind == 10 else 16))
+        count += 1
+        w //= 2
+        h //= 2
+    if levels != count:
+        raise ValueError(f'Неверное количество mipmap: {levels}, ожидалось {count}')
+    expected_size = 36 + sum(sizes)
+    if len(data) != expected_size:
+        raise ValueError(f'Неверный размер данных TEX: {len(data)} вместо {expected_size}')
+    return True
+
+
 def write_ztex(texture):
     """Write compressed DXT1/DXT3 ZTEX supported by unpatched Gothic II.
 
@@ -362,5 +389,7 @@ def write_ztex(texture):
             for x in range(0, level.width, 4):
                 data.extend(_encode_dxt_block(
                     level.pixels, level.width, level.height, x, y, alpha))
-    return bytes(data)
+    encoded = bytes(data)
+    validate_gothic_ztex(encoded)
+    return encoded
 
