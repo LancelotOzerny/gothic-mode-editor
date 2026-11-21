@@ -691,7 +691,8 @@ class EditorApp(tk.Tk):
         self.world.current=None
         self.npcs.deselect()
         self.recipes.deselect()
-        self._show_resource_panels('items')
+        # Switching items must not rebuild the active pane layout on every click.
+        if self._resource_browser!='items':self._show_resource_panels('items')
         self.current=item
         self.properties.show(item)
         self.resources.set_item(self.repo.root,item)
