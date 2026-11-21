@@ -9,7 +9,8 @@ import tkinter as tk
 from tkinter import filedialog
 
 from gothic_editor.core.world_preview import (load_world_wireframe, project_wireframe,
-    available_locations, is_location_zen, face_color)
+    available_locations, is_location_zen, face_color, camera_chunk,
+    move_camera, drag_camera)
 
 
 class WorldPreviewWindow(tk.Toplevel):
@@ -86,13 +87,16 @@ class WorldPreviewWindow(tk.Toplevel):
         self.canvas.bind('<MouseWheel>', lambda event: self.change_zoom(1.12 if event.delta > 0 else 1/1.12))
         self.canvas.bind('<Button-4>', lambda event: self.change_zoom(1.12))
         self.canvas.bind('<Button-5>', lambda event: self.change_zoom(1/1.12))
-        for key, dx, dz in (('a', -1, 0), ('d', 1, 0), ('w', 0, -1), ('s', 0, 1)):
+        for key, forward, right in (('a', 0, -1), ('d', 0, 1),
+                                    ('w', -1, 0), ('s', 1, 0)):
             self.bind('<KeyPress-' + key + '>',
-                      lambda event, x=dx, z=dz: self.move_focus(x, z))
+                      lambda event, f=forward, r=right: self.fly(f, r))
+            self.bind('<KeyPress-' + key.upper() + '>',
+                      lambda event, f=forward, r=right: self.fly(f, r))
         self.bind('<FocusIn>', lambda event: self.canvas.focus_set())
         self.canvas.configure(takefocus=True)
         self.canvas.bind('<Button-1>', lambda event: self.canvas.focus_set(), add='+')
-        footer = tk.Label(self, text='ЛКМ — вращение  ·  ПКМ — сдвиг  ·  Колесо — масштаб  ·  WASD — переход по чанкам',
+        footer = tk.Label(self, text='ЛКМ — вращение  ·  ПКМ — свободное перемещение  ·  WASD — движение  ·  Чанки подгружаются автоматически',
                           bg='#232b39', fg='#94a3b8', anchor='center')
         footer.pack(fill='x', pady=0, ipady=7)
         self.protocol('WM_DELETE_WINDOW', self.close)
@@ -266,6 +270,31 @@ class WorldPreviewWindow(tk.Toplevel):
         self._animate_camera()
         self._update_chunk_status()
 
+    def _refresh_visible_chunks(self):
+        if self._world is None or self._camera_center is None:
+            return
+        new_focus = camera_chunk(self._camera_center, self._world.chunk_size)
+        if new_focus != self._focus:
+            self._focus = new_focus
+            self._scene = self._world.view(new_focus, self._chunk_radius,
+                                            self._triangle_limit)
+            self._update_chunk_status()
+        self.queue_draw()
+
+    def fly(self, forward, right):
+        if self._world is None or self._camera_center is None:
+            return
+        # A keypress moves only a fraction of a chunk. Repeated keys feel
+        # continuous, while crossing boundaries switches chunks automatically.
+        step = self._world.chunk_size * 0.12 / max(0.35, self.zoom)
+        self._camera_center = move_camera(
+            self._camera_center, forward, right, self.yaw, step)
+        self._camera_target = self._camera_center
+        if self._animation_id is not None:
+            self.after_cancel(self._animation_id)
+            self._animation_id = None
+        self._refresh_visible_chunks()
+
     def reset_camera(self):
         self.yaw, self.pitch, self.zoom = 0.55, -0.45, 1.0
         self.pan_x = self.pan_y = 0.0
@@ -288,8 +317,17 @@ class WorldPreviewWindow(tk.Toplevel):
             self.yaw += dx * 0.008
             self.pitch = max(-1.5, min(1.5, self.pitch + dy * 0.008))
         else:
-            self.pan_x += dx
-            self.pan_y += dy
+            width = max(2, self.canvas.winfo_width())
+            height = max(2, self.canvas.winfo_height())
+            self._camera_center = drag_camera(
+                self._camera_center, dx, dy, width, height,
+                self.yaw, self.pitch, self.zoom,
+                self._world.chunk_size * (2*self._chunk_radius+1))
+            self._camera_target = self._camera_center
+            if self._animation_id is not None:
+                self.after_cancel(self._animation_id)
+                self._animation_id = None
+            self._refresh_visible_chunks()
         self.queue_draw()
 
     def change_zoom(self, factor):
