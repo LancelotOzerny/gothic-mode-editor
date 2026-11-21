@@ -421,7 +421,9 @@ class WorldPreviewPanel(tk.Frame):
 
     def _select_scene(self, focus):
         if self._gl_view is not None:
-            return self._world.view_complete(focus, self._chunk_radius)
+            # GPU renders indexed chunks directly. Keep only a tiny scene for
+            # estimating camera height and the legacy drawing diagnostics.
+            return self._world.view(focus, self._chunk_radius, 128)
         return self._world.view(focus, self._chunk_radius, self._triangle_limit)
 
     def _update_chunk_status(self):
@@ -431,9 +433,11 @@ class WorldPreviewPanel(tk.Frame):
             f' · Скорость: {self._fly_camera.speed/100:.1f} м/с'
             if self._fly_mode else '')
         backend = 'OpenGL' if self._gl_view is not None else 'Tkinter'
-        shown = len(self._scene.faces)
         available = self._world.visible_triangle_count(self._focus,
                                                        self._chunk_radius)
+        shown = (sum(len(self._world.chunks[key]) for key in
+                     self._world.visible_chunk_keys(self._focus, self._chunk_radius))
+                 if self._gl_view is not None else len(self._scene.faces))
         skipped = (f' / {available:,} · ограничение GPU'
                    if self._gl_view is not None and shown < available else '')
         self.status.configure(
@@ -542,7 +546,9 @@ class WorldPreviewPanel(tk.Frame):
         self._draw_id = None
         if self._gl_view is not None:
             view = self._gl_view
-            view.scene = self._scene
+            view.world = self._world
+            view.focus = self._focus
+            view.radius = self._chunk_radius
             view.fly = self._fly_mode
             view.camera = self._fly_camera
             view.center = self._camera_center or (0., 0., 0.)
