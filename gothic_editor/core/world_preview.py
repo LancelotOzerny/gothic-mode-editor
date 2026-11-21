@@ -259,7 +259,14 @@ def load_world_with_vobs(path, chunk_size=6000, sources=None):
 
     Archived ZEN is extracted only once and only to a temporary directory.
     """
-    from .world_vobs import load_vob_scene
+    from .world_vobs import VobScene, load_vob_scene
+    def objects_or_warning(source):
+        try:
+            return load_vob_scene(source, sources or {}, chunk_size)
+        except (OSError, ValueError, ZenWorldError) as exc:
+            # Optional VOB decoding must never prevent displaying terrain.
+            return VobScene((), {}, {}, 'VOB недоступны: ' + str(exc))
+
     if not is_location_zen(path):
         raise ZenWorldError('Выберите игровую локацию .ZEN.')
     if isinstance(path, VdfEntry):
@@ -275,9 +282,9 @@ def load_world_with_vobs(path, chunk_size=6000, sources=None):
                     target.write(block)
                     remaining -= len(block)
             return (load_world_wireframe(destination, chunk_size),
-                    load_vob_scene(destination, sources or {}, chunk_size))
+                    objects_or_warning(destination))
     return (load_world_wireframe(path, chunk_size),
-            load_vob_scene(path, sources or {}, chunk_size))
+            objects_or_warning(path))
 
 
 def project_wireframe(scene, width, height, yaw, pitch, zoom, pan_x=0.0, pan_y=0.0, *, center=None, span=None):
