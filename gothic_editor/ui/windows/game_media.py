@@ -45,6 +45,14 @@ class GameMediaWindow(EditorDialog):
         self.name_entry = tk.Entry(right, textvariable=self.name, bg=PANEL, fg=TXT,
                                    insertbackground=TXT, relief='flat')
         self.name_entry.pack(fill='x', ipady=6)
+        tk.Label(right, text='Быстрый выбор:', fg=MUTED, bg=BG,
+                 anchor='w').pack(fill='x', pady=(8, 2))
+        presets=tk.Frame(right, bg=BG)
+        presets.pack(fill='x')
+        for caption, resource in (('Меню', 'STARTSCREEN.TGA'), ('Загрузка', 'LOADING.TGA'),
+                                  ('Логотип', 'MENUGOTHIC.TGA')):
+            tk.Button(presets, text=caption, command=lambda value=resource:self.name.set(value)
+                      ).pack(side='left', padx=(0, 5))
         tk.Label(right, text='Изображения: TGA/TEX → -C.TEX в MOD.\n'
                  'Видео: готовые BIK → отдельная папка dist/Video.\n'
                  'Имена должны совпадать с оригинальными ресурсами Gothic.',
