@@ -78,6 +78,7 @@ class MediaPreview(Panel):
         self.resource=None
         self.texture=None
         self.photo=None
+        self.caption='Выберите изображение'
         self.canvas=tk.Canvas(self,bg=BG,highlightthickness=0)
         self.canvas.pack(fill='both',expand=True)
         self.canvas.bind('<Configure>',self.redraw)
