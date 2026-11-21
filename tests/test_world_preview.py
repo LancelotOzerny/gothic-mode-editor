@@ -71,6 +71,25 @@ class WorldPreviewTests(unittest.TestCase):
         self.assertEqual(len(points), 3)
         self.assertTrue(all(math.isfinite(value) for point in points for value in point))
 
+    def test_many_vertices_do_not_change_camera_rotation(self):
+        # Regression: screen Y used to overwrite sin(yaw) after each vertex.
+        # The original bug failed for ordinary real-world coordinates.
+        normal = SimpleNamespace(
+            vertices=((-17285.296875, 6805.56982421875, 34216.78125),
+                      (-64800.328125, -61526.6953125, -106593.5078125),
+                      (61692.0234375, 49574.953125, 44897.93359375)),
+            triangles=((0, 1, 2),), vertex_count=3, triangle_count=1)
+        scene = prepare_wireframe(normal)
+        repeated = type(scene)(
+            vertices=scene.vertices * 3000, faces=scene.faces,
+            total_vertices=scene.total_vertices,
+            total_triangles=scene.total_triangles)
+        result = project_wireframe(repeated, 1020, 629, 0.55, -0.45, 1.)
+        self.assertEqual(len(result), 9000)
+        self.assertTrue(all(math.isfinite(v) for point in result for v in point))
+        for index in range(3):
+            self.assertEqual(result[index], result[index + 3])
+
     def test_projection_center_pan_and_zoom(self):
         scene = prepare_wireframe(self.geometry)
         first = project_wireframe(scene, 600, 400, 0., 0., 1.)
