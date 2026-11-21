@@ -61,20 +61,20 @@ class BinkDecoder:
         try:
             dll=ctypes.WinDLL(str(library))
             handle_type=ctypes.c_void_p
-            dll.BinkOpen.argtypes=[ctypes.c_char_p,ctypes.c_uint32]
-            dll.BinkOpen.restype=handle_type
-            dll.BinkClose.argtypes=[handle_type]
-            dll.BinkClose.restype=None
-            dll.BinkDoFrame.argtypes=[handle_type]
-            dll.BinkDoFrame.restype=ctypes.c_int
-            dll.BinkCopyToBuffer.argtypes=[
+            def bind(name,bytes_count,argtypes,restype):
+                # Gothic's original 32-bit DLL exports stdcall-decorated names.
+                try:function=getattr(dll,name)
+                except AttributeError:function=getattr(dll,f'_{name}@{bytes_count}')
+                function.argtypes=argtypes
+                function.restype=restype
+                return function
+            self.open=bind('BinkOpen',8,[ctypes.c_char_p,ctypes.c_uint32],handle_type)
+            self.close_func=bind('BinkClose',4,[handle_type],None)
+            self.do_frame=bind('BinkDoFrame',4,[handle_type],ctypes.c_int)
+            self.copy=bind('BinkCopyToBuffer',28,[
                 handle_type,ctypes.c_void_p,ctypes.c_int,ctypes.c_uint32,
-                ctypes.c_uint32,ctypes.c_uint32,ctypes.c_uint32]
-            dll.BinkCopyToBuffer.restype=ctypes.c_int
-            dll.BinkNextFrame.argtypes=[handle_type]
-            dll.BinkNextFrame.restype=None
-            dll.BinkWait.argtypes=[handle_type]
-            dll.BinkWait.restype=ctypes.c_int
+                ctypes.c_uint32,ctypes.c_uint32,ctypes.c_uint32],ctypes.c_int)
+            self.next=bind('BinkNextFrame',4,[handle_type],None)
         except (OSError,AttributeError) as exc:
             raise BinkError('Библиотека Gothic не поддерживает нужные функции Bink.') from exc
         self.dll=dll
@@ -83,7 +83,7 @@ class BinkDecoder:
         try:encoded=str(self.video).encode('mbcs')
         except UnicodeError as exc:
             raise BinkError('Путь к видео не поддерживается Bink.') from exc
-        handle=dll.BinkOpen(encoded,0)
+        handle=self.open(encoded,0)
         if not handle:raise BinkError('Bink не смог открыть видео.')
         self.handle=handle
         header=ctypes.cast(handle,ctypes.POINTER(_BinkHeader)).contents
@@ -105,18 +105,18 @@ class BinkDecoder:
     def next_frame(self):
         if self.handle is None:return None
         if self.number>=self.frames:return None
-        self.dll.BinkDoFrame(self.handle)
+        self.do_frame(self.handle)
         # BINKSURFACE24 is 24-bit BGR on Windows.
-        self.dll.BinkCopyToBuffer(
+        self.copy(
             self.handle,self.buffer,self.width*3,self.height,0,0,1)
         data=bytearray(self.buffer.raw[:self.width*self.height*3])
         data[0::3],data[2::3]=data[2::3],data[0::3]
         self.number+=1
-        if self.number<self.frames:self.dll.BinkNextFrame(self.handle)
+        if self.number<self.frames:self.next(self.handle)
         return bytes(data)
 
     def close(self):
         if self.handle is not None:
-            self.dll.BinkClose(self.handle)
+            self.close_func(self.handle)
             self.handle=None
 
