@@ -20,7 +20,9 @@ class WorldPanel(HierarchyBrowser):
         self.selected = None
         self.on_add = lambda: None
         self.on_remove = lambda: None
+        self.on_preview_world = lambda: None
         self.import_button = self.add_header_action(lambda: self.on_add(), 'Добавить из Gothic')
+        self.preview_button = self.add_header_action(lambda: self.on_preview_world(), 'Открыть .ZEN')
         self.area = ScrollableArea(self)
         self.area.pack(fill='both', expand=True)
         label(self.area.content, 'Выберите проект', fg=MUTED).pack(fill='x', padx=10, pady=8)
