@@ -881,6 +881,7 @@ class EditorApp(tk.Tk):
         mode=self._resource_browser
         recipe_id=self.recipes.current['id'] if self.recipes.current else None
         npc_id=self.npcs.current.instance if self.npcs.current else None
+        world_name=self.world.current.name if self.world.current else None
         try:
             if not self.history.apply(redo):return
             self._cancel_model_load()
@@ -914,6 +915,13 @@ class EditorApp(tk.Tk):
                 elif mode=='world':
                     self.world.catalog_stamp=None
                     self.world.refresh()
+                    resource=next((value for value in self.world.catalog
+                                   if value.name.casefold()==(world_name or '').casefold()),None)
+                    if resource is not None:self.world.select(resource)
+                    else:
+                        self.world.current=None
+                        self.world_properties.show(None)
+                        self.viewer.set_mesh(caption='Выберите объект мира')
             self.resources.refresh()
         except (OSError,ValueError) as exc:
             messagebox.showerror('История изменений',str(exc),parent=self)
