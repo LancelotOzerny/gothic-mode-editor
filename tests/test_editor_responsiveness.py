@@ -263,6 +263,23 @@ class ApplicationDraftTests(unittest.TestCase):
                     app.destroy()
 
 
+class UndoRedoShortcutTests(unittest.TestCase):
+    def test_english_and_russian_shortcuts(self):
+        for system in ('win32','x11'):
+            for keysym,keycode,shift,redo in (
+                ('z',90,False,False), ('Z',90,True,True),
+                ('y',89,False,True), ('cyrillic_ya',90,False,False),
+                ('cyrillic_ya',90,True,True), ('cyrillic_en',89,False,True),
+            ):
+                with self.subTest(system=system,keysym=keysym,shift=shift):
+                    app=SimpleNamespace(
+                        tk=SimpleNamespace(call=lambda *args:system),
+                        _history_shortcut=Mock(return_value='break'))
+                    event=SimpleNamespace(keysym=keysym,keycode=keycode,state=1 if shift else 0)
+                    self.assertEqual(EditorApp._history_keypress(app,event),'break')
+                    app._history_shortcut.assert_called_once_with(redo,event)
+
+
 class UndoRedoApplicationTests(unittest.TestCase):
     def test_item_edit_is_restored_without_changing_game_files(self):
         with tempfile.TemporaryDirectory() as temporary:
