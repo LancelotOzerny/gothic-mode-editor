@@ -169,7 +169,10 @@ class BinkProcessDecoder:
                         continue
         except (OSError,EOFError,ValueError) as exc:
             if not self._closing.is_set():
-                self.error=str(exc)
+                details=''
+                if not self.width and self.process.poll() is not None:
+                    details=self.process.stderr.read(2048).decode('utf-8',errors='replace')
+                self.error=(details.strip()[-500:] or str(exc))
         finally:
             self.finished=True
 
@@ -193,4 +196,5 @@ class BinkProcessDecoder:
         try:self.process.communicate(timeout=2)
         except (OSError,subprocess.TimeoutExpired):pass
         self._reader.join(timeout=.5)
-        self._temp.cleanup()
+        try:self._temp.cleanup()
+        except OSError:pass
