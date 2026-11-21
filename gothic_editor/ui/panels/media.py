@@ -135,7 +135,8 @@ class MediaPreview(Panel):
         self._video_paused=True
 
     def _load_video(self):
-        from gothic_editor.core.bink_decoder import BinkDecoder
+        from gothic_editor.core.bink_decoder import BinkDecoder, game_decoder_path, dll_compatible
+        from gothic_editor.core.bink_process import BinkProcessDecoder
         import tempfile
         resource=self.resource
         self._close_video()
@@ -148,7 +149,10 @@ class MediaPreview(Panel):
                 self._video_temp=tempfile.TemporaryDirectory(prefix='gothic-video-')
                 source=Path(self._video_temp.name)/resource.name
                 source.write_bytes(resource.source.read_bytes())
-            self._video_decoder=BinkDecoder(self.game,source)
+            dll=game_decoder_path(self.game)
+            decoder=(BinkDecoder if dll is not None and dll_compatible(dll) else
+                     BinkProcessDecoder)
+            self._video_decoder=decoder(self.game,source)
             self._video_paused=True
             self._next_video_frame()
         except (OSError,ValueError) as exc:
@@ -158,7 +162,16 @@ class MediaPreview(Panel):
     def _next_video_frame(self):
         decoder=self._video_decoder
         if decoder is None:return
-        data=decoder.next_frame()
+        self._video_after=None
+        try:data=decoder.next_frame()
+        except (OSError,ValueError) as exc:
+            self.caption='Ошибка декодирования BIK: '+str(exc)
+            self._close_video()
+            self.redraw()
+            return
+        if data is False:
+            self._video_after=self.after(60,self._next_video_frame)
+            return
         if data is None:
             self._video_paused=True
             self.play_button.configure(text='▶')
@@ -176,7 +189,12 @@ class MediaPreview(Panel):
                 offset=(y*decoder.width+x)*3
                 pixels.extend(data[offset:offset+3])
         ppm=f'P6\n{out_w} {out_h}\n255\n'.encode('ascii')+pixels
-        self.photo=tk.PhotoImage(master=self,data=ppm,format='PPM')
+        try:self.photo=tk.PhotoImage(master=self,data=ppm,format='PPM')
+        except tk.TclError as exc:
+            self.caption='Ошибка отображения видео: '+str(exc)
+            self._close_video()
+            self.redraw()
+            return
         self.redraw()
         self.video_status.configure(text=f'{decoder.number} / {decoder.frames}')
         if not self._video_paused:
