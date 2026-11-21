@@ -41,6 +41,39 @@ class GameMediaTests(unittest.TestCase):
         self.assertEqual(self.media.videos(), [path])
         self.assertFalse(any('Intro.bik' in name for name in BuildAssetService(self.project).collect()))
 
+    def test_export_image_to_editable_png(self):
+        import zlib
+        from gothic_editor.core.game_media import MediaResource
+        source=Path(self.temp.name)/'original.tga'
+        source.write_bytes(tga())
+        resource=MediaResource('LOADING-C.TEX','images',source,'chapters')
+        output=Path(self.temp.name)/'export.png'
+        GameMedia.export_file(resource,output)
+        data=output.read_bytes()
+        self.assertTrue(data.startswith(b'\\x89PNG\\r\\n\\x1a\\n'))
+        self.assertEqual(struct.unpack_from('>II',data,16),(2,2))
+        offset=8
+        chunks={}
+        while offset<len(data):
+            length=struct.unpack_from('>I',data,offset)[0]
+            kind=data[offset+4:offset+8]
+            chunks[kind]=data[offset+8:offset+8+length]
+            offset+=12+length
+        pixels=zlib.decompress(chunks[b'IDAT'])
+        self.assertEqual(pixels[0],0)
+        self.assertEqual(len(pixels),2*(1+2*4))
+
+    def test_export_video_is_byte_identical(self):
+        from gothic_editor.core.game_media import MediaResource
+        source=Path(self.temp.name)/'intro.bik'
+        source.write_bytes(b'BIKi'+bytes(range(64)))
+        resource=MediaResource('intro.bik','videos',source,'videos')
+        output=Path(self.temp.name)/'export.bik'
+        GameMedia.export_file(resource,output)
+        self.assertEqual(output.read_bytes(),source.read_bytes())
+        with self.assertRaises(ValueError):
+            GameMedia.export_file(resource,Path(self.temp.name)/'bad.mp4')
+
     def test_png_and_jpeg_replace_into_gothic_texture(self):
         try:
             from PIL import Image
