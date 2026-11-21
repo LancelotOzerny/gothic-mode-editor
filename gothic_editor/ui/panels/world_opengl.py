@@ -11,9 +11,10 @@ from OpenGL.GL import (
     glBegin, glClear, glClearColor, glColor3f, glDisable, glEnable, glEnd,
     glLoadIdentity, glMatrixMode, glMultMatrixf, glOrtho, glPolygonMode,
     glRotatef, glScalef, glTranslatef, glVertex3f, glViewport, glGetIntegerv,
+    glCallList, glDeleteLists, glEndList, glGenLists, glNewList,
     GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT, GL_DEPTH_TEST, GL_DEPTH_BITS,
     GL_FILL, GL_FRONT_AND_BACK, GL_LEQUAL, GL_LINE, GL_MODELVIEW,
-    GL_PROJECTION, GL_TRIANGLES, glDepthFunc,
+    GL_PROJECTION, GL_TRIANGLES, glDepthFunc, GL_COMPILE,
 )
 from OpenGL.GLU import gluPerspective
 from pyopengltk import OpenGLFrame
@@ -39,7 +40,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self.animate = True
         self._failed = False
         self._cached_scene = None
-        self._cached_faces = ()
+        self._display_list = None
 
     def _failed_context(self, exc):
         if self._failed:
@@ -98,21 +99,31 @@ class WorldOpenGLFrame(OpenGLFrame):
             glTranslatef(-self.center[0], -self.center[1], -self.center[2])
 
         if self._cached_scene is not self.scene:
+            if self._display_list is not None:
+                glDeleteLists(self._display_list, 1)
+                self._display_list = None
             vertices = self.scene.vertices
-            self._cached_faces = tuple(
-                (tuple(int(color[i:i+2], 16) / 255.0 for i in (1, 3, 5)),
-                 vertices[a], vertices[b], vertices[c])
-                for a, b, c in self.scene.faces
-                for color in (face_color(vertices, (a, b, c)),))
+            list_id = int(glGenLists(1))
+            if not list_id:
+                raise RuntimeError('Не удалось создать список полигонов OpenGL.')
+            self._display_list = list_id
+            glNewList(list_id, GL_COMPILE)
+            try:
+                glBegin(GL_TRIANGLES)
+                try:
+                    for face in self.scene.faces:
+                        color = face_color(vertices, face)
+                        glColor3f(*(int(color[i:i+2], 16) / 255.0
+                                    for i in (1, 3, 5)))
+                        for index in face:
+                            glVertex3f(*vertices[index])
+                finally:
+                    glEnd()
+            finally:
+                glEndList()
             self._cached_scene = self.scene
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL if self.solid else GL_LINE)
-        glBegin(GL_TRIANGLES)
         try:
-            for color, a, b, c in self._cached_faces:
-                glColor3f(*color)
-                glVertex3f(*a)
-                glVertex3f(*b)
-                glVertex3f(*c)
+            glCallList(self._display_list)
         finally:
-            glEnd()
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
