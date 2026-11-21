@@ -202,15 +202,16 @@ class MediaPreview(Panel):
 
     def pause_video(self):
         if self._video_decoder is None:return
-        if self._video_paused and self._video_decoder.number>=self._video_decoder.frames:
+        if self._video_paused and self._video_decoder.frames and (
+                self._video_decoder.number>=self._video_decoder.frames):
             self._load_video()
+        if self._video_decoder is None:return
+        if self._video_after is not None:
+            self.after_cancel(self._video_after)
+            self._video_after=None
         self._video_paused=not self._video_paused
         self.play_button.configure(text='▶' if self._video_paused else 'Ⅱ')
-        if self._video_paused:
-            if self._video_after is not None:
-                self.after_cancel(self._video_after)
-                self._video_after=None
-        else:
+        if not self._video_paused:
             self._video_after=self.after(self._video_decoder.interval_ms,self._next_video_frame)
 
     def stop_video(self):
