@@ -69,6 +69,57 @@ class MediaPanel(Panel):
         finally:menu.grab_release()
 
 
+class MediaPreview(Panel):
+    """Reuse the editor's central viewport for the selected image."""
+    def __init__(self,parent):
+        super().__init__(parent,bg=BG)
+        self.resource=None
+        self.texture=None
+        self.photo=None
+        self.canvas=tk.Canvas(self,bg=BG,highlightthickness=0)
+        self.canvas.pack(fill='both',expand=True)
+        self.canvas.bind('<Configure>',self.redraw)
+
+    def show(self,resource):
+        self.resource=resource
+        self.texture=None
+        self.photo=None
+        if resource is not None and resource.kind=='images':
+            try:self.texture=read_texture(resource.source.read_bytes())
+            except (OSError,ValueError) as exc:
+                self.caption='Ошибка чтения: '+str(exc)
+            else:self.caption=''
+        else:
+            self.caption='Выберите изображение' if resource is None else 'Видео BIK: предпросмотр недоступен'
+        self.redraw()
+
+    def redraw(self,_event=None):
+        self.canvas.delete('all')
+        width=max(1,self.canvas.winfo_width())
+        height=max(1,self.canvas.winfo_height())
+        if self.texture is None:
+            self.canvas.create_text(width//2,height//2,text=self.caption,
+                                    fill=MUTED,font=('Arial',13),width=max(150,width-35))
+            return
+        texture=self.texture
+        scale=max(1,(texture.width+width-31)//max(1,width-30),
+                  (texture.height+height-31)//max(1,height-30))
+        out_w=(texture.width+scale-1)//scale
+        out_h=(texture.height+scale-1)//scale
+        rgb=bytearray(out_w*out_h*3)
+        pos=0
+        for y in range(0,texture.height,scale):
+            for x in range(0,texture.width,scale):
+                offset=(y*texture.width+x)*4
+                rgb[pos:pos+3]=texture.pixels[offset:offset+3]
+                pos+=3
+        ppm=f'P6\\n{out_w} {out_h}\\n255\\n'.encode('ascii')+rgb
+        self.photo=tk.PhotoImage(master=self,data=ppm,format='PPM')
+        self.canvas.create_image(width//2,height//2,image=self.photo)
+        self.canvas.create_text(12,10,text=f'{texture.width} × {texture.height}',
+                                anchor='nw',fill=MUTED,font=('Arial',10))
+
+
 class MediaPropertiesPanel(Panel):
     def __init__(self,parent,app):
         super().__init__(parent)
