@@ -154,6 +154,21 @@ class IncrementalPersistenceTests(unittest.TestCase):
             self.assertEqual(repo.project_items,[updated])
             self.assertEqual(repo.items,[updated])
 
+    def test_copy_game_item_does_not_rescan_installation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo=ProjectRepository()
+            repo.create(Path(temporary)/'project','Test')
+            source=Item('ItPo_Game',Path(temporary)/'game/Items/source.d','game',
+                        'INSTANCE ItPo_Game(C_Item) { name="Game"; mainflag=ITEM_KAT_POTIONS; };',
+                        {'name':'"Game"','mainflag':'ITEM_KAT_POTIONS'},0,0)
+            repo.game_items=[source]
+            repo.items=[source]
+            with patch.object(repo,'refresh',side_effect=AssertionError('Full scan')):
+                copied=repo.copy_to_project(source)
+            self.assertEqual(copied.instance,'ItPo_Game')
+            self.assertEqual(copied.origin,'project')
+            self.assertIn(copied,repo.project_items)
+
     def test_script_edit_reparses_only_its_file_and_preserves_neighbor_instances(self):
         with tempfile.TemporaryDirectory() as temporary:
             repo=ProjectRepository()
