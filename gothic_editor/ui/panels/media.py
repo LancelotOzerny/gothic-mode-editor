@@ -99,6 +99,54 @@ class MediaPreview(Panel):
         self.canvas=tk.Canvas(self,bg=BG,highlightthickness=0)
         self.canvas.pack(fill='both',expand=True)
         self.canvas.bind('<Configure>',self.redraw)
+        self._video_process=None
+        self._video_temp=None
+        self.bind('<Destroy>',self._close_video,add='+')
+
+    def play_video(self):
+        """Play BIK with an optional ffplay executable, never altering Gothic files."""
+        import shutil
+        import subprocess
+        import tempfile
+        resource=self.resource
+        if resource is None or resource.kind!='videos':return
+        player=shutil.which('ffplay')
+        if player is None:
+            raise ValueError('Для воспроизведения BIK установите FFmpeg с ffplay. '
+                             'Видео можно экспортировать и открыть в другом проигрывателе.')
+        self._close_video()
+        source=resource.source
+        if isinstance(source,Path):
+            path=source
+        else:
+            self._video_temp=tempfile.TemporaryDirectory(prefix='gothic-video-')
+            path=Path(self._video_temp.name)/resource.name
+            path.write_bytes(source.read_bytes())
+        try:
+            self._video_process=subprocess.Popen(
+                [player,'-autoexit','-loglevel','error',str(path)],
+                stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        except OSError:
+            self._close_video()
+            raise
+        self.after(500,self._check_video)
+
+    def _check_video(self):
+        process=self._video_process
+        if process is None:return
+        if process.poll() is None:
+            if self.winfo_exists():self.after(500,self._check_video)
+        else:self._close_video()
+
+    def _close_video(self,event=None):
+        if event is not None and event.widget is not self:return
+        process=self._video_process
+        self._video_process=None
+        if process is not None and process.poll() is None:
+            process.terminate()
+        temporary=self._video_temp
+        self._video_temp=None
+        if temporary is not None:temporary.cleanup()
 
     def show(self,resource):
         self.resource=resource
@@ -165,7 +213,6 @@ class MediaPropertiesPanel(Panel):
         if resource is None:return
         group=self.add_group('Ресурс',parent=self.area.content)
         group.add_field('Название в Gothic',value=resource.name,readonly=True)
-        group.add_field('Категория',value=CATEGORIES[resource.category],readonly=True)
         label(group.body,'Заменён в проекте' if resource.overridden else 'Оригинал Gothic',
               fg=MUTED).pack(fill='x',padx=8,pady=6)
         origin=resource.source
@@ -173,13 +220,37 @@ class MediaPropertiesPanel(Panel):
         group.add_field('Источник',value=origin_label,readonly=True)
         group.add_button('Заменить изображение' if resource.kind=='images' else 'Заменить видео BIK',
                          self.replace)
+        group.add_button('Экспортировать PNG' if resource.kind=='images' else 'Экспортировать BIK',
+                         self.export)
+        if resource.kind=='videos':
+            group.add_button('Воспроизвести BIK',self.play)
         if resource.overridden:group.add_button('Отменить замену',self.remove)
         if resource.kind=='videos':
-            label(group.body,'Видео BIK. Предпросмотр видео пока недоступен.',
+            label(group.body,'Для просмотра требуется ffplay (FFmpeg).',
                   fg=MUTED,wraplength=280).pack(fill='x',padx=8,pady=8)
         else:
             label(group.body,'Изображение показано в центральном окне.',
                   fg=MUTED,wraplength=280).pack(fill='x',padx=8,pady=8)
+
+    def export(self):
+        row=self.current
+        if row is None:return
+        ext='.bik' if row.kind=='videos' else '.png'
+        name=Path(row.name).stem
+        if name.lower().endswith('-c'):name=name[:-2]
+        destination=filedialog.asksaveasfilename(
+            parent=self,title='Экспорт медиа',
+            initialfile=name+ext,defaultextension=ext,
+            filetypes=[('Видео BIK','*.bik')] if row.kind=='videos' else [('Изображение PNG','*.png')])
+        if not destination:return
+        try:GameMedia.export_file(row,destination)
+        except (OSError,ValueError) as exc:
+            messagebox.showerror('Экспорт медиа',str(exc),parent=self)
+
+    def play(self):
+        try:self.app.media_viewer.play_video()
+        except (OSError,ValueError) as exc:
+            messagebox.showerror('Просмотр BIK',str(exc),parent=self)
 
     def replace(self):
         row=self.current
