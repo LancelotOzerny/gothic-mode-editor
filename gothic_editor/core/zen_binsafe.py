@@ -85,7 +85,7 @@ def _value(stream, kind, end, keep):
         return None
     if kind in (9, 16):
         length = _u16(stream, end)
-        _skip(stream, length * (4 if kind == 16 else 1), end)
+        _skip(stream, length, end)
         return None
     sizes = {2: 4, 3: 4, 4: 1, 5: 2, 6: 4, 7: 12, 8: 4, 17: 4}
     size = sizes.get(kind)
