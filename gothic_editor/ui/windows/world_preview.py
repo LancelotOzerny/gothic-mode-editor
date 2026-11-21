@@ -360,6 +360,11 @@ class WorldPreviewWindow(tk.Toplevel):
     def move_focus(self, dx, dz):
         if self._world is None:
             return
+        if self._fly_mode:
+            self._fly_camera.x += dx * self._world.chunk_size
+            self._fly_camera.z += dz * self._world.chunk_size
+            self._refresh_fly_chunks()
+            return
         self._focus = (self._focus[0] + dx, self._focus[1] + dz)
         self._scene = self._world.view(self._focus, self._chunk_radius,
                                        self._triangle_limit)
