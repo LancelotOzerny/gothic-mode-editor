@@ -5,6 +5,7 @@ import shutil
 
 MAX_ENTRY_BYTES = 16 * 1024 * 1024
 MAX_ENTRIES = 30
+MAX_HISTORY_BYTES = 64 * 1024 * 1024
 
 
 class HistoryTooLarge(ValueError):
@@ -93,8 +94,11 @@ class EditHistory:
         if not changes:
             return False
         self.undo_stack.append(changes)
-        del self.undo_stack[:-MAX_ENTRIES]
         self.redo_stack.clear()
+        while (len(self.undo_stack)>MAX_ENTRIES or
+               sum(len(data) for entry in self.undo_stack for _,old,new in entry
+                   for state in (old,new) for _,data in state.files)>MAX_HISTORY_BYTES):
+            self.undo_stack.pop(0)
         return True
 
     def _restore(self, path, snapshot):
