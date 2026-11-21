@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import traceback
 from math import isfinite
+from time import monotonic
+from gothic_editor.core.fly_camera import FlyCamera
 import tkinter as tk
 from tkinter import filedialog
 
@@ -26,11 +28,18 @@ class WorldPreviewWindow(tk.Toplevel):
         self._scene = None
         self._world = None
         self._focus = None
+        self._pressed.clear()
         self._camera_center = None
         self._camera_target = None
         self._world_height = 0.0
         self._animation_id = None
         self._solid = True
+        self._fly_mode = True
+        self._fly_camera = FlyCamera()
+        self._pressed = set()
+        self._tick_id = None
+        self._last_tick = monotonic()
+        self._fly_mouse = None
         settings = getattr(parent, 'settings', None)
         self._chunk_size = settings.get_value('interface.world_chunks.size') if settings else 6000
         self._chunk_radius = settings.get_value('interface.world_chunks.radius') if settings else 1
@@ -70,6 +79,9 @@ class WorldPreviewWindow(tk.Toplevel):
         self.surface_button = tk.Button(header, text='Поверхности', command=self.toggle_surfaces,
                   bg='#334155', fg='white', relief='flat')
         self.surface_button.pack(side='left', padx=4)
+        self.camera_button = tk.Button(header, text='Камера: полёт', command=self.toggle_camera,
+                  bg='#334155', fg='white', relief='flat')
+        self.camera_button.pack(side='left', padx=4)
         tk.Button(header, text='Сбросить камеру', command=self.reset_camera,
                   bg='#334155', fg='white', relief='flat').pack(side='left', padx=4)
         self.status = tk.Label(header, text='Выберите файл .ZEN из папки Gothic',
@@ -81,27 +93,25 @@ class WorldPreviewWindow(tk.Toplevel):
         self.canvas.bind('<ButtonPress-1>', lambda event: self.begin_drag(event, 'rotate'))
         self.canvas.bind('<B1-Motion>', self.drag)
         self.canvas.bind('<ButtonRelease-1>', self.end_drag)
-        self.canvas.bind('<ButtonPress-3>', lambda event: self.begin_drag(event, 'pan'))
-        self.canvas.bind('<B3-Motion>', self.drag)
-        self.canvas.bind('<ButtonRelease-3>', self.end_drag)
+        self.canvas.bind('<ButtonPress-3>', self.right_press)
+        self.canvas.bind('<B3-Motion>', self.right_motion)
+        self.canvas.bind('<ButtonRelease-3>', self.right_release)
         self.canvas.bind('<MouseWheel>', lambda event: self.change_zoom(1.12 if event.delta > 0 else 1/1.12))
         self.canvas.bind('<Button-4>', lambda event: self.change_zoom(1.12))
         self.canvas.bind('<Button-5>', lambda event: self.change_zoom(1/1.12))
-        for key, forward, right in (('a', 0, -1), ('d', 0, 1),
-                                    ('w', -1, 0), ('s', 1, 0)):
-            self.bind('<KeyPress-' + key + '>',
-                      lambda event, f=forward, r=right: self.fly(f, r))
-            self.bind('<KeyPress-' + key.upper() + '>',
-                      lambda event, f=forward, r=right: self.fly(f, r))
+        self.bind('<KeyPress>', self._key_down, add='+')
+        self.bind('<KeyRelease>', self._key_up, add='+')
+        self.bind('<FocusOut>', self._clear_keys, add='+')
         self.bind('<FocusIn>', lambda event: self.canvas.focus_set())
         self.canvas.configure(takefocus=True)
         self.canvas.bind('<Button-1>', lambda event: self.canvas.focus_set(), add='+')
-        footer = tk.Label(self, text='ЛКМ — вращение  ·  ПКМ — свободное перемещение  ·  WASD — движение  ·  Чанки подгружаются автоматически',
+        footer = tk.Label(self, text='Полёт: WASD — движение  ·  ПКМ — взгляд  ·  Q/E — вниз/вверх  ·  Shift — ускорение  ·  Home — сброс  ·  колесо — скорость',
                           bg='#232b39', fg='#94a3b8', anchor='center')
         footer.pack(fill='x', pady=0, ipady=7)
         self.protocol('WM_DELETE_WINDOW', self.close)
         self.refresh_locations()
         self.queue_draw()
+        self._tick_id = self.after(33, self._tick)
 
     def refresh_locations(self):
         self._location_paths = available_locations(self._game) if self._game else []
@@ -192,6 +202,7 @@ class WorldPreviewWindow(tk.Toplevel):
                 self._world_height = (min(ys) + max(ys)) / 2
             self._camera_center = self._chunk_center(self._focus)
             self._camera_target = self._camera_center
+            self._reset_fly()
         except Exception as exc:
             self.status.configure(text='Ошибка чтения ZEN: ' + str(exc))
             self._log_exception('Ошибка загрузки', exc)
@@ -222,6 +233,96 @@ class WorldPreviewWindow(tk.Toplevel):
                     f'[ZEN] Нет пригодной геометрии: {self._loading_source}. '
                     'Проверьте формат и правильность чтения MSH.',
                     error=True)
+        self.queue_draw()
+
+    def _reset_fly(self):
+        if self._camera_center is None:
+            return
+        x, y, z = self._camera_center
+        self._fly_camera = FlyCamera(x=x, y=y + self._world.chunk_size * 0.35,
+                                     z=z - self._world.chunk_size,
+                                     speed=self._world.chunk_size * 0.8)
+
+    def toggle_camera(self):
+        self._fly_mode = not self._fly_mode
+        self._pressed.clear()
+        self._fly_mouse = None
+        self.camera_button.config(
+            text='Камера: полёт' if self._fly_mode else 'Камера: обзор')
+        if self._fly_mode and self._world is not None:
+            self._reset_fly()
+        self.queue_draw()
+
+    def _key_down(self, event):
+        key = event.keysym.lower()
+        if key == 'home':
+            self.reset_camera()
+            return
+        if key in ('w', 'a', 's', 'd', 'q', 'e', 'shift_l', 'shift_r'):
+            self._pressed.add(key)
+            # Do not leak navigation keys into other widgets.
+            return 'break'
+
+    def _key_up(self, event):
+        key = event.keysym.lower()
+        self._pressed.discard(key)
+        if key in ('w', 'a', 's', 'd', 'q', 'e', 'shift_l', 'shift_r'):
+            return 'break'
+
+    def _clear_keys(self, event=None):
+        self._pressed.clear()
+        self._fly_mouse = None
+
+    def right_press(self, event):
+        self.canvas.focus_set()
+        if self._fly_mode:
+            self._fly_mouse = (event.x, event.y)
+        else:
+            self.begin_drag(event, 'pan')
+
+    def right_motion(self, event):
+        if self._fly_mode:
+            if self._fly_mouse is None:
+                return
+            dx, dy = event.x - self._fly_mouse[0], event.y - self._fly_mouse[1]
+            self._fly_mouse = (event.x, event.y)
+            self._fly_camera.look(dx, dy)
+            self.queue_draw()
+        else:
+            self.drag(event)
+
+    def right_release(self, event):
+        self._fly_mouse = None
+        self.end_drag(event)
+
+    def _tick(self):
+        self._tick_id = None
+        if self._closed:
+            return
+        now = monotonic()
+        dt = min(now - self._last_tick, 0.1)
+        self._last_tick = now
+        if self._fly_mode and self._world is not None:
+            keys = self._pressed
+            forward = int('w' in keys) - int('s' in keys)
+            strafe = int('d' in keys) - int('a' in keys)
+            vertical = int('e' in keys) - int('q' in keys)
+            if forward or strafe or vertical:
+                self._fly_camera.move(
+                    forward, strafe, vertical, dt,
+                    fast='shift_l' in keys or 'shift_r' in keys)
+                self._refresh_fly_chunks()
+        self._tick_id = self.after(33, self._tick)
+
+    def _refresh_fly_chunks(self):
+        if self._world is None:
+            return
+        chunk = self._fly_camera.chunk_at(self._world.chunk_size)
+        if chunk != self._focus:
+            self._focus = chunk
+            self._scene = self._world.view(chunk, self._chunk_radius,
+                                            self._triangle_limit)
+            self._update_chunk_status()
         self.queue_draw()
 
     def _chunk_center(self, focus):
@@ -298,9 +399,15 @@ class WorldPreviewWindow(tk.Toplevel):
     def reset_camera(self):
         self.yaw, self.pitch, self.zoom = 0.55, -0.45, 1.0
         self.pan_x = self.pan_y = 0.0
+        if self._world is not None:
+            self._reset_fly()
+            if self._fly_mode:
+                self._refresh_fly_chunks()
         self.queue_draw()
 
     def begin_drag(self, event, mode):
+        if self._fly_mode:
+            return
         self._drag = (event.x, event.y)
         self._drag_mode = mode
 
@@ -309,7 +416,7 @@ class WorldPreviewWindow(tk.Toplevel):
         self._drag_mode = None
 
     def drag(self, event):
-        if self._drag is None or self._scene is None:
+        if self._fly_mode or self._drag is None or self._scene is None:
             return
         dx, dy = event.x - self._drag[0], event.y - self._drag[1]
         self._drag = (event.x, event.y)
@@ -333,6 +440,10 @@ class WorldPreviewWindow(tk.Toplevel):
     def change_zoom(self, factor):
         if self._scene is None:
             return
+        if self._fly_mode:
+            self._fly_camera.speed = max(100.0, min(100000.0, self._fly_camera.speed * factor))
+            self._update_chunk_status()
+            return
         self.zoom = max(0.08, min(35, self.zoom * factor))
         self.queue_draw()
 
@@ -355,13 +466,16 @@ class WorldPreviewWindow(tk.Toplevel):
                 fill='#94a3b8', tags='scene')
             return
         try:
-            points = project_wireframe(
+            points = (self._fly_camera.project(scene.vertices, w, h)
+                      if self._fly_mode else project_wireframe(
                 scene, w, h, self.yaw, self.pitch, self.zoom,
                 self.pan_x, self.pan_y, center=self._camera_center,
                 span=self._world.chunk_size * (2*self._chunk_radius+1)
                      if self._world is not None else None)
             # Draw back-to-front so near edges remain legible.
-            faces = sorted(scene.faces, key=lambda f: sum(points[i][2] for i in f))
+            faces = sorted(
+                (f for f in scene.faces if all(points[i] is not None for i in f)),
+                key=lambda f: sum(points[i][2] for i in f), reverse=self._fly_mode)
             # Keep animation responsive while many Tk polygons are present.
             if self._animation_id is not None and len(faces) > 1200:
                 faces = faces[::max(1, len(faces)//1200)]
@@ -389,7 +503,7 @@ class WorldPreviewWindow(tk.Toplevel):
 
     def close(self):
         self._closed = True
-        for callback in (self._draw_id, self._poll_id, self._animation_id):
+        for callback in (self._draw_id, self._poll_id, self._animation_id, self._tick_id):
             if callback is not None:
                 self.after_cancel(callback)
         self._executor.shutdown(wait=False, cancel_futures=True)
