@@ -187,7 +187,7 @@ class EditorApp(tk.Tk):
         header.columnconfigure(2,weight=1,uniform='header_side')
         mode_frame=tk.Frame(header,bg=BG);mode_frame.grid(row=0,column=0,sticky='w')
         label(mode_frame,tr('app.mode'),bg=BG,font=('Arial',11)).pack(side='left',padx=(0,10))
-        self.mode=create_field(mode_frame,'choice',options=((tr('app.items'),'items'),('Мир','world'),('Редактор локаций','locations'),('NPC','npc'),(tr('recipes.title'),'recipes'),('Медиа','media')),caption=tr('app.mode'))
+        self.mode=create_field(mode_frame,'choice',options=((tr('app.items'),'items'),('Мир','world'),('Редактор мира','locations'),('NPC','npc'),(tr('recipes.title'),'recipes'),('Медиа','media')),caption=tr('app.mode'))
         self.mode.current(0);self.mode.pack(side='left')
         self.mode.bind('<<ComboboxSelected>>',lambda _:self._switch_resource_browser(self.mode.get()))
         actions=tk.Frame(header,bg=BG);actions.grid(row=0,column=1,padx=16)
