@@ -1,60 +1,215 @@
 {
   "sections": [
-    {"code": "interface", "name": "settings.sections.interface"},
-    {"code": "resources", "name": "settings.sections.resources"},
-    {"code": "build", "name": "settings.sections.build"},
-    {"code": "project", "name": "settings.sections.project"}
+    {
+      "code": "interface",
+      "name": "settings.sections.interface"
+    },
+    {
+      "code": "resources",
+      "name": "settings.sections.resources"
+    },
+    {
+      "code": "build",
+      "name": "settings.sections.build"
+    },
+    {
+      "code": "project",
+      "name": "settings.sections.project"
+    }
   ],
   "settings": [
     {
-      "section_code": "project", "code": "hierarchy", "name": "settings.groups.hierarchy",
+      "section_code": "project",
+      "code": "hierarchy",
+      "name": "settings.groups.hierarchy",
       "items": [
-        {"code": "display_mode", "name": "settings.items.hierarchy_mode", "title": "settings.hints.hierarchy_mode",
-         "type": "enum", "default": "project_over_original", "options": [
-           {"value": "project_only", "name": "settings.options.project_only"},
-           {"value": "project_over_original", "name": "settings.options.project_over_original"}
-         ]}
+        {
+          "code": "display_mode",
+          "name": "settings.items.hierarchy_mode",
+          "title": "settings.hints.hierarchy_mode",
+          "type": "enum",
+          "default": "project_over_original",
+          "options": [
+            {
+              "value": "project_only",
+              "name": "settings.options.project_only"
+            },
+            {
+              "value": "project_over_original",
+              "name": "settings.options.project_over_original"
+            }
+          ]
+        }
       ]
     },
     {
-      "section_code": "interface", "code": "general", "name": "settings.groups.general",
+      "section_code": "interface",
+      "code": "general",
+      "name": "settings.groups.general",
       "items": [
-        {"code": "language", "name": "settings.items.language", "title": "settings.hints.language", "type": "language", "default": "ru"},
-        {"code": "window_size", "name": "settings.items.window_size", "title": "settings.hints.window_size", "type": "size", "default": [1240, 760], "storage_keys": ["window_width", "window_height"], "minimum": 540, "maximum": 16384}
+        {
+          "code": "language",
+          "name": "settings.items.language",
+          "title": "settings.hints.language",
+          "type": "language",
+          "default": "ru"
+        },
+        {
+          "code": "window_size",
+          "name": "settings.items.window_size",
+          "title": "settings.hints.window_size",
+          "type": "size",
+          "default": [
+            1240,
+            760
+          ],
+          "storage_keys": [
+            "window_width",
+            "window_height"
+          ],
+          "minimum": 540,
+          "maximum": 16384
+        }
       ]
     },
     {
-      "section_code": "interface", "code": "terminal", "name": "settings.groups.terminal",
+      "section_code": "interface",
+      "code": "terminal",
+      "name": "settings.groups.terminal",
       "items": [
-        {"code": "height", "name": "settings.items.terminal_height", "title": "settings.hints.terminal_height", "type": "number", "default": 200, "minimum": 80, "maximum": 2000}
+        {
+          "code": "height",
+          "name": "settings.items.terminal_height",
+          "title": "settings.hints.terminal_height",
+          "type": "number",
+          "default": 200,
+          "minimum": 80,
+          "maximum": 2000
+        }
       ]
     },
     {
-      "section_code": "resources", "code": "gothic", "name": "settings.groups.gothic",
+      "section_code": "interface",
+      "code": "world_chunks",
+      "name": "settings.groups.world_chunks",
       "items": [
-        {"code": "game_path", "name": "settings.items.game_path", "title": "settings.hints.game_path", "type": "directory", "default": "", "scope": "project"}
+        {
+          "code": "size",
+          "name": "settings.items.chunk_size",
+          "title": "settings.hints.chunk_size",
+          "type": "number",
+          "default": 6000,
+          "minimum": 500,
+          "maximum": 100000
+        },
+        {
+          "code": "radius",
+          "name": "settings.items.chunk_radius",
+          "title": "settings.hints.chunk_radius",
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "maximum": 5
+        },
+        {
+          "code": "triangle_limit",
+          "name": "settings.items.chunk_triangles",
+          "title": "settings.hints.chunk_triangles",
+          "type": "number",
+          "default": 3500,
+          "minimum": 100,
+          "maximum": 10000
+        }
       ]
     },
     {
-      "section_code": "resources", "code": "editor", "name": "settings.groups.resource_settings",
+      "section_code": "resources",
+      "code": "gothic",
+      "name": "settings.groups.gothic",
       "items": [
-        {"code": "path", "name": "settings.items.resource_editor", "title": "settings.hints.resource_editor", "type": "file", "default": ""}
+        {
+          "code": "game_path",
+          "name": "settings.items.game_path",
+          "title": "settings.hints.game_path",
+          "type": "directory",
+          "default": "",
+          "scope": "project"
+        }
       ]
     },
     {
-      "section_code": "project", "code": "mod", "name": "settings.groups.mod",
+      "section_code": "resources",
+      "code": "editor",
+      "name": "settings.groups.resource_settings",
       "items": [
-        {"code": "name", "name": "settings.items.mod_name", "title": "settings.hints.mod_name", "type": "string", "default": "", "scope": "project"},
-        {"code": "output_name", "name": "settings.items.mod_output", "title": "settings.hints.mod_output", "type": "string", "default": "", "scope": "project"},
-        {"code": "starter_path", "name": "settings.items.starter", "title": "settings.hints.starter", "type": "file", "default": "", "scope": "project"},
-        {"code": "packer_path", "name": "settings.items.packer", "title": "settings.hints.packer", "type": "file", "default": "", "scope": "project"},
-        {"code": "keep_dat", "name": "settings.items.keep_dat", "title": "settings.hints.keep_dat", "type": "boolean", "default": false, "scope": "project"}
+        {
+          "code": "path",
+          "name": "settings.items.resource_editor",
+          "title": "settings.hints.resource_editor",
+          "type": "file",
+          "default": ""
+        }
       ]
     },
     {
-      "section_code": "build", "code": "compiler", "name": "settings.groups.compiler",
+      "section_code": "project",
+      "code": "mod",
+      "name": "settings.groups.mod",
       "items": [
-        {"code": "path", "name": "settings.items.compiler", "title": "settings.hints.compiler", "type": "file", "default": ""}
+        {
+          "code": "name",
+          "name": "settings.items.mod_name",
+          "title": "settings.hints.mod_name",
+          "type": "string",
+          "default": "",
+          "scope": "project"
+        },
+        {
+          "code": "output_name",
+          "name": "settings.items.mod_output",
+          "title": "settings.hints.mod_output",
+          "type": "string",
+          "default": "",
+          "scope": "project"
+        },
+        {
+          "code": "starter_path",
+          "name": "settings.items.starter",
+          "title": "settings.hints.starter",
+          "type": "file",
+          "default": "",
+          "scope": "project"
+        },
+        {
+          "code": "packer_path",
+          "name": "settings.items.packer",
+          "title": "settings.hints.packer",
+          "type": "file",
+          "default": "",
+          "scope": "project"
+        },
+        {
+          "code": "keep_dat",
+          "name": "settings.items.keep_dat",
+          "title": "settings.hints.keep_dat",
+          "type": "boolean",
+          "default": false,
+          "scope": "project"
+        }
+      ]
+    },
+    {
+      "section_code": "build",
+      "code": "compiler",
+      "name": "settings.groups.compiler",
+      "items": [
+        {
+          "code": "path",
+          "name": "settings.items.compiler",
+          "title": "settings.hints.compiler",
+          "type": "file",
+          "default": ""
+        }
       ]
     }
   ]
