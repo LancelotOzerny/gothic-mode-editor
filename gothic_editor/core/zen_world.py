@@ -152,7 +152,7 @@ def inspect_zen(path: str | Path, *, include_objects: bool = True) -> ZenWorldIn
             key, _, entry = value.partition('=')
             if stack[-1][1] and objects:
                 _, separator, content = entry.partition(':')
-                if separator and key in ('vobName', 'visual', 'trafoOSToWSPos', 'presetName', 'itemInstance'):
+                if separator and key in ('vobName', 'visual', 'trafoOSToWSPos', 'trafoOSToWSRot', 'showVisual', 'presetName', 'itemInstance'):
                     objects[-1].properties[key] = content
             continue
         raise ZenWorldError('Неизвестная строка в ASCII ZEN.')
