@@ -10,6 +10,7 @@ from gothic_editor.core.project import ProjectRepository
 from gothic_editor.core.project_tools import ProjectTools
 from gothic_editor.core.item_layout import ItemLayout, project_scripts
 from gothic_editor.core.asset_files import AssetFiles
+from gothic_editor.core.edit_history import EditHistory
 from gothic_editor.core.scripts import Item, parse_items
 from gothic_editor.ui.panels.resources import ResourcesPanel
 
@@ -88,6 +89,20 @@ class AssetsBrowserTests(unittest.TestCase):
         self.panel.pack(fill='both',expand=True)
         self.panel.set_item(self.project,None)
         self.window.update_idletasks()
+
+    def test_copy_folder_undo_and_redo(self):
+        history=EditHistory()
+        history.reset(self.project)
+        self.panel.history=lambda:history
+        self.panel.open_folder(self.assets)
+        self.panel.select_file(self.assets/'Models')
+        self.panel.duplicate_selected()
+        copy=self.assets/'Models_copy'
+        self.assertEqual((copy/'Mesh.3ds').read_bytes(),b'model')
+        self.assertTrue(history.apply())
+        self.assertFalse(copy.exists())
+        self.assertTrue(history.apply(redo=True))
+        self.assertEqual((copy/'Mesh.3ds').read_bytes(),b'model')
 
     def test_navigation_tree_selection_and_item_independence(self):
         self.assertEqual({p.name for p in self.panel.paths.values()},{'Items','Models','Scripts'})
