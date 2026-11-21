@@ -471,7 +471,7 @@ class WorldPreviewWindow(tk.Toplevel):
                 scene, w, h, self.yaw, self.pitch, self.zoom,
                 self.pan_x, self.pan_y, center=self._camera_center,
                 span=self._world.chunk_size * (2*self._chunk_radius+1)
-                     if self._world is not None else None)
+                     if self._world is not None else None))
             # Draw back-to-front so near edges remain legible.
             faces = sorted(
                 (f for f in scene.faces if all(points[i] is not None for i in f)),
