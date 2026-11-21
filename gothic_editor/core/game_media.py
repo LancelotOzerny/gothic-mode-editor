@@ -184,6 +184,35 @@ class GameMedia:
                     old.category if old else media_category(path.name,kind),True)
         return sorted(found.values(),key=lambda row:(list(CATEGORIES).index(row.category),row.name.casefold()))
 
+    @staticmethod
+    def export_file(resource, destination):
+        """Export original/replacement textures to editable PNG, videos unchanged."""
+        import struct
+        import zlib
+        destination=Path(destination)
+        if resource.kind=='videos':
+            if destination.suffix.lower()!='.bik':
+                raise ValueError('Видео экспортируется только как BIK')
+            data=resource.source.read_bytes()
+            if data[:3]!=b'BIK':raise ValueError('Некорректное видео BIK')
+        else:
+            if destination.suffix.lower()!='.png':
+                raise ValueError('Изображение экспортируется только как PNG')
+            texture=read_texture(resource.source.read_bytes())
+            width,height=texture.width,texture.height
+            stride=width*4
+            rows=b''.join(b'\\x00'+texture.pixels[y*stride:(y+1)*stride]
+                          for y in range(height))
+            def chunk(kind,payload):
+                return (struct.pack('>I',len(payload))+kind+payload+
+                        struct.pack('>I',zlib.crc32(kind+payload)&0xffffffff))
+            data=(b'\\x89PNG\\r\\n\\x1a\\n'+
+                  chunk(b'IHDR',struct.pack('>IIBBBBB',width,height,8,6,0,0,0))+
+                  chunk(b'IDAT',zlib.compress(rows))+
+                  chunk(b'IEND',b''))
+        destination.write_bytes(data)
+        return destination
+
     def replace_image(self, name, source):
         """PNG/JPEG are decoded to RGBA then stored as native Gothic TEX."""
         source=Path(source)
