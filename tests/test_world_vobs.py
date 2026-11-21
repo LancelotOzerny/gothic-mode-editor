@@ -1,6 +1,7 @@
 """Static VOB placement and shared-model tests without OpenGL/Tk."""
 import struct
 import unittest
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -37,6 +38,15 @@ class VobTests(unittest.TestCase):
             SimpleNamespace(details_available=False, objects=()), 6000)
         self.assertEqual(objects, ())
         self.assertIn('BINARY', status)
+
+    def test_binsafe_keeps_rotation_raw_and_boolean(self):
+        from gothic_editor.core.zen_binsafe import _value
+        rotation = struct.pack('<9f', 1, 0, 0, 0, 1, 0, 0, 0, 1)
+        stream = BytesIO(struct.pack('<H', len(rotation)) + rotation)
+        self.assertEqual(_value(stream, 9, len(rotation)+2, True),
+                         rotation.hex())
+        visible = BytesIO(struct.pack('<I', 1))
+        self.assertEqual(_value(visible, 6, 4, True), '1')
 
     def test_shared_mesh_loaded_once_for_repeated_instances(self):
         info = SimpleNamespace(details_available=True, objects=(
