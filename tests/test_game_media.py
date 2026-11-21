@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from gothic_editor.core.build_assets import BuildAssetService
-from gothic_editor.core.game_media import GameMedia
+from gothic_editor.core.game_media import GameMedia, media_category
 from gothic_editor.core.textures import read_ztex
 
 
@@ -40,6 +40,25 @@ class GameMediaTests(unittest.TestCase):
         self.assertEqual(path.read_bytes(), source.read_bytes())
         self.assertEqual(self.media.videos(), [path])
         self.assertFalse(any('Intro.bik' in name for name in BuildAssetService(self.project).collect()))
+
+    def test_catalog_uses_game_resources_and_project_overrides(self):
+        from types import SimpleNamespace
+        source=Path(self.temp.name)/'original.tga'
+        source.write_bytes(tga())
+        archive=SimpleNamespace(
+            texture_entries={'startscreen.tga':source,'chapter1.tga':source,
+                             'miscicon.tga':source},
+            entries={'intro.bik':source})
+        catalog=self.media.catalog(archive)
+        self.assertEqual({row.category for row in catalog},
+                         {'menu','chapters','images','videos'})
+        image=next(row for row in catalog if row.name=='startscreen-C.TEX')
+        self.assertFalse(image.overridden)
+        self.media.import_file('images','startscreen.tga',source)
+        catalog=self.media.catalog(archive)
+        image=next(row for row in catalog if row.name.casefold()=='startscreen-c.tex')
+        self.assertTrue(image.overridden)
+        self.assertEqual(media_category('MENU_LOGO.TGA'),'menu')
 
     def test_rejects_invalid_file_and_path(self):
         source = Path(self.temp.name) / 'broken.bik'
