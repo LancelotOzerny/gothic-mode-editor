@@ -4,7 +4,7 @@ import re
 from uuid import uuid4
 
 from .asset_files import AssetFiles
-from .textures import read_texture, read_ztex, write_ztex, Texture
+from .textures import read_texture, read_ztex, write_ztex, validate_gothic_ztex, Texture
 from dataclasses import dataclass
 
 KINDS = ('images', 'videos')
@@ -298,6 +298,9 @@ class GameMedia:
                 except ValueError as exc:
                     raise ValueError(f'Не удалось подготовить текстуру {path.name} '
                                      f'({texture.width}x{texture.height}): {exc}') from exc
+            try:validate_gothic_ztex(data)
+            except ValueError as exc:
+                raise ValueError(f'Небезопасная текстура {path.name}: {exc}') from exc
             files['_work/data/Textures/_compiled/' + path.name] = data
         return files
 
