@@ -107,6 +107,7 @@ class WorldPreviewPanel(tk.Frame):
         footer = tk.Label(self, text='Полёт: WASD — движение  ·  ПКМ — взгляд  ·  Q/E — вниз/вверх  ·  Shift — ускорение  ·  Home — сброс  ·  колесо — скорость',
                           bg='#232b39', fg='#94a3b8', anchor='center')
         footer.pack(fill='x', pady=0, ipady=7)
+        self._footer = footer
         self._try_enable_opengl(footer)
         self.refresh_locations()
         self.queue_draw()
@@ -158,7 +159,7 @@ class WorldPreviewPanel(tk.Frame):
             except tk.TclError:
                 pass
         if not self._closed:
-            self.canvas.pack(fill='both', expand=True, before=self.canvas.master.winfo_children()[-1])
+            self.canvas.pack(fill='both', expand=True, before=self._footer)
             self.queue_draw()
             self._log_message('[ZEN] OpenGL отключён: ' + reason +
                               '. Переключился на Tkinter.', error=True)
@@ -420,11 +421,11 @@ class WorldPreviewPanel(tk.Frame):
         camera_hint = (
             f' · Скорость: {self._fly_camera.speed/100:.1f} м/с'
             if self._fly_mode else '')
+        backend = 'OpenGL' if self._gl_view is not None else 'Tkinter'
         self.status.configure(
             text=f'Чанк {self._focus[0]}, {self._focus[1]} · '
-                 f'Видимых полигонов: {len(self._scene.faces):,} · '
-                 f'Участков: {len(self._world.chunks)}'
-                 f'{camera_hint}')
+                 f'Полигонов: {len(self._scene.faces):,} · '
+                 f'{backend}{camera_hint}')
 
     def move_focus(self, dx, dz):
         if self._world is None:
