@@ -50,7 +50,7 @@ class GameMediaTests(unittest.TestCase):
         output=Path(self.temp.name)/'export.png'
         GameMedia.export_file(resource,output)
         data=output.read_bytes()
-        self.assertTrue(data.startswith(b'\\x89PNG\\r\\n\\x1a\\n'))
+        self.assertTrue(data.startswith(b'\x89PNG\r\n\x1a\n'))
         self.assertEqual(struct.unpack_from('>II',data,16),(2,2))
         offset=8
         chunks={}
