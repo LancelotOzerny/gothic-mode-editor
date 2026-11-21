@@ -143,10 +143,19 @@ class MediaPreview(Panel):
         process=self._video_process
         self._video_process=None
         if process is not None and process.poll() is None:
-            process.terminate()
+            try:
+                process.terminate()
+                process.wait(timeout=2)
+            except Exception:
+                try:process.kill()
+                except OSError:pass
+                try:process.wait(timeout=2)
+                except Exception:pass
         temporary=self._video_temp
         self._video_temp=None
-        if temporary is not None:temporary.cleanup()
+        if temporary is not None:
+            try:temporary.cleanup()
+            except OSError:pass
 
     def show(self,resource):
         self.resource=resource
