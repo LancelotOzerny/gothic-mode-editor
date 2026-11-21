@@ -116,7 +116,12 @@ class MediaPreview(Panel):
                 rgb[pos:pos+3]=texture.pixels[offset:offset+3]
                 pos+=3
         ppm=f'P6\n{out_w} {out_h}\n255\n'.encode('ascii')+rgb
-        self.photo=tk.PhotoImage(master=self,data=ppm,format='PPM')
+        try:self.photo=tk.PhotoImage(master=self,data=ppm,format='PPM')
+        except tk.TclError as exc:
+            self.texture=None
+            self.caption='Не удалось показать изображение: '+str(exc)
+            self.redraw()
+            return
         self.canvas.create_image(width//2,height//2,image=self.photo)
         self.canvas.create_text(12,10,text=f'{texture.width} × {texture.height}',
                                 anchor='nw',fill=MUTED,font=('Arial',10))
