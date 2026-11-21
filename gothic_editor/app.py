@@ -755,6 +755,8 @@ class EditorApp(tk.Tk):
                 from gothic_editor.ui.windows.world_preview import WorldPreviewPanel
                 self.location_viewer=WorldPreviewPanel(self.editor_middle,self.repo.game,
                                                         app=self)
+            else:
+                self.location_viewer.set_game(self.repo.game)
             self.location_viewer.pack(fill='both',expand=True)
             self.mode.set_expression(mode)
             return
