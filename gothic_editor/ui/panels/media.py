@@ -1,74 +1,91 @@
 """Media hierarchy and inspector following the editor's existing three-column layout."""
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox
 from pathlib import Path
 
 from gothic_editor.core.game_media import CATEGORIES, GameMedia
 from gothic_editor.core.textures import read_texture
-from gothic_editor.ui.widgets import PANEL, BG, TXT, MUTED, label, make_entry
-from gothic_editor.ui.widgets.panel import Panel, ScrollableArea, attach_scrollbar
+from gothic_editor.ui.widgets import PANEL, BG, TXT, MUTED, label
+from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
+from .hierarchy import HierarchyBrowser, HierarchyCategory, CategoryRow, HierarchyRow
 
 
-class MediaPanel(Panel):
+class MediaPanel(HierarchyBrowser):
+    """Use the exact category/row widgets shared with World and NPC."""
     def __init__(self, parent, on_select, on_load):
         super().__init__(parent)
-        self.on_select, self.on_load = on_select, on_load
-        label(self, 'Медиа', font=('Arial',10,'bold')).pack(fill='x', padx=12, pady=12)
-        label(self,'ПКМ на категории → Загрузить все файлы медиа',
-              fg=MUTED,wraplength=260).pack(fill='x',padx=12,pady=(0,9))
-        self.search=tk.StringVar(self)
-        make_entry(self,textvariable=self.search).pack(fill='x',padx=10,pady=(0,10),ipady=6)
-        style=ttk.Style(self)
-        style.configure('Media.Treeview',background=PANEL,fieldbackground=PANEL,
-                        foreground=TXT,rowheight=27,borderwidth=0)
-        style.map('Media.Treeview',background=[('selected','#36516c')],
-                  foreground=[('selected',TXT)])
-        self.tree=ttk.Treeview(self,show='tree',selectmode='browse',style='Media.Treeview')
-        attach_scrollbar(self,self.tree)
-        self.tree.pack(fill='both',expand=True)
-        self.nodes={}
+        self.on_select, self.on_load=on_select,on_load
+        self.owner,self.origin=self,'project'
         self.resources={}
-        for code,title in CATEGORIES.items():
-            self.tree.insert('', 'end', iid=code,text=title,open=False)
-        self.tree.bind('<<TreeviewSelect>>',self.selected)
-        self.tree.bind('<Button-3>',self.context)
-        self.search.trace_add('write',lambda *_:self.filter())
+        self.entries={}
+        self.grouped={}
+        self.category_rows={}
+        self.rows={}
+        self.selected=None
+        self.area=ScrollableArea(self)
+        self.area.pack(fill='both',expand=True)
+        self.search.trace_add('write',lambda *_:self.rebuild())
+        self.rebuild()
 
-    def set_resources(self, resources, loaded):
+    def set_resources(self,resources,loaded):
         self.resources={row.kind+':'+row.name.casefold():row for row in resources
                         if row.category in loaded or row.overridden}
-        self.filter()
+        self.rebuild()
 
-    def filter(self):
+    def rebuild(self):
+        position=self.area.canvas.yview()
+        for child in self.area.content.winfo_children():child.destroy()
+        self.grouped={}
+        self.entries={}
+        self.category_rows={}
+        self.rows={}
         query=self.search.get().strip().casefold()
-        selection=self.tree.selection()
-        for code in CATEGORIES:
-            for node in self.tree.get_children(code):self.tree.delete(node)
-        self.nodes={}
-        for key,row in self.resources.items():
-            if query and query not in row.name.casefold():continue
-            self.tree.insert(row.category,'end',iid=key,text=row.name+('  • Проект' if row.overridden else ''))
-            self.nodes[key]=row
-        if selection and self.tree.exists(selection[0]):self.tree.selection_set(selection[0])
+        for code,title in CATEGORIES.items():
+            matching={key:row for key,row in self.resources.items()
+                      if row.category==code and (not query or query in row.name.casefold()
+                                                 or query in title.casefold())}
+            self.entries.update(matching)
+            self.grouped[code]=list(matching)
+            CategoryRow(self,self.area.content,HierarchyCategory(code,title),0)
+        if query and not self.entries:
+            label(self.area.content,'Ничего не найдено',fg=MUTED).pack(padx=12,pady=15)
+        self.area.canvas.yview_moveto(position[0] if position else 0)
+
+    def count(self,category):
+        return len(self.grouped.get(category.key,()))
+
+    def bind_category(self,row,category):
+        super().bind_category(row,category)
+        row.header.bind_row('<Button-3>',
+                            lambda event,key=category.key:self.context(event,key))
+
+    def row_item(self,parent,key,level):
+        resource=self.entries[key]
+        title=resource.name+('  • Проект' if resource.overridden else '')
+        row=HierarchyRow(parent,title,level)
+        self.rows[key]=row
+        row.set_selected(key==self.selected)
+        self.bind_activate(row,lambda:self.select(key))
+        row.bind_row('<Button-3>',lambda event:self.context(event,resource.category))
+
+    def select(self,key):
+        resource=self.entries[key]
+        if self.on_select(resource) is False:return False
+        previous=self.rows.get(self.selected)
+        if previous is not None:previous.set_selected(False)
+        self.selected=key
+        self.select_category(None)
+        row=self.rows.get(key)
+        if row is not None:row.set_selected(True)
+        return True
+
+    def context(self,event,category):
+        self.popup(event,[('Загрузить все файлы медиа',
+                           lambda:self.on_load(category))])
 
     def expand(self,category):
-        if self.tree.exists(category):
-            self.tree.item(category,open=True)
-
-    def selected(self,_event=None):
-        selected=self.tree.selection()
-        if selected and selected[0] in self.nodes:self.on_select(self.nodes[selected[0]])
-
-    def context(self,event):
-        node=self.tree.identify_row(event.y)
-        if not node:return
-        menu=tk.Menu(self,tearoff=False)
-        category=node if node in CATEGORIES else self.tree.parent(node)
-        if category in CATEGORIES:
-            menu.add_command(label='Загрузить все файлы медиа',
-                             command=lambda:self.on_load(category))
-        try:menu.tk_popup(event.x_root,event.y_root)
-        finally:menu.grab_release()
+        row=self.category_rows.get(category)
+        if row is not None and not row.opened:row.toggle()
 
 
 class MediaPreview(Panel):
