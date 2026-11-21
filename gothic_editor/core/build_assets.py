@@ -9,6 +9,7 @@ from .potion_components import PotionComponents
 from .mod_archive import write_mod
 from .model_library import ModelLibrary
 from .world_resources import WorldResources
+from .game_media import GameMedia
 
 
 class BuildAssetService:
@@ -76,7 +77,7 @@ class BuildAssetService:
         for path in sorted(global_assets.rglob('*')):
             if not path.is_file():continue
             relative=path.relative_to(global_assets)
-            if relative.parts[0].casefold() in ('items','scripts','models','npc','recipes'):continue
+            if relative.parts[0].casefold() in ('items','scripts','models','npc','recipes','media'):continue
             if (relative.as_posix().casefold() in ('worlds/overrides.json','worlds/catalog.json')
                     or tuple(part.casefold() for part in relative.parts[:2]) == ('textures','world')):continue
             self.store.layout.checked(path)
@@ -118,6 +119,12 @@ class BuildAssetService:
             key=Path(name).name.casefold()
             if key in names:raise ValueError(f'Конфликт имени ресурса мира {name}: {names[key]}')
             names[key]='Мир'
+            files[name]=data
+        # Media textures override the same logical resource names as the game.
+        for name,data in GameMedia(self.store.layout.project).collect_images().items():
+            key=Path(name).name.casefold()
+            if key in names:raise ValueError(f'Конфликт имени медиа {name}: {names[key]}')
+            names[key]='Медиа'
             files[name]=data
         from .npc_models import collect_npc_models
         for name,data in collect_npc_models(self.store.layout.project).items():
