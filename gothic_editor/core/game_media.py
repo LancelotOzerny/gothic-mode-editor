@@ -283,7 +283,14 @@ class GameMedia:
             # in the build output, without changing the user's editable assets.
             texture = read_ztex(data)
             kind = int.from_bytes(data[8:12], 'little')
-            if kind not in (10, 12):
+            levels = int.from_bytes(data[20:24], 'little')
+            width, height = texture.width, texture.height
+            expected = 0
+            while width >= 4 and height >= 4 and width % 4 == 0 and height % 4 == 0:
+                expected += 1
+                width //= 2
+                height //= 2
+            if kind not in (10, 12) or levels != expected:
                 data = write_ztex(texture)
             files['_work/data/Textures/_compiled/' + path.name] = data
         return files
