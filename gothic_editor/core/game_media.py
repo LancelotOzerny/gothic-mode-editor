@@ -291,7 +291,11 @@ class GameMedia:
                 width //= 2
                 height //= 2
             if kind not in (10, 12) or levels != expected:
-                data = write_ztex(texture)
+                try:
+                    data = write_ztex(texture)
+                except ValueError as exc:
+                    raise ValueError(f'Не удалось подготовить текстуру {path.name} '
+                                     f'({texture.width}x{texture.height}): {exc}') from exc
             files['_work/data/Textures/_compiled/' + path.name] = data
         return files
 
