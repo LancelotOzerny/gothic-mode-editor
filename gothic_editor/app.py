@@ -27,6 +27,7 @@ from gothic_editor.ui.widgets.dock import BottomDock
 from gothic_editor.ui.panels.resources import ResourcesPanel
 from gothic_editor.ui.panels.media import MediaPanel, MediaPropertiesPanel, MediaPreview
 from gothic_editor.core.game_media import GameMedia
+from gothic_editor.core.project_selection import ProjectSelection
 from .core.recent_projects import RecentProjects
 from .core.categories import classify, EDITABLE_CATEGORIES
 from gothic_editor.ui.panels.welcome import WelcomeScreen
@@ -219,7 +220,7 @@ class EditorApp(tk.Tk):
         self.recipes=RecipeController(self)
         self.recipe_list=RecipeListPanel(sidebar,self.recipes)
         self.world_panel=WorldPanel(sidebar,self.world.select,self.npcs.select)
-        self.media_panel=MediaPanel(sidebar,self.select_media,self.load_media_category)
+        self.media_panel=MediaPanel(sidebar,self.select_media,self.load_media_category,self.import_media)
         middle=tk.Frame(panes,bg='#191e29')
         panes.add(middle,width=550,minsize=250)
         self.viewer=ModelViewer(middle)
@@ -805,10 +806,10 @@ class EditorApp(tk.Tk):
         if self.repo.root is None:return
         selected=self.media_properties.current if keep else None
         try:
-            all_resources=(GameMedia(self.repo.root).catalog(self.repo.archive_models,self.repo.game)
-                           if self._media_loaded else GameMedia(self.repo.root).catalog())
+            all_resources=GameMedia(self.repo.root).catalog(self.repo.archive_models,self.repo.game)
+            selected_names=ProjectSelection(self.repo.root,'Media').read()
             self._media_resources=all_resources
-            self.media_panel.set_resources(all_resources,self._media_loaded)
+            self.media_panel.set_resources(all_resources,self._media_loaded,selected_names)
             if selected is not None:
                 row=next((x for x in all_resources if x.kind==selected.kind and
                           x.name.casefold()==selected.name.casefold()),None)
@@ -819,6 +820,28 @@ class EditorApp(tk.Tk):
                 self.media_viewer.show(None)
         except (OSError,ValueError) as exc:
             messagebox.showerror('Медиа',str(exc),parent=self)
+
+    def import_media(self,category):
+        from .ui.windows.media_import import MediaImportWindow
+        if self.repo.root is None:return
+        options=[row for row in GameMedia(self.repo.root).catalog(
+            self.repo.archive_models,self.repo.game) if row.category==category and not row.overridden]
+        if not options:
+            messagebox.showinfo('Медиа','В этой категории не найдены ресурсы Gothic.',parent=self)
+            return
+        def choose(resource):
+            selection=ProjectSelection(self.repo.root,'Media')
+            saved=self.history.capture((selection.path,))
+            selection.add(resource.kind+':'+resource.name)
+            self.history.record(saved)
+            window.destroy()
+            self.load_media(keep=False)
+            key=resource.kind+':'+resource.name.casefold()
+            self.media_panel.expand(category)
+            if key in self.media_panel.entries:
+                self.media_panel.select(key)
+        window=MediaImportWindow(self,options,choose)
+        window.show_centered(modal=True)
 
     def select_media(self,resource):
         self.media_properties.show(resource)
