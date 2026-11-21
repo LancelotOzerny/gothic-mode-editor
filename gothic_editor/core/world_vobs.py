@@ -19,7 +19,8 @@ _IDENTITY = (1., 0., 0., 0., 1., 0., 0., 0., 1.)
 _NUMBER = re.compile(r'[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?')
 _MAX_VOBS = 50000
 _MAX_MODELS = 256
-_MAX_MODEL_TRIANGLES = 250000
+_MAX_MODEL_TRIANGLES = 100000
+_MAX_TOTAL_MODEL_TRIANGLES = 450000
 
 
 @dataclass(frozen=True)
@@ -94,7 +95,8 @@ def static_vobs(info, chunk_size: int):
 
 
 def _load_mesh(source):
-    if source.size > 64*1024*1024 if hasattr(source, 'size') else source.stat().st_size > 64*1024*1024:
+    size = source.size if hasattr(source, 'size') else source.stat().st_size
+    if size > 64*1024*1024:
         raise ValueError('Слишком большая модель.')
     name = source.name.lower()
     data = source.read_bytes()
@@ -124,8 +126,9 @@ def load_vob_scene(path, sources, chunk_size):
         return VobScene((), {}, {}, status, skipped)
     models = {}
     missing = set()
+    triangles_loaded = 0
     for name in dict.fromkeys(v.visual for v in objects):
-        if len(models) >= _MAX_MODELS:
+        if len(models) >= _MAX_MODELS or triangles_loaded >= _MAX_TOTAL_MODEL_TRIANGLES:
             break
         source = sources.get(name)
         if source is None and name.endswith('.3ds'):
@@ -134,7 +137,12 @@ def load_vob_scene(path, sources, chunk_size):
             missing.add(name)
             continue
         try:
-            models[name] = _load_mesh(source)
+            mesh = _load_mesh(source)
+            if triangles_loaded + len(mesh.faces) > _MAX_TOTAL_MODEL_TRIANGLES:
+                missing.add(name)
+                continue
+            models[name] = mesh
+            triangles_loaded += len(mesh.faces)
         except (OSError, ValueError, struct.error):
             missing.add(name)
     kept = tuple(v for v in objects if v.visual in models)
