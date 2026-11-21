@@ -10,8 +10,8 @@ from math import degrees
 from OpenGL.GL import (
     glBegin, glClear, glClearColor, glColor3f, glDisable, glEnable, glEnd,
     glLoadIdentity, glMatrixMode, glMultMatrixf, glOrtho, glPolygonMode,
-    glRotatef, glScalef, glTranslatef, glVertex3f, glViewport,
-    GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT, GL_DEPTH_TEST,
+    glRotatef, glScalef, glTranslatef, glVertex3f, glViewport, glGetIntegerv,
+    GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT, GL_DEPTH_TEST, GL_DEPTH_BITS,
     GL_FILL, GL_FRONT_AND_BACK, GL_LEQUAL, GL_LINE, GL_MODELVIEW,
     GL_PROJECTION, GL_TRIANGLES, glDepthFunc,
 )
@@ -52,6 +52,8 @@ class WorldOpenGLFrame(OpenGLFrame):
     def initgl(self):
         try:
             glClearColor(0.098, 0.118, 0.161, 1.0)
+            if int(glGetIntegerv(GL_DEPTH_BITS)) < 16:
+                raise RuntimeError('OpenGL-контекст не поддерживает буфер глубины.')
             glEnable(GL_DEPTH_TEST)
             glDepthFunc(GL_LEQUAL)
             # World polygons can have inconsistent winding. Double-sided.
