@@ -72,3 +72,19 @@ class FlyCamera:
             result.append((sx, screen_y, depth)
                           if isfinite(sx) and isfinite(screen_y) else None)
         return tuple(result)
+
+
+def gl_view_rotation(camera: FlyCamera):
+    """4x4 column-major view rotation matching FlyCamera.project().
+
+    ZenGin uses +Z forward; OpenGL uses -Z, so Z is inverted here.
+    The translation of -camera.position is applied afterwards.
+    """
+    cy, sy = cos(camera.yaw), sin(camera.yaw)
+    cp, sp = cos(camera.pitch), sin(camera.pitch)
+    return (
+        cy, -sp * sy, -cp * sy, 0.,
+        0., cp, -sp, 0.,
+        -sy, -sp * cy, -cp * cy, 0.,
+        0., 0., 0., 1.,
+    )
