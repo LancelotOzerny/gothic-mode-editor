@@ -45,6 +45,10 @@ class MediaPanel(Panel):
             self.nodes[key]=row
         if selection and self.tree.exists(selection[0]):self.tree.selection_set(selection[0])
 
+    def expand(self,category):
+        if self.tree.exists(category):
+            self.tree.item(category,open=True)
+
     def selected(self,_event=None):
         selected=self.tree.selection()
         if selected and selected[0] in self.nodes:self.on_select(self.nodes[selected[0]])
@@ -110,7 +114,7 @@ class MediaPropertiesPanel(Panel):
                 for x in range(0,texture.width,factor):
                     offset=(y*texture.width+x)*4
                     rgb.extend(texture.pixels[offset:offset+3])
-            ppm=f'P6\\n{width} {height}\\n255\\n'.encode('ascii')+rgb
+            ppm=f'P6\n{width} {height}\n255\n'.encode('ascii')+rgb
             self.photo=tk.PhotoImage(master=self,data=ppm,format='PPM')
             self.picture.configure(image=self.photo,text='')
         except (OSError,ValueError,tk.TclError) as exc:
