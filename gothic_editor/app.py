@@ -59,7 +59,7 @@ class EditorApp(tk.Tk):
         self.register_bottom_tab('terminal','terminal.title',lambda parent:TerminalPanel(parent,self.hide_terminal))
         self.register_bottom_tab('resources','resources.title',lambda parent:ResourcesPanel(
             parent,lambda:self.repo.resource_editor_path,lambda:self.hide_bottom_tab('resources'),
-            on_changed=self.refresh,before_change=lambda:self._save_editors()))
+            on_changed=lambda:self.refresh(project_only=True),before_change=lambda:self._save_editors()))
         self.terminal_visible=self._bottom_tab_variables['terminal']
         self.resources_visible=self._bottom_tab_variables['resources']
         self.terminal_visible.set(True)
@@ -574,12 +574,12 @@ class EditorApp(tk.Tk):
                     self.viewer.draw()
         elif showing_welcome:self.show_welcome()
 
-    def refresh(self):
+    def refresh(self,project_only=False):
         if not self.need_project():return
         if not self._save_editors():return
         self._cancel_model_load()
         try:
-            self.repo.refresh();self.update_hierarchy()
+            self.repo.refresh(project_only=project_only);self.update_hierarchy()
             if self._resource_browser=='recipes':self.recipes.load()
             if self._resource_browser in ('world','npc'):
                 name=self.world.current.name if self.world.current else None
