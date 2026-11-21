@@ -119,7 +119,7 @@ class ItemHierarchyController:
                 'Удалить выбранные предметы и группировки ('+str(len(values))+')? '
                 'Предметы внутри удаляемых групп сохранятся, если не выбраны отдельно.',parent=app):return
         saved=app._history_capture()
-        for value in values:
+        for value in values if action!='move' else ():
             if saved is None:break
             if not isinstance(value,HierarchyNode):
                 current=app._history_capture(value,whole=action=='delete')
