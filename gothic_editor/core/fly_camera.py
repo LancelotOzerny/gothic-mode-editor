@@ -27,10 +27,6 @@ class FlyCamera:
     def position(self):
         return self.x, self.y, self.z
 
-    @property
-    def chunk(self):
-        raise AttributeError('Use chunk_at(size) for a camera chunk.')
-
     def chunk_at(self, size: int):
         return floor(self.x / size), floor(self.z / size)
 
