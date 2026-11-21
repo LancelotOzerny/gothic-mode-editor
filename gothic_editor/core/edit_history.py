@@ -56,7 +56,7 @@ class EditHistory:
                 raise HistoryTooLarge('Файл слишком велик для истории изменений')
             return Snapshot(((Path('.'), path.read_bytes()),), (), True)
         files, directories, total = [], [Path('.')], 0
-        for entry in path.rglob('*'):
+        for entry in sorted(path.rglob('*')):
             if entry.is_symlink() or getattr(entry, 'is_junction', lambda: False)():
                 raise ValueError('История не поддерживает ссылки внутри папок')
             relative = entry.relative_to(path)
