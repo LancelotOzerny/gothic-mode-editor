@@ -124,13 +124,12 @@ class ChunkedWorld:
         return sum(len(faces) for (x, z), faces in self.chunks.items()
                    if abs(x-focus[0]) <= radius and abs(z-focus[1]) <= radius)
 
-    def view_complete(self, focus=None, radius=1,
-                      triangle_limit=MAX_OPENGL_TRIANGLES):
-        """Select complete nearby chunks, never random faces within a chunk.
+    def visible_chunk_keys(self, focus=None, radius=1,
+                           triangle_limit=MAX_OPENGL_TRIANGLES):
+        """Select entire nearby chunks within one triangle budget.
 
-        If a chunk exceeds the budget it is omitted entirely. This is safer
-        than leaving random holes in the terrain. Return a regular render
-        scene; the caller can compare its face count with visible_triangle_count.
+        This lightweight index operation is shared by the GPU renderer and
+        status reporting: it never copies or remaps vertices or faces.
         """
         if not 0 <= radius <= 5 or not 1 <= triangle_limit <= MAX_OPENGL_TRIANGLES:
             raise ValueError('Некорректные настройки полной геометрии.')
@@ -144,10 +143,22 @@ class ChunkedWorld:
         selected = []
         remaining = triangle_limit
         for key in nearby:
-            pool = self.chunks[key]
-            if len(pool) <= remaining:
-                selected.extend(pool)
-                remaining -= len(pool)
+            size = len(self.chunks[key])
+            if size <= remaining:
+                selected.append(key)
+                remaining -= size
+        return tuple(selected)
+
+    def view_complete(self, focus=None, radius=1,
+                      triangle_limit=MAX_OPENGL_TRIANGLES):
+        """Select complete nearby chunks, never random faces within a chunk.
+
+        If a chunk exceeds the budget it is omitted entirely. This is safer
+        than leaving random holes in the terrain. Return a regular render
+        scene; the caller can compare its face count with visible_triangle_count.
+        """
+        keys = self.visible_chunk_keys(focus, radius, triangle_limit)
+        selected = [face for key in keys for face in self.chunks[key]]
         if not selected:
             return WireframeScene((), (), self.total_vertices,
                                   self.total_triangles, self.discarded_triangles)
