@@ -153,6 +153,8 @@ class WorldPreviewPanel(tk.Frame):
 
     def _disable_opengl(self, reason):
         view, self._gl_view = self._gl_view, None
+        if self._world is not None and self._focus is not None:
+            self._scene = self._select_scene(self._focus)
         if view is not None:
             try:
                 view.destroy()
@@ -259,8 +261,7 @@ class WorldPreviewPanel(tk.Frame):
         try:
             self._world = future.result()
             self._focus = self._world.origin
-            self._scene = self._world.view(self._focus, self._chunk_radius,
-                                           self._triangle_limit)
+            self._scene = self._select_scene(self._focus)
             if self._scene.vertices:
                 ys = [v[1] for v in self._scene.vertices]
                 self._world_height = (min(ys) + max(ys)) / 2
@@ -387,8 +388,7 @@ class WorldPreviewPanel(tk.Frame):
         chunk = self._fly_camera.chunk_at(self._world.chunk_size)
         if chunk != self._focus:
             self._focus = chunk
-            self._scene = self._world.view(chunk, self._chunk_radius,
-                                            self._triangle_limit)
+            self._scene = self._select_scene(chunk)
             self._update_chunk_status()
         self.queue_draw()
 
@@ -415,6 +415,11 @@ class WorldPreviewPanel(tk.Frame):
         if self._camera_center != target:
             self._animation_id = self.after(32, self._animate_camera)
 
+    def _select_scene(self, focus):
+        if self._gl_view is not None:
+            return self._world.view_complete(focus, self._chunk_radius)
+        return self._world.view(focus, self._chunk_radius, self._triangle_limit)
+
     def _update_chunk_status(self):
         if self._world is None or self._scene is None:
             return
@@ -422,9 +427,14 @@ class WorldPreviewPanel(tk.Frame):
             f' · Скорость: {self._fly_camera.speed/100:.1f} м/с'
             if self._fly_mode else '')
         backend = 'OpenGL' if self._gl_view is not None else 'Tkinter'
+        shown = len(self._scene.faces)
+        available = self._world.visible_triangle_count(self._focus,
+                                                       self._chunk_radius)
+        skipped = (f' / {available:,} · ограничение GPU'
+                   if self._gl_view is not None and shown < available else '')
         self.status.configure(
             text=f'Чанк {self._focus[0]}, {self._focus[1]} · '
-                 f'Полигонов: {len(self._scene.faces):,} · '
+                 f'Треугольников: {shown:,}{skipped} · '
                  f'{backend}{camera_hint}')
 
     def move_focus(self, dx, dz):
@@ -436,8 +446,7 @@ class WorldPreviewPanel(tk.Frame):
             self._refresh_fly_chunks()
             return
         self._focus = (self._focus[0] + dx, self._focus[1] + dz)
-        self._scene = self._world.view(self._focus, self._chunk_radius,
-                                       self._triangle_limit)
+        self._scene = self._select_scene(self._focus)
         self._camera_target = self._chunk_center(self._focus)
         self.pan_x = self.pan_y = 0.0
         if self._animation_id is not None:
@@ -452,8 +461,7 @@ class WorldPreviewPanel(tk.Frame):
         new_focus = camera_chunk(self._camera_center, self._world.chunk_size)
         if new_focus != self._focus:
             self._focus = new_focus
-            self._scene = self._world.view(new_focus, self._chunk_radius,
-                                            self._triangle_limit)
+            self._scene = self._select_scene(new_focus)
             self._update_chunk_status()
         self.queue_draw()
 
