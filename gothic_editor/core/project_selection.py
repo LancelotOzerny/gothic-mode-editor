@@ -7,7 +7,7 @@ from .asset_files import AssetFiles
 
 class ProjectSelection:
     def __init__(self,project,section):
-        if section not in ('Worlds','NPC'):raise ValueError('Unknown project section')
+        if section not in ('Worlds','NPC','Media'):raise ValueError('Unknown project section')
         self.path=AssetFiles(project).checked(Path(project)/'Assets'/section/'catalog.json')
 
     def read(self):
