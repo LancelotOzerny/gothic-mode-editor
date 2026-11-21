@@ -130,6 +130,9 @@ class MediaPreview(Panel):
     def pause_video(self):
         if self._video_decoder is not None:
             self._video_paused=not self._video_paused
+            if self._video_paused and self._video_after is not None:
+                self.after_cancel(self._video_after)
+                self._video_after=None
             if not self._video_paused:self._video_frame()
 
     def _video_frame(self):
@@ -139,7 +142,7 @@ class MediaPreview(Panel):
         if data is None:
             self._close_video()
             return
-        ppm=f'P6\\n{decoder.width} {decoder.height}\\n255\\n'.encode('ascii')+data
+        ppm=f'P6\n{decoder.width} {decoder.height}\n255\n'.encode('ascii')+data
         self.photo=tk.PhotoImage(master=self,data=ppm,format='PPM')
         self.texture=None
         self.canvas.delete('all')
@@ -159,6 +162,10 @@ class MediaPreview(Panel):
         decoder=self._video_decoder
         self._video_decoder=None
         if decoder is not None:decoder.close()
+        if self.resource is not None and self.resource.kind=='videos':
+            self.caption='Видео остановлено'
+            self.photo=None
+            if event is None:self.redraw()
         temporary=self._video_temp
         self._video_temp=None
         if temporary is not None:
@@ -183,6 +190,9 @@ class MediaPreview(Panel):
         self.canvas.delete('all')
         width=max(1,self.canvas.winfo_width())
         height=max(1,self.canvas.winfo_height())
+        if self._video_decoder is not None and self.photo is not None:
+            self.canvas.create_image(width//2,height//2,image=self.photo)
+            return
         if self.texture is None:
             self.canvas.create_text(width//2,height//2,text=self.caption,
                                     fill=MUTED,font=('Arial',13),width=max(150,width-35))
