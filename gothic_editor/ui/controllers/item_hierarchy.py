@@ -118,6 +118,11 @@ class ItemHierarchyController:
         if action=='delete' and not messagebox.askyesno('Удалить выбранное',
                 'Удалить выбранные предметы и группировки ('+str(len(values))+')? '
                 'Предметы внутри удаляемых групп сохранятся, если не выбраны отдельно.',parent=app):return
+        saved=app._history_capture()
+        for value in values:
+            if not isinstance(value,HierarchyNode):
+                saved.update(app._history_capture(value))
+        original_items={(item.origin,item.instance.casefold()) for item in app.repo.project_items}
         completed = 0
         try:
             if action=='move':
@@ -153,5 +158,10 @@ class ItemHierarchyController:
         except (OSError,ValueError) as exc:
             messagebox.showerror('Иерархия',str(exc)+'\nВыполнено операций: '+str(completed),parent=app)
         finally:
+            added=[]
+            for item in app.repo.project_items:
+                if (item.origin,item.instance.casefold()) not in original_items:
+                    added.append(item.path.parent if app.repo.components.owns(item.path) else item.path)
+            app.history.record(saved,added)
             app.update_hierarchy()
             panel.paint_selection()
