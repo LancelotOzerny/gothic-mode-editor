@@ -31,7 +31,7 @@ def dll_compatible(path, bits=None):
             pointer=struct.unpack('<I',stream.read(4))[0]
             if pointer<64 or pointer>1048576:return False
             stream.seek(pointer)
-            if stream.read(4)!=b'PE\\0\\0':return False
+            if stream.read(4)!=b'PE\0\0':return False
             machine=struct.unpack('<H',stream.read(2))[0]
         return machine==(0x14c if bits==32 else 0x8664)
     except (OSError,struct.error):
