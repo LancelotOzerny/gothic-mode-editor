@@ -5,13 +5,13 @@ only when the optional dependencies are available. No engine/game files change.
 """
 from __future__ import annotations
 
-from math import cos, sin, degrees, radians, tan
+from math import cos, sin, degrees
 
 from OpenGL.GL import (
     glBegin, glClear, glClearColor, glColor3f, glDisable, glEnable, glEnd,
     glLoadIdentity, glMatrixMode, glMultMatrixf, glOrtho, glPolygonMode,
     glRotatef, glScalef, glTranslatef, glVertex3f, glViewport,
-    GL_BACK, GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT, GL_DEPTH_TEST,
+    GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT, GL_DEPTH_TEST,
     GL_FILL, GL_FRONT_AND_BACK, GL_LEQUAL, GL_LINE, GL_MODELVIEW,
     GL_PROJECTION, GL_TRIANGLES, glDepthFunc,
 )
@@ -37,6 +37,8 @@ class WorldOpenGLFrame(OpenGLFrame):
         self.solid = True
         self.animate = True
         self._failed = False
+        self._cached_scene = None
+        self._cached_faces = ()
 
     def _failed_context(self, exc):
         if self._failed:
@@ -100,15 +102,22 @@ class WorldOpenGLFrame(OpenGLFrame):
             glRotatef(degrees(self.yaw), 0., 1., 0.)
             glTranslatef(-self.center[0], -self.center[1], -self.center[2])
 
+        if self._cached_scene is not self.scene:
+            vertices = self.scene.vertices
+            self._cached_faces = tuple(
+                (tuple(int(color[i:i+2], 16) / 255.0 for i in (1, 3, 5)),
+                 vertices[a], vertices[b], vertices[c])
+                for a, b, c in self.scene.faces
+                for color in (face_color(vertices, (a, b, c)),))
+            self._cached_scene = self.scene
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL if self.solid else GL_LINE)
-        vertices = self.scene.vertices
         glBegin(GL_TRIANGLES)
         try:
-            for face in self.scene.faces:
-                color = face_color(vertices, face)
-                glColor3f(*(int(color[i:i+2], 16) / 255.0 for i in (1, 3, 5)))
-                for index in face:
-                    glVertex3f(*vertices[index])
+            for color, a, b, c in self._cached_faces:
+                glColor3f(*color)
+                glVertex3f(*a)
+                glVertex3f(*b)
+                glVertex3f(*c)
         finally:
             glEnd()
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
