@@ -174,11 +174,11 @@ class GameMediaTests(unittest.TestCase):
         for suffix in ('.png','.jpg'):
             with self.subTest(suffix=suffix):
                 source=Path(self.temp.name)/('replacement'+suffix)
-                image=Image.new('RGB',(4,3),(200,50,20))
+                image=Image.new('RGB',(8,8),(200,50,20))
                 image.save(source)
                 path=self.media.replace_image('LOADING.TGA',source)
                 texture=read_ztex(path.read_bytes())
-                self.assertEqual((texture.width,texture.height),(4,3))
+                self.assertEqual((texture.width,texture.height),(8,8))
                 self.assertEqual(path.name,'LOADING-C.TEX')
 
     def test_imported_selection_persists_after_reopen(self):
