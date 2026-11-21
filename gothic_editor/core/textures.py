@@ -279,6 +279,29 @@ def _encode_dxt_block(pixels, width, height, x, y, alpha):
     return encoded
 
 
+def _pad_dxt_texture(texture):
+    """Pad only the right and bottom edges to a valid 4-pixel DXT block.
+
+    The nearest valid dimensions avoid resizing the artwork or introducing
+    transparent borders; Gothic reads the padded size from the TEX header.
+    """
+    width, height = texture.width, texture.height
+    padded_width = max(4, (width + 3) // 4 * 4)
+    padded_height = max(4, (height + 3) // 4 * 4)
+    if padded_width == width and padded_height == height:
+        return texture
+    _dimensions(padded_width, padded_height)
+    pixels = bytearray(padded_width * padded_height * 4)
+    for y in range(padded_height):
+        original_y = min(height - 1, y)
+        for x in range(padded_width):
+            original_x = min(width - 1, x)
+            source = (original_y * width + original_x) * 4
+            target = (y * padded_width + x) * 4
+            pixels[target:target + 4] = texture.pixels[source:source + 4]
+    return Texture(padded_width, padded_height, bytes(pixels))
+
+
 def write_ztex(texture):
     """Write compressed DXT1/DXT3 ZTEX supported by unpatched Gothic II.
 
@@ -288,6 +311,7 @@ def write_ztex(texture):
     _dimensions(texture.width, texture.height)
     if len(texture.pixels) != texture.width * texture.height * 4:
         raise ValueError('Некорректный размер данных изображения')
+    texture = _pad_dxt_texture(texture)
     alpha = any(value < 255 for value in texture.pixels[3::4])
     kind = 12 if alpha else 10
     # ZenGin accepts compressed mipmaps only while both sides remain >= 4
