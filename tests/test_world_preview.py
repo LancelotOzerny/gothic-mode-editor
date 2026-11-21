@@ -61,6 +61,47 @@ class WorldPreviewTests(unittest.TestCase):
         self.assertEqual(scene.faces, ())
         self.assertEqual(project_wireframe(scene, 800, 600, 0., 0., 1.), ())
 
+    def test_opengl_keeps_all_faces_in_visible_chunks(self):
+        # The old sampler drew a handful of disconnected triangles,
+        # leaving holes even in continuous terrain.
+        vertices = []
+        faces = []
+        for chunk in range(3):
+            for index in range(120):
+                base = len(vertices)
+                x = chunk * 6000 + index
+                vertices.extend(((x, 0., 0.), (x + 1, 0., 0.),
+                                 (x, 0., 1.)))
+                faces.append((base, base + 1, base + 2))
+        geometry = SimpleNamespace(vertices=tuple(vertices), triangles=tuple(faces),
+                                   vertex_count=len(vertices), triangle_count=len(faces))
+        world = build_world_chunks(geometry, 6000)
+        whole = world.view_complete((1, 0), radius=1)
+        self.assertEqual(len(whole.faces), len(faces))
+        self.assertEqual(world.visible_triangle_count((1, 0), radius=1), len(faces))
+        self.assertEqual(whole.total_triangles, len(faces))
+        self.assertTrue(all(0 <= idx < len(whole.vertices)
+                            for face in whole.faces for idx in face))
+
+    def test_opengl_budget_never_splits_one_chunk(self):
+        vertices = []
+        faces = []
+        for chunk in range(3):
+            for index in range(4):
+                base = len(vertices)
+                x = chunk * 6000 + index
+                vertices.extend(((x, 0., 0.), (x + 1, 0., 0.),
+                                 (x, 0., 1.)))
+                faces.append((base, base + 1, base + 2))
+        geometry = SimpleNamespace(vertices=tuple(vertices), triangles=tuple(faces),
+                                   vertex_count=len(vertices), triangle_count=len(faces))
+        world = build_world_chunks(geometry, 6000)
+        scene = world.view_complete((1, 0), radius=2, triangle_limit=7)
+        self.assertEqual(len(scene.faces), 4)  # complete closest chunk only
+        self.assertEqual(world.visible_triangle_count((1, 0), 2), 12)
+        with self.assertRaises(ValueError):
+            world.view_complete((1, 0), radius=1, triangle_limit=0)
+
     def test_spatial_chunks_only_show_nearby_faces(self):
         geometry = SimpleNamespace(
             vertices=((0., 0., 0.), (100., 0., 0.), (0., 0., 100.),
