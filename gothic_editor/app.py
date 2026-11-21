@@ -845,13 +845,13 @@ class EditorApp(tk.Tk):
             self._model_executor.shutdown(wait=False,cancel_futures=True)
         super().destroy()
 
-    def _history_capture(self,item=None):
+    def _history_capture(self,item=None,whole=False):
         if self.history.root is None:return {}
         paths=[self.repo.item_hierarchy.path]
         if item is not None:
             path=item.path
             if self.history.root==path or self.history.root in path.parents:
-                paths.append(path.parent if self.repo.components.owns(path) else path)
+                paths.append(path.parent if whole and self.repo.components.owns(path) else path)
             elif item.origin=='game':
                 paths.append(self.repo._destination_for(item))
                 if classify(item)=='potions':
@@ -863,7 +863,7 @@ class EditorApp(tk.Tk):
             self.history.record(before)
         else:
             path=result.path
-            if self.repo.components.owns(path):path=path.parent
+            if path not in before and self.repo.components.owns(path):path=path.parent
             self.history.record(before,(path,))
 
     def _history_shortcut(self,redo,event):
@@ -937,7 +937,10 @@ class EditorApp(tk.Tk):
                     first=self.properties.current
                 else:first=next((item for item in self.repo.items if item.instance.casefold()==args[0].instance.casefold()),args[0])
                 args=(first,)+args[1:]
-            saved=self._history_capture(args[0] if args and hasattr(args[0],'instance') else None)
+            target=args[0] if args and hasattr(args[0],'instance') else None
+            whole=(target is not None and (method.__name__=='delete' or
+                   (method.__name__=='edit' and kwargs.get('instance') not in (None,target.instance))))
+            saved=self._history_capture(target,whole=whole)
             before={self.hierarchy.item_key(item) for item in self.repo.items}
             result=method(*args,**kwargs)
             self._history_record(saved,result)
@@ -982,7 +985,7 @@ class EditorApp(tk.Tk):
     def save_fields(self,item,values,autosave=False,**options):
         if classify(item) not in EDITABLE_CATEGORIES:return
         if not autosave:return self._action(self.repo.edit,item,values,**options)
-        saved=self._history_capture(item)
+        saved=self._history_capture(item,whole=options.get('instance') not in (None,item.instance))
         result=self.repo.edit(item,values,**options)
         self._history_record(saved,result)
         self.current=result
