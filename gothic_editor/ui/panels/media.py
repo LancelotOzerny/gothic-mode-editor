@@ -83,7 +83,7 @@ class MediaPanel(HierarchyBrowser):
     def context(self,event,category):
         self.popup(event,[('Импортировать файл из Gothic…',
                            lambda:self.on_import(category)),
-                          ('Загрузить все файлы медиа',
+                          ('Показать все без импорта',
                            lambda:self.on_load(category))])
 
     def expand(self,category):
@@ -139,6 +139,7 @@ class MediaPreview(Panel):
         import tempfile
         resource=self.resource
         self._close_video()
+        self.photo=None
         if resource is None or resource.kind!='videos':return
         try:
             if isinstance(resource.source,Path):
