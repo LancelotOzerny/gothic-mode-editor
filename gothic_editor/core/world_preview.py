@@ -137,7 +137,11 @@ def project_wireframe(scene, width, height, yaw, pitch, zoom, pan_x=0.0, pan_y=0
     lo = tuple(min(v[axis] for v in vertices) for axis in range(3))
     hi = tuple(max(v[axis] for v in vertices) for axis in range(3))
     center = tuple((low + high) / 2 for low, high in zip(lo, hi))
-    radius = max((high - low) for low, high in zip(lo, hi)) or 1
+    # Tiny but non-zero world bounds can cause division to overflow to inf.
+    # Badly decoded geometry frequently consists of subnormal float values.
+    radius = max(high - low for low, high in zip(lo, hi))
+    if not isfinite(radius) or radius < 1e-6:
+        radius = 1.0
     scale = min(width, height) * 0.85 * zoom / radius
     cy, sy = cos(yaw), sin(yaw)
     cp, sp = cos(pitch), sin(pitch)
@@ -150,6 +154,11 @@ def project_wireframe(scene, width, height, yaw, pitch, zoom, pan_x=0.0, pan_y=0
         sx = width/2 + rx*scale + pan_x
         sy = height/2 - ry*scale + pan_y
         if not all(isfinite(v) for v in (sx, sy, depth)):
-            raise ValueError('Некорректные координаты модели ZEN.')
+            raise ValueError(
+                'Некорректные координаты модели ZEN: '
+                f'вершина=({vx!r}, {vy!r}, {vz!r}), '
+                f'границы={tuple(zip(lo, hi))!r}, '
+                f'масштаб={scale!r}, камера=({yaw!r}, {pitch!r}, {zoom!r}), '
+                f'экран=({width}, {height})')
         result.append((sx, sy, depth))
     return tuple(result)
