@@ -7,6 +7,10 @@ MAX_ENTRY_BYTES = 16 * 1024 * 1024
 MAX_ENTRIES = 30
 
 
+class HistoryTooLarge(ValueError):
+    pass
+
+
 @dataclass(frozen=True)
 class Snapshot:
     files: tuple
@@ -42,7 +46,7 @@ class EditHistory:
             raise ValueError('История не поддерживает символические ссылки')
         if path.is_file():
             if path.stat().st_size > MAX_ENTRY_BYTES:
-                raise ValueError('Файл слишком велик для истории изменений')
+                raise HistoryTooLarge('Файл слишком велик для истории изменений')
             return Snapshot(((Path('.'), path.read_bytes()),), (), True)
         files, directories, total = [], [Path('.')], 0
         for entry in path.rglob('*'):
@@ -55,29 +59,36 @@ class EditHistory:
                 size = entry.stat().st_size
                 total += size
                 if total > MAX_ENTRY_BYTES:
-                    raise ValueError('Папка слишком велика для истории изменений')
+                    raise HistoryTooLarge('Папка слишком велика для истории изменений')
                 files.append((relative, entry.read_bytes()))
         return Snapshot(tuple(files), tuple(directories), True)
 
     def capture(self, paths):
-        return {self._path(path): self._snapshot(path) for path in paths}
+        try:
+            return {self._path(path): self._snapshot(path) for path in paths}
+        except HistoryTooLarge:
+            self.undo_stack.clear()
+            self.redo_stack.clear()
+            return None
 
     def record(self, before, extra=()):
-        if self.root is None:
-            return
+        if self.root is None or before is None:
+            return False
         before = dict(before)
         for path in extra:
             path = self._path(path)
             if path not in before:
                 before[path] = Snapshot((), (), False)
         after = self.capture(before)
+        if after is None:return False
         changes = tuple((path, original, after[path]) for path, original in before.items()
                         if original != after[path])
         if not changes:
-            return
+            return False
         self.undo_stack.append(changes)
         del self.undo_stack[:-MAX_ENTRIES]
         self.redo_stack.clear()
+        return True
 
     def _restore(self, path, snapshot):
         path = self._path(path)
