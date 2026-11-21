@@ -1,4 +1,4 @@
-"""Separate, read-only wireframe viewer for Gothic .ZEN worlds."""
+"""Embedded read-only world viewer for Gothic .ZEN files."""
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
@@ -15,11 +15,9 @@ from gothic_editor.core.world_preview import (load_world_wireframe, project_wire
     move_camera, drag_camera)
 
 
-class WorldPreviewWindow(tk.Toplevel):
+class WorldPreviewPanel(tk.Frame):
     def __init__(self, parent, game=None):
         super().__init__(parent)
-        self.title('Редактор локаций Gothic — просмотр геометрии')
-        self.geometry('1020x710')
         self.configure(bg='#191e29')
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._future = None
@@ -34,7 +32,7 @@ class WorldPreviewWindow(tk.Toplevel):
         self._world_height = 0.0
         self._animation_id = None
         self._solid = True
-        self._fly_mode = True
+        self._fly_mode = False
         self._fly_camera = FlyCamera()
         self._pressed = set()
         self._tick_id = None
@@ -79,7 +77,7 @@ class WorldPreviewWindow(tk.Toplevel):
         self.surface_button = tk.Button(header, text='Поверхности', command=self.toggle_surfaces,
                   bg='#334155', fg='white', relief='flat')
         self.surface_button.pack(side='left', padx=4)
-        self.camera_button = tk.Button(header, text='Камера: полёт', command=self.toggle_camera,
+        self.camera_button = tk.Button(header, text='Камера: обзор', command=self.toggle_camera,
                   bg='#334155', fg='white', relief='flat')
         self.camera_button.pack(side='left', padx=4)
         tk.Button(header, text='Сбросить камеру', command=self.reset_camera,
@@ -99,16 +97,14 @@ class WorldPreviewWindow(tk.Toplevel):
         self.canvas.bind('<MouseWheel>', lambda event: self.change_zoom(1.12 if event.delta > 0 else 1/1.12))
         self.canvas.bind('<Button-4>', lambda event: self.change_zoom(1.12))
         self.canvas.bind('<Button-5>', lambda event: self.change_zoom(1/1.12))
-        self.bind('<KeyPress>', self._key_down, add='+')
-        self.bind('<KeyRelease>', self._key_up, add='+')
-        self.bind('<FocusOut>', self._clear_keys, add='+')
-        self.bind('<FocusIn>', lambda event: self.canvas.focus_set())
+        self.canvas.bind('<KeyPress>', self._key_down, add='+')
+        self.canvas.bind('<KeyRelease>', self._key_up, add='+')
+        self.canvas.bind('<FocusOut>', self._clear_keys, add='+')
         self.canvas.configure(takefocus=True)
         self.canvas.bind('<Button-1>', lambda event: self.canvas.focus_set(), add='+')
         footer = tk.Label(self, text='Полёт: WASD — движение  ·  ПКМ — взгляд  ·  Q/E — вниз/вверх  ·  Shift — ускорение  ·  Home — сброс  ·  колесо — скорость',
                           bg='#232b39', fg='#94a3b8', anchor='center')
         footer.pack(fill='x', pady=0, ipady=7)
-        self.protocol('WM_DELETE_WINDOW', self.close)
         self.refresh_locations()
         self.queue_draw()
         self._tick_id = self.after(33, self._tick)
@@ -139,7 +135,7 @@ class WorldPreviewWindow(tk.Toplevel):
         if self._game:
             folder = self._game / '_work' / 'data' / 'Worlds'
             options['initialdir'] = str(folder if folder.is_dir() else self._game)
-        path = filedialog.askopenfilename(parent=self, title='Открыть мир Gothic',
+        path = filedialog.askopenfilename(parent=self.winfo_toplevel(), title='Открыть мир Gothic',
             filetypes=[('Миры Gothic', '*.zen *.ZEN'), ('Все файлы', '*.*')], **options)
         if path:
             self.open_file(path)
@@ -245,6 +241,7 @@ class WorldPreviewWindow(tk.Toplevel):
 
     def toggle_camera(self):
         self._fly_mode = not self._fly_mode
+        self.canvas.focus_set()
         self._pressed.clear()
         self._fly_mouse = None
         self.camera_button.config(
@@ -511,10 +508,15 @@ class WorldPreviewWindow(tk.Toplevel):
                 self._reported_draw_error = signature
                 self._log_exception('Ошибка отображения', exc)
 
-    def close(self):
+    def destroy(self):
+        if self._closed:
+            return
         self._closed = True
         for callback in (self._draw_id, self._poll_id, self._animation_id, self._tick_id):
             if callback is not None:
                 self.after_cancel(callback)
         self._executor.shutdown(wait=False, cancel_futures=True)
-        self.destroy()
+        super().destroy()
+
+# Compatibility for imports from the previous window module.
+WorldPreviewWindow = WorldPreviewPanel
