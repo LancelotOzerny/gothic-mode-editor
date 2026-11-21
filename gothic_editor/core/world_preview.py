@@ -57,24 +57,53 @@ class WireframeScene:
     faces: tuple[tuple[int, int, int], ...]
     total_vertices: int
     total_triangles: int
+    discarded_triangles: int = 0
 
 
 def prepare_wireframe(geometry, limit=MAX_PREVIEW_TRIANGLES):
     """Decimate by sampling face indices and remap only referenced vertices."""
     if not 1 <= limit <= MAX_PREVIEW_TRIANGLES:
         raise ValueError('Некорректный предел треугольников для предпросмотра.')
+    # A malformed or non-finite vertex must not poison the bounding box or
+    # stop rendering every other triangle in a large world.
+    vertices = geometry.vertices
+    safe_vertices = tuple(
+        len(vertex) == 3 and all(isfinite(value) and abs(value) <= 1e8
+                                 for value in vertex)
+        for vertex in vertices)
     faces = geometry.triangles
-    count = len(faces)
-    if not count:
-        return WireframeScene((), (), geometry.vertex_count, geometry.triangle_count)
-    sampled = [faces[index * count // min(count, limit)]
-               for index in range(min(count, limit))]
-    used = sorted({vertex for face in sampled for vertex in face})
-    indices = {old: new for new, old in enumerate(used)}
-    vertices = tuple(geometry.vertices[index] for index in used)
-    remapped = tuple(tuple(indices[index] for index in face) for face in sampled)
-    return WireframeScene(vertices, remapped, geometry.vertex_count, geometry.triangle_count)
 
+    def valid(face):
+        return (len(face) == 3 and
+                all(isinstance(index, int) and 0 <= index < len(vertices)
+                    and safe_vertices[index] for index in face))
+
+    valid_count = sum(valid(face) for face in faces)
+    discarded = len(faces) - valid_count
+    if valid_count == 0:
+        return WireframeScene((), (), geometry.vertex_count,
+                              geometry.triangle_count, discarded)
+    # Two streaming passes keep the sample size fixed even for very large worlds.
+    sample_size = min(limit, valid_count)
+    targets = iter(index * valid_count // sample_size for index in range(sample_size))
+    next_target = next(targets, None)
+    selected = []
+    number = 0
+    for face in faces:
+        if not valid(face):
+            continue
+        if number == next_target:
+            selected.append(face)
+            next_target = next(targets, None)
+            if next_target is None:
+                break
+        number += 1
+    used = sorted({vertex for face in selected for vertex in face})
+    indices = {old: new for new, old in enumerate(used)}
+    compact = tuple(vertices[index] for index in used)
+    remapped = tuple(tuple(indices[index] for index in face) for face in selected)
+    return WireframeScene(compact, remapped, geometry.vertex_count,
+                          geometry.triangle_count, discarded)
 
 def load_world_wireframe(path: str | Path | VdfEntry):
     """Worker-thread entry point: never touches Tk widgets."""
