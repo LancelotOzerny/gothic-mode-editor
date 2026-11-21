@@ -13,6 +13,7 @@ from OpenGL.GL import (
     glLoadIdentity, glMatrixMode, glMultMatrixf, glOrtho, glPolygonMode,
     glRotatef, glScalef, glTranslatef, glVertex3f, glViewport, glGetIntegerv,
     glCallList, glDeleteLists, glEndList, glGenLists, glNewList,
+    glPushMatrix, glPopMatrix,
     GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT, GL_DEPTH_TEST, GL_DEPTH_BITS,
     GL_FILL, GL_FRONT_AND_BACK, GL_LEQUAL, GL_LINE, GL_MODELVIEW,
     GL_PROJECTION, GL_TRIANGLES, glDepthFunc, GL_COMPILE,
@@ -41,6 +42,9 @@ class WorldOpenGLFrame(OpenGLFrame):
         self.animate = True
         self._failed = False
         self.world = None
+        self.vobs = None
+        self._cached_vobs = None
+        self._vob_lists = {}
         self.focus = None
         self.radius = 1
         self.triangle_limit = 200_000
@@ -110,6 +114,7 @@ class WorldOpenGLFrame(OpenGLFrame):
             glTranslatef(-self.center[0], -self.center[1], -self.center[2])
 
         self._draw_chunks()
+        self._draw_vobs()
 
     def _delete_lists(self):
         for list_id, _count in self._lists.values():
@@ -142,6 +147,78 @@ class WorldOpenGLFrame(OpenGLFrame):
             glEndList()
         self._lists[key] = (list_id, len(faces))
         self._cached_triangles += len(faces)
+
+    def _draw_vobs(self):
+        scene = self.vobs
+        if scene is not self._cached_vobs:
+            for list_id in self._vob_lists.values():
+                glDeleteLists(list_id, 1)
+            self._vob_lists.clear()
+            self._cached_vobs = scene
+        if scene is None or not scene.objects or self.focus is None:
+            return
+
+        nearby = [
+            key for key in scene.chunks
+            if abs(key[0] - self.focus[0]) <= self.radius and
+               abs(key[1] - self.focus[1]) <= self.radius
+        ]
+        nearby.sort()
+        # Precompile one unique visual per frame, just like the terrain chunks.
+        for key in nearby:
+            for index in scene.chunks[key]:
+                visual = scene.objects[index].visual
+                if visual not in self._vob_lists:
+                    self._compile_vob(visual, scene.models[visual])
+                    break
+            else:
+                continue
+            break
+
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL if self.solid else GL_LINE)
+        try:
+            for key in nearby:
+                for index in scene.chunks[key]:
+                    vob = scene.objects[index]
+                    list_id = self._vob_lists.get(vob.visual)
+                    if list_id is None:
+                        continue
+                    rot = vob.rotation
+                    px, py, pz = vob.position
+                    # ZenGin 3x3 rotation in row-major order; OpenGL expects
+                    # column-major 4x4. Translation is world-space.
+                    matrix = (rot[0], rot[3], rot[6], 0.,
+                              rot[1], rot[4], rot[7], 0.,
+                              rot[2], rot[5], rot[8], 0.,
+                              px, py, pz, 1.)
+                    glPushMatrix()
+                    try:
+                        glMultMatrixf(matrix)
+                        glCallList(list_id)
+                    finally:
+                        glPopMatrix()
+        finally:
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+
+    def _compile_vob(self, name, mesh):
+        list_id = int(glGenLists(1))
+        if not list_id:
+            raise RuntimeError('Не удалось выделить OpenGL-список для VOB.')
+        glNewList(list_id, GL_COMPILE)
+        try:
+            glBegin(GL_TRIANGLES)
+            try:
+                for face in mesh.faces:
+                    color = face_color(mesh.vertices, face)
+                    glColor3f(*(int(color[i:i+2], 16)/255.0
+                                for i in (1, 3, 5)))
+                    for index in face:
+                        glVertex3f(*mesh.vertices[index])
+            finally:
+                glEnd()
+        finally:
+            glEndList()
+        self._vob_lists[name] = list_id
 
     def _draw_chunks(self):
         if self.world is None:
