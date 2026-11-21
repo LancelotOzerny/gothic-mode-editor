@@ -254,6 +254,32 @@ def load_world_wireframe(path: str | Path | VdfEntry, chunk_size=6000):
     return build_world_chunks(geometry, chunk_size)
 
 
+def load_world_with_vobs(path, chunk_size=6000, sources=None):
+    """Load terrain and VOB models together without touching Tk widgets.
+
+    Archived ZEN is extracted only once and only to a temporary directory.
+    """
+    from .world_vobs import load_vob_scene
+    if not is_location_zen(path):
+        raise ZenWorldError('Выберите игровую локацию .ZEN.')
+    if isinstance(path, VdfEntry):
+        with TemporaryDirectory(prefix='gothic-zen-') as temporary:
+            destination = Path(temporary) / Path(path.name).name
+            with path.archive.open('rb') as src, destination.open('wb') as target:
+                src.seek(path.offset)
+                remaining = path.size
+                while remaining:
+                    block = src.read(min(1024*1024, remaining))
+                    if not block:
+                        raise ZenWorldError('Неожиданный конец архива VDF.')
+                    target.write(block)
+                    remaining -= len(block)
+            return (load_world_wireframe(destination, chunk_size),
+                    load_vob_scene(destination, sources or {}, chunk_size))
+    return (load_world_wireframe(path, chunk_size),
+            load_vob_scene(path, sources or {}, chunk_size))
+
+
 def project_wireframe(scene, width, height, yaw, pitch, zoom, pan_x=0.0, pan_y=0.0, *, center=None, span=None):
     """Project 3D world coordinates to screen; return vertex screen positions."""
     if not scene.vertices:
