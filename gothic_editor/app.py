@@ -805,7 +805,8 @@ class EditorApp(tk.Tk):
         if self.repo.root is None:return
         selected=self.media_properties.current if keep else None
         try:
-            all_resources=GameMedia(self.repo.root).catalog(self.repo.archive_models,self.repo.game)
+            all_resources=(GameMedia(self.repo.root).catalog(self.repo.archive_models,self.repo.game)
+                           if self._media_loaded else GameMedia(self.repo.root).catalog())
             self._media_resources=all_resources
             self.media_panel.set_resources(all_resources,self._media_loaded)
             if selected is not None:
