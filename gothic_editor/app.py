@@ -790,6 +790,7 @@ class EditorApp(tk.Tk):
     def load_media_category(self,category):
         self._media_loaded.add(category)
         self.load_media(keep=True)
+        self.media_panel.expand(category)
 
     def load_media(self,keep=False):
         if self.repo.root is None:return
