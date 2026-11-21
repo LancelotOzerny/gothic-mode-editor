@@ -234,14 +234,70 @@ def read_texture(data):
     return read_ztex(data) if data.startswith(b'ZTEX') else read_tga(data)
 
 
+def _pack_rgb565(r, g, b):
+    return ((r * 31 + 127) // 255 << 11 |
+            (g * 63 + 127) // 255 << 5 |
+            (b * 31 + 127) // 255)
+
+
+def _encode_dxt_block(pixels, width, height, x, y, alpha):
+    """Encode one padded 4x4 block as DXT1 or DXT3 (ZenGin-compatible)."""
+    block = []
+    for py in range(4):
+        offset_y = min(height - 1, y + py)
+        for px in range(4):
+            offset_x = min(width - 1, x + px)
+            i = (offset_y * width + offset_x) * 4
+            block.append(pixels[i:i + 4])
+    # Select RGB endpoints by intensity, then quantize to RGB565.
+    colors = [p[:3] for p in block]
+    intensity = lambda c: c[0] * 299 + c[1] * 587 + c[2] * 114
+    lo = min(colors, key=intensity)
+    hi = max(colors, key=intensity)
+    c0 = _pack_rgb565(*hi)
+    c1 = _pack_rgb565(*lo)
+    if c0 < c1:
+        c0, c1 = c1, c0
+    if c0 == c1:
+        if c0 < 65535:c0 += 1
+        else:c1 -= 1
+    hi = _rgb565(c0)
+    lo = _rgb565(c1)
+    palette = (hi, lo,
+               tuple((2 * a + b) // 3 for a, b in zip(hi, lo)),
+               tuple((a + 2 * b) // 3 for a, b in zip(hi, lo)))
+    indices = 0
+    for i, p in enumerate(block):
+        index = min(range(4), key=lambda n:
+                    sum((int(p[c]) - palette[n][c]) ** 2 for c in range(3)))
+        indices |= index << (2 * i)
+    encoded = struct.pack('<HHI', c0, c1, indices)
+    if alpha:
+        a = sum(((p[3] * 15 + 127) // 255) << (4 * i)
+                for i, p in enumerate(block))
+        return a.to_bytes(8, 'little') + encoded
+    return encoded
+
+
 def write_ztex(texture):
-    """Lossless BGRA Gothic texture; mipmaps are stored smallest first (ZenKit)."""
+    """Write compressed DXT1/DXT3 ZTEX supported by unpatched Gothic II.
+
+    Native 32-bit BGRA surfaces can crash unpatched ZenGin while loading the
+    texture. DXT3 is chosen when the image contains any transparency.
+    """
     _dimensions(texture.width, texture.height)
+    if len(texture.pixels) != texture.width * texture.height * 4:
+        raise ValueError('Некорректный размер данных изображения')
+    alpha = any(value < 255 for value in texture.pixels[3::4])
+    kind = 12 if alpha else 10
     levels = texture.mipmaps
-    data = bytearray(b'ZTEX' + struct.pack('<8I', 0, 0, texture.width, texture.height,
-                                        len(levels), texture.width, texture.height, 0))
+    data = bytearray(b'ZTEX' + struct.pack(
+        '<8I', 0, kind, texture.width, texture.height, len(levels),
+        texture.width, texture.height, 0))
     for level in reversed(levels):
-        pixels = bytearray(level.pixels)
-        pixels[0::4], pixels[2::4] = level.pixels[2::4], level.pixels[0::4]
-        data.extend(pixels)
+        for y in range(0, level.height, 4):
+            for x in range(0, level.width, 4):
+                data.extend(_encode_dxt_block(
+                    level.pixels, level.width, level.height, x, y, alpha))
     return bytes(data)
+
