@@ -814,7 +814,7 @@ class EditorApp(tk.Tk):
                 row=next((x for x in all_resources if x.kind==selected.kind and
                           x.name.casefold()==selected.name.casefold()),None)
                 self.media_properties.show(row)
-                self.media_viewer.show(row)
+                self.media_viewer.show(row,self.repo.game)
             else:
                 self.media_properties.show(None)
                 self.media_viewer.show(None)
@@ -845,7 +845,7 @@ class EditorApp(tk.Tk):
 
     def select_media(self,resource):
         self.media_properties.show(resource)
-        self.media_viewer.show(resource)
+        self.media_viewer.show(resource,self.repo.game)
 
     def _texture_mode_changed(self):
         camera=(self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom)
