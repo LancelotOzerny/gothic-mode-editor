@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import cos, sin, isfinite
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from .vdf import VdfArchive, VdfEntry, VdfFormatError
 
 from .zen_world import load_zen_geometry, ZenWorldError
 
@@ -25,10 +27,28 @@ def is_location_zen(path: str | Path) -> bool:
 
 
 def available_locations(game: str | Path):
-    """List loose worlds; game resource archives are deliberately not unpacked."""
+    """Find loose and archived worlds; retain loose files ahead of VDF entries."""
     from .zen_world import discover_zen
-    return [path for path in discover_zen(game) if is_location_zen(path)]
-
+    game = Path(game)
+    choices = {}
+    for path in discover_zen(game):
+        if is_location_zen(path):
+            choices.setdefault(path.name.casefold(), path)
+    data = game / 'Data'
+    if data.is_dir():
+        archives = sorted(
+            (path for path in data.iterdir()
+             if path.is_file() and path.suffix.casefold() in ('.vdf', '.mod')),
+            key=lambda path: path.name.casefold())
+        for archive_path in archives:
+            try:
+                archive = VdfArchive(archive_path, include_worlds=True)
+            except (OSError, VdfFormatError):
+                continue
+            for entry in archive.entries.values():
+                if is_location_zen(entry.name):
+                    choices.setdefault(Path(entry.name).name.casefold(), entry)
+    return sorted(choices.values(), key=lambda location: location.name.casefold())
 
 
 @dataclass(frozen=True)
@@ -56,11 +76,27 @@ def prepare_wireframe(geometry, limit=MAX_PREVIEW_TRIANGLES):
     return WireframeScene(vertices, remapped, geometry.vertex_count, geometry.triangle_count)
 
 
-def load_world_wireframe(path: str | Path):
+def load_world_wireframe(path: str | Path | VdfEntry):
     """Worker-thread entry point: never touches Tk widgets."""
     if not is_location_zen(path):
         raise ZenWorldError('Это служебный архив Gothic с пресетами, а не игровая локация.')
-    geometry = load_zen_geometry(path, include_triangles=True)
+    if isinstance(path, VdfEntry):
+        # Extract only one requested archive member, in bounded chunks.
+        # The original VDF and project files remain unchanged.
+        with TemporaryDirectory(prefix='gothic-zen-') as temporary:
+            destination = Path(temporary) / Path(path.name).name
+            with path.archive.open('rb') as source, destination.open('wb') as output:
+                source.seek(path.offset)
+                remaining = path.size
+                while remaining:
+                    block = source.read(min(1024 * 1024, remaining))
+                    if not block:
+                        raise ZenWorldError('Неожиданный конец архива VDF.')
+                    output.write(block)
+                    remaining -= len(block)
+            geometry = load_zen_geometry(destination, include_triangles=True)
+    else:
+        geometry = load_zen_geometry(path, include_triangles=True)
     return prepare_wireframe(geometry)
 
 
