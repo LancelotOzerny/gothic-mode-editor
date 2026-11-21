@@ -161,15 +161,32 @@ class WorldOpenGLFrame(OpenGLFrame):
             self._selected_key = selection_key
         visible = self._selected_chunks
         warm_radius = min(5, self.radius + 1)
-        warm_key = (self.focus, warm_radius)
+        warm_key = (self.focus, self.radius, self.triangle_limit)
         if warm_key != self._warm_key:
-            self._warm_chunks = self.world.visible_chunk_keys(
-                self.focus, warm_radius, self.triangle_limit)
+            # Use an independent prefetch budget. Reusing the visible
+            # 200k budget prevented dense worlds from warming any neighbor.
+            extra = []
+            remaining = max(0, self._gpu_triangle_budget -
+                            sum(len(self.world.chunks[k]) for k in visible))
+            candidates = [
+                k for k in self.world.chunks
+                if k not in visible and
+                   abs(k[0]-self.focus[0]) <= warm_radius and
+                   abs(k[1]-self.focus[1]) <= warm_radius
+            ]
+            candidates.sort(key=lambda k: (
+                (k[0]-self.focus[0])**2 + (k[1]-self.focus[1])**2, k))
+            for key in candidates:
+                count = len(self.world.chunks[key])
+                if count <= remaining:
+                    extra.append(key)
+                    remaining -= count
+            self._warm_chunks = tuple(extra)
             self._warm_key = warm_key
 
         missing_visible = [key for key in visible if key not in self._lists]
         missing_warm = [key for key in self._warm_chunks
-                        if key not in self._lists and key not in missing_visible]
+                        if key not in self._lists]
         # Limit compilation to one chunk per frame; the camera never rebuilds
         # a combined mesh when crossing a chunk boundary.
         for key in (missing_visible or missing_warm)[:1]:
