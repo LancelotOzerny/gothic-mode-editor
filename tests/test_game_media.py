@@ -33,6 +33,37 @@ class GameMediaTests(unittest.TestCase):
         self.media.delete('images', 'STARTSCREEN.TGA')
         self.assertFalse(path.exists())
 
+    def test_gothic_compatible_dxt_mipmaps(self):
+        from gothic_editor.core.textures import Texture, write_ztex
+        for alpha, kind in ((255, 10), (100, 12)):
+            with self.subTest(alpha=alpha):
+                rgba = bytes((220, 40, 15, alpha)) * (8 * 8)
+                encoded = write_ztex(Texture(8, 8, rgba))
+                self.assertEqual(encoded[:4], b'ZTEX')
+                self.assertEqual(struct.unpack_from('<I', encoded, 8)[0], kind)
+                self.assertEqual(struct.unpack_from('<I', encoded, 20)[0], 4)
+                # 1x1, 2x2, 4x4, 8x8 mipmaps => 1+1+1+4 blocks.
+                self.assertEqual(len(encoded), 36 + 7 * (8 if kind == 10 else 16))
+                decoded = read_ztex(encoded)
+                self.assertEqual((decoded.width, decoded.height), (8, 8))
+                self.assertLess(abs(decoded.pixels[0] - 220), 15)
+                self.assertLess(abs(decoded.pixels[3] - alpha), 18)
+
+    def test_build_repairs_legacy_uncompressed_media(self):
+        from gothic_editor.core.textures import Texture
+        rgba = bytes((100, 50, 20, 255)) * 16
+        legacy = bytearray(b'ZTEX' + struct.pack('<8I', 0, 0, 4, 4, 1, 4, 4, 0))
+        for offset in range(0, len(rgba), 4):
+            r, g, b, a = rgba[offset:offset + 4]
+            legacy.extend((b, g, r, a))
+        path = self.media.path('images', 'LOADING.TGA')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(legacy)
+        compiled = self.media.collect_images()['_work/data/Textures/_compiled/LOADING-C.TEX']
+        self.assertEqual(struct.unpack_from('<I', compiled, 8)[0], 10)
+        self.assertEqual(path.read_bytes(), legacy)
+        self.assertEqual(read_ztex(compiled).width, 4)
+
     def test_bik_is_exported_separately_and_never_in_mod(self):
         source = Path(self.temp.name) / 'intro.bik'
         source.write_bytes(b'BIKi' + b'example video')
