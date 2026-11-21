@@ -202,8 +202,10 @@ class EditorApp(tk.Tk):
         self.workspace=tk.PanedWindow(self.editor_frame,orient='vertical',bg=BG,bd=0,sashwidth=7,opaqueresize=True)
         self.workspace.pack(fill='both',expand=True,padx=9,pady=(0,8))
         panes=tk.PanedWindow(self.workspace,orient='horizontal',bg=BG,bd=0,sashwidth=7)
+        self.editor_panes=panes
         self.workspace.add(panes,minsize=160,stretch='always')
         sidebar=tk.Frame(panes,bg=PANEL)
+        self.editor_sidebar=sidebar
         panes.add(sidebar,width=300,minsize=225)
         self.hierarchy=HierarchyPanel(sidebar,self.select,self.create_item,self.duplicate,self.delete,self.rename,on_copy=self.copy_to_project,on_export_model=self.export_model,on_export_texture=self.export_item_texture)
         from .ui.controllers.item_hierarchy import ItemHierarchyController
@@ -222,13 +224,16 @@ class EditorApp(tk.Tk):
         self.world_panel=WorldPanel(sidebar,self.world.select,self.npcs.select)
         self.media_panel=MediaPanel(sidebar,self.select_media,self.load_media_category,self.import_media)
         middle=tk.Frame(panes,bg='#191e29')
+        self.editor_middle=middle
         panes.add(middle,width=550,minsize=250)
         self.viewer=ModelViewer(middle)
         self.viewer.on_texture_mode=self._texture_mode_changed
         self.viewer.pack(fill='both',expand=True)
         self.media_viewer=MediaPreview(middle)
+        self.location_viewer=None
         from .core.item_options import item_options
         inspector=tk.Frame(panes,bg=PANEL)
+        self.editor_inspector=inspector
         panes.add(inspector,width=350,minsize=240)
         self.properties=PropertiesPanel(inspector,self.save_fields,on_appearance=self.appearance.show,
                                         options_provider=lambda source:item_options(self.repo,source))
@@ -738,6 +743,25 @@ class EditorApp(tk.Tk):
         self._show_model_source(entry,camera)
 
     def _show_resource_panels(self,mode):
+        # Location editor uses the entire main area, keeping the terminal below.
+        if mode=='locations':
+            self._resource_browser=mode
+            self.editor_panes.paneconfigure(self.editor_sidebar,hide=True)
+            self.editor_panes.paneconfigure(self.editor_inspector,hide=True)
+            self.editor_panes.paneconfigure(self.editor_middle,hide=False)
+            self.viewer.pack_forget()
+            self.media_viewer.pack_forget()
+            if self.location_viewer is None:
+                from gothic_editor.ui.windows.world_preview import WorldPreviewPanel
+                self.location_viewer=WorldPreviewPanel(self.editor_middle,self.repo.game,
+                                                        app=self)
+            self.location_viewer.pack(fill='both',expand=True)
+            self.mode.set_expression(mode)
+            return
+        if self.location_viewer is not None:
+            self.location_viewer.pack_forget()
+        self.editor_panes.paneconfigure(self.editor_sidebar,hide=False)
+        self.editor_panes.paneconfigure(self.editor_inspector,hide=False)
         if mode!='items':self.viewer.set_inventory_source(None)
         self._resource_browser=mode
         if mode=='media':
@@ -769,13 +793,6 @@ class EditorApp(tk.Tk):
 
     def _switch_resource_browser(self,mode):
         if not self.repo.root or mode==self._resource_browser:return
-        if mode=='locations':
-            # The location editor owns its own workspace and camera; the main
-            # resource browser remains untouched when the window is closed.
-            self.mode.set_expression(self._resource_browser)
-            from gothic_editor.ui.windows.world_preview import WorldPreviewWindow
-            WorldPreviewWindow(self, self.repo.game)
-            return
         if not self._save_editors():
             self.mode.set_expression(self._resource_browser)
             return
@@ -802,6 +819,7 @@ class EditorApp(tk.Tk):
         self.npc_properties.show(None)
         self.media_properties.show(None)
         self._show_resource_panels(mode)
+        if mode=='locations':return
         self.viewer.set_mesh(caption={'world':'Выберите объект мира','npc':'Выберите NPC','media':'Выберите медиа'}.get(mode,tr('app.select_item')))
 
     def load_media_category(self,category):
