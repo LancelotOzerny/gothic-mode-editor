@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import traceback
 import tkinter as tk
 from tkinter import filedialog
 
@@ -29,6 +30,7 @@ class WorldPreviewWindow(tk.Toplevel):
         self.zoom = 1.0
         self.pan_x = self.pan_y = 0.0
         self._game = Path(game) if game else None
+        self._log = getattr(getattr(parent, 'terminal', None), 'append', None)
         self._location_paths = []
         header = tk.Frame(self, bg='#232b39')
         header.pack(fill='x')
@@ -111,6 +113,7 @@ class WorldPreviewWindow(tk.Toplevel):
         self.status.configure(text='Чтение геометрии: ' + Path(path.name).name)
         self._scene = None
         self.queue_draw()
+        self._loading_source = str(path.archive / path.name) if hasattr(path, 'archive') else str(path)
         self._future = self._executor.submit(load_world_wireframe, path)
         self._poll_id = self.after(50, self._poll)
 
@@ -124,10 +127,13 @@ class WorldPreviewWindow(tk.Toplevel):
         future, self._future = self._future, None
         try:
             self._scene = future.result()
-        except (OSError, ValueError) as exc:
-            self.status.configure(text='Ошибка чтения ZEN: ' + str(exc))
         except Exception as exc:
-            self.status.configure(text='Не удалось открыть мир: ' + str(exc))
+            self.status.configure(text='Ошибка чтения ZEN: ' + str(exc))
+            detail = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+            if self._log is not None:
+                self._log('[ZEN] Ошибка загрузки: ' + self._loading_source + '\n' + detail)
+            if hasattr(self.master, 'show_terminal'):
+                self.master.show_terminal()
         else:
             self.reset_camera()
             self.status.configure(text=(f'Вершин: {self._scene.total_vertices:,}  ·  '
