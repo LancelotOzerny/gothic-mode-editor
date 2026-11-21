@@ -27,6 +27,40 @@ class WorldPreviewTests(unittest.TestCase):
         self.assertTrue(all(0 <= index < len(scene.vertices)
                             for face in scene.faces for index in face))
 
+    def test_nonfinite_vertex_is_excluded_before_projection(self):
+        invalid = SimpleNamespace(
+            vertices=((0., 0., 0.), (10., 0., 0.), (0., 10., 0.),
+                      (float('nan'), 2., 3.), (float('inf'), 0., 0.)),
+            triangles=((0, 1, 2), (0, 1, 3), (0, 2, 4)),
+            vertex_count=5, triangle_count=3,
+        )
+        scene = prepare_wireframe(invalid)
+        self.assertEqual(scene.discarded_triangles, 2)
+        self.assertEqual(len(scene.faces), 1)
+        points = project_wireframe(scene, 800, 600, 0.2, 0.3, 1.)
+        self.assertTrue(all(math.isfinite(value) for point in points for value in point))
+
+    def test_invalid_index_and_large_vertex_are_excluded(self):
+        invalid = SimpleNamespace(
+            vertices=((0., 0., 0.), (1., 0., 0.), (0., 1., 0.),
+                      (1e30, 0., 0.)),
+            triangles=((0, 1, 2), (0, 1, 3), (0, 1, 50)),
+            vertex_count=4, triangle_count=3,
+        )
+        scene = prepare_wireframe(invalid)
+        self.assertEqual(scene.discarded_triangles, 2)
+        self.assertEqual(len(scene.faces), 1)
+
+    def test_all_invalid_faces_keep_scene_empty_without_error(self):
+        invalid = SimpleNamespace(
+            vertices=((float('nan'), 0., 0.), (1., 0., 0.), (0., 1., 0.)),
+            triangles=((0, 1, 2),), vertex_count=3, triangle_count=1,
+        )
+        scene = prepare_wireframe(invalid)
+        self.assertEqual(scene.discarded_triangles, 1)
+        self.assertEqual(scene.faces, ())
+        self.assertEqual(project_wireframe(scene, 800, 600, 0., 0., 1.), ())
+
     def test_projection_center_pan_and_zoom(self):
         scene = prepare_wireframe(self.geometry)
         first = project_wireframe(scene, 600, 400, 0., 0., 1.)
