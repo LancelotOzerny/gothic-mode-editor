@@ -4,6 +4,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import traceback
+from math import isfinite
 import tkinter as tk
 from tkinter import filedialog
 
@@ -151,6 +152,18 @@ class WorldPreviewWindow(tk.Toplevel):
             self.status.configure(text=(f'Вершин: {self._scene.total_vertices:,}  ·  '
                 f'Треугольников: {self._scene.total_triangles:,}  ·  '
                 f'Показано: {len(self._scene.faces):,}'))
+            if self._scene.vertices:
+                lows = tuple(min(vertex[axis] for vertex in self._scene.vertices)
+                             for axis in range(3))
+                highs = tuple(max(vertex[axis] for vertex in self._scene.vertices)
+                              for axis in range(3))
+                extent = max(high - low for low, high in zip(lows, highs))
+                if not isfinite(extent) or extent < 1e-6:
+                    self._log_message(
+                        f'[ZEN] Подозрительная геометрия {self._loading_source}: '
+                        f'границы={tuple(zip(lows, highs))}, размер={extent!r}. '
+                        'Возможна ошибка декодирования MSH — каркас может быть невидим.',
+                        error=True)
             skipped = self._scene.discarded_triangles
             if skipped:
                 self._log_message(
