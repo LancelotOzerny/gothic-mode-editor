@@ -30,6 +30,8 @@ class ProjectRepository:
         self.game_items=[]
         self.errors=[]
         self.mesh_index={}
+        self._game_mesh_index={}
+        self._archive_errors=[]
         self.archive_models=ArchiveModels()
         self.project_settings={}
         self.options_cache={}
@@ -150,7 +152,7 @@ class ProjectRepository:
 
     def _project_content(self):return project_scripts(self.root)/'Content'
 
-    def refresh(self):
+    def refresh(self,project_only=False):
         if not self.root:return
         self.options_cache.clear()
         self.resource_revision+=1
@@ -168,7 +170,10 @@ class ProjectRepository:
                 except (OSError,UnicodeError,ValueError) as e:
                     if len(self.errors)<12:self.errors.append(f'{path.name}: {e}')
         game_content=self._game_content()
-        if game_content and self.root not in game_content.parents and game_content!=self.root:
+        if project_only:
+            by_origin['game']={item.instance.casefold():item for item in self.game_items}
+            merged.update(by_origin['game'])
+        elif game_content and self.root not in game_content.parents and game_content!=self.root:
             scan(game_content,'game')
         scan(self._project_content(),'project')
         # JSON components take precedence over the game and legacy project scripts.
@@ -181,14 +186,17 @@ class ProjectRepository:
         self.items=sorted(merged.values(),key=lambda i:(i.title.casefold(),i.instance.casefold()))
         self.project_items=sorted(by_origin['project'].values(),key=lambda i:(i.title.casefold(),i.instance.casefold()))
         self.game_items=sorted(by_origin['game'].values(),key=lambda i:(i.title.casefold(),i.instance.casefold()))
-        self.mesh_index={}
-        for base in (self.game/'_work'/'data'/'Meshes' if self.game else None,):
-            if base and base.exists():
-                for directory,_,names in os.walk(base):
-                    for name in names:
-                        if name.lower().endswith('.3ds'):
-                            self.mesh_index.setdefault(name.lower(),Path(directory)/name)
-        self.errors.extend(self.archive_models.refresh(self.root,self.game))
+        if not project_only:
+            self._game_mesh_index={}
+            for base in (self.game/'_work'/'data'/'Meshes' if self.game else None,):
+                if base and base.exists():
+                    for directory,_,names in os.walk(base):
+                        for name in names:
+                            if name.lower().endswith('.3ds'):
+                                self._game_mesh_index.setdefault(name.lower(),Path(directory)/name)
+            self._archive_errors=self.archive_models.refresh(self.root,self.game)
+        self.mesh_index=dict(self._game_mesh_index)
+        self.errors.extend(self._archive_errors)
         self.mesh_index.update(ModelResolver.index(self.components))
         self.mesh_index.update(ModelLibrary(self.root).index())
         from .world_resources import WorldResources
