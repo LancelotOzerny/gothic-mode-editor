@@ -5,7 +5,7 @@ from pathlib import Path
 
 from gothic_editor.core.game_media import CATEGORIES, GameMedia
 from gothic_editor.core.textures import read_texture
-from gothic_editor.ui.widgets import PANEL, BG, TXT, MUTED, label
+from gothic_editor.ui.widgets import PANEL, BG, TXT, MUTED, label, make_entry
 from gothic_editor.ui.widgets.panel import Panel, ScrollableArea, attach_scrollbar
 
 
@@ -15,9 +15,13 @@ class MediaPanel(Panel):
         self.on_select, self.on_load = on_select, on_load
         label(self, 'Медиа', font=('Arial',10,'bold')).pack(fill='x', padx=12, pady=12)
         self.search=tk.StringVar(self)
-        entry=tk.Entry(self,textvariable=self.search,bg=BG,fg=TXT,insertbackground=TXT)
-        entry.pack(fill='x',padx=10,pady=(0,10))
-        self.tree=ttk.Treeview(self,show='tree',selectmode='browse')
+        make_entry(self,textvariable=self.search).pack(fill='x',padx=10,pady=(0,10),ipady=6)
+        style=ttk.Style(self)
+        style.configure('Media.Treeview',background=PANEL,fieldbackground=PANEL,
+                        foreground=TXT,rowheight=27,borderwidth=0)
+        style.map('Media.Treeview',background=[('selected','#36516c')],
+                  foreground=[('selected',TXT)])
+        self.tree=ttk.Treeview(self,show='tree',selectmode='browse',style='Media.Treeview')
         attach_scrollbar(self,self.tree)
         self.tree.pack(fill='both',expand=True)
         self.nodes={}
