@@ -6,6 +6,7 @@ only when the optional dependencies are available. No engine/game files change.
 from __future__ import annotations
 
 from math import degrees
+from collections import OrderedDict
 
 from OpenGL.GL import (
     glBegin, glClear, glClearColor, glColor3f, glDisable, glEnable, glEnd,
@@ -39,8 +40,18 @@ class WorldOpenGLFrame(OpenGLFrame):
         self.solid = True
         self.animate = True
         self._failed = False
-        self._cached_scene = None
-        self._display_list = None
+        self.world = None
+        self.focus = None
+        self.radius = 1
+        self.triangle_limit = 200_000
+        self._cached_world = None
+        self._lists = OrderedDict()
+        self._cached_triangles = 0
+        self._gpu_triangle_budget = 450_000
+        self._selected_key = None
+        self._selected_chunks = ()
+        self._warm_key = None
+        self._warm_chunks = ()
 
     def _failed_context(self, exc):
         if self._failed:
@@ -75,7 +86,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         width, height = max(1, self.winfo_width()), max(1, self.winfo_height())
         glViewport(0, 0, width, height)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        if self.scene is None or not self.scene.faces:
+        if self.world is None:
             return
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
@@ -98,32 +109,88 @@ class WorldOpenGLFrame(OpenGLFrame):
             glRotatef(degrees(self.yaw), 0., 1., 0.)
             glTranslatef(-self.center[0], -self.center[1], -self.center[2])
 
-        if self._cached_scene is not self.scene:
-            if self._display_list is not None:
-                glDeleteLists(self._display_list, 1)
-                self._display_list = None
-            vertices = self.scene.vertices
-            list_id = int(glGenLists(1))
-            if not list_id:
-                raise RuntimeError('Не удалось создать список полигонов OpenGL.')
-            self._display_list = list_id
-            glNewList(list_id, GL_COMPILE)
+        self._draw_chunks()
+
+    def _delete_lists(self):
+        for list_id, _count in self._lists.values():
+            glDeleteLists(list_id, 1)
+        self._lists.clear()
+        self._cached_triangles = 0
+
+    def _compile_chunk(self, key):
+        if key in self._lists:
+            self._lists.move_to_end(key)
+            return
+        faces = self.world.chunks[key]
+        vertices = self.world.vertices
+        list_id = int(glGenLists(1))
+        if not list_id:
+            raise RuntimeError('Не удалось создать список полигонов OpenGL.')
+        glNewList(list_id, GL_COMPILE)
+        try:
+            glBegin(GL_TRIANGLES)
             try:
-                glBegin(GL_TRIANGLES)
-                try:
-                    for face in self.scene.faces:
-                        color = face_color(vertices, face)
-                        glColor3f(*(int(color[i:i+2], 16) / 255.0
-                                    for i in (1, 3, 5)))
-                        for index in face:
-                            glVertex3f(*vertices[index])
-                finally:
-                    glEnd()
+                for face in faces:
+                    color = face_color(vertices, face)
+                    glColor3f(*(int(color[i:i+2], 16) / 255.0
+                                for i in (1, 3, 5)))
+                    for index in face:
+                        glVertex3f(*vertices[index])
             finally:
-                glEndList()
-            self._cached_scene = self.scene
+                glEnd()
+        finally:
+            glEndList()
+        self._lists[key] = (list_id, len(faces))
+        self._cached_triangles += len(faces)
+
+    def _draw_chunks(self):
+        if self.world is None:
+            return
+        if self._cached_world is not self.world:
+            self._delete_lists()
+            self._cached_world = self.world
+            self._selected_key = None
+            self._warm_key = None
+        if self.focus is None:
+            return
+
+        selection_key = (self.focus, self.radius, self.triangle_limit)
+        if selection_key != self._selected_key:
+            self._selected_chunks = self.world.visible_chunk_keys(
+                self.focus, self.radius, self.triangle_limit)
+            self._selected_key = selection_key
+        visible = self._selected_chunks
+        warm_radius = min(5, self.radius + 1)
+        warm_key = (self.focus, warm_radius)
+        if warm_key != self._warm_key:
+            self._warm_chunks = self.world.visible_chunk_keys(
+                self.focus, warm_radius, self.triangle_limit)
+            self._warm_key = warm_key
+
+        missing_visible = [key for key in visible if key not in self._lists]
+        missing_warm = [key for key in self._warm_chunks
+                        if key not in self._lists and key not in missing_visible]
+        # Limit compilation to one chunk per frame; the camera never rebuilds
+        # a combined mesh when crossing a chunk boundary.
+        for key in (missing_visible or missing_warm)[:1]:
+            self._compile_chunk(key)
+
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL if self.solid else GL_LINE)
         try:
-            glCallList(self._display_list)
+            for key in visible:
+                cached = self._lists.get(key)
+                if cached is not None:
+                    self._lists.move_to_end(key)
+                    glCallList(cached[0])
         finally:
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+
+        pinned = set(visible)
+        for key in tuple(self._lists):
+            if self._cached_triangles <= self._gpu_triangle_budget:
+                break
+            if key in pinned:
+                continue
+            list_id, count = self._lists.pop(key)
+            glDeleteLists(list_id, 1)
+            self._cached_triangles -= count
