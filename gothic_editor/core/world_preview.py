@@ -6,7 +6,7 @@ triangle samples are passed to the interactive preview. No extra dependencies.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import cos, sin, isfinite
+from math import cos, sin, isfinite, floor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from .vdf import VdfArchive, VdfEntry, VdfFormatError
@@ -105,7 +105,79 @@ def prepare_wireframe(geometry, limit=MAX_PREVIEW_TRIANGLES):
     return WireframeScene(compact, remapped, geometry.vertex_count,
                           geometry.triangle_count, discarded)
 
-def load_world_wireframe(path: str | Path | VdfEntry):
+@dataclass(frozen=True)
+class ChunkedWorld:
+    """Spatial index of valid triangles, grouped by X/Z centroid."""
+    vertices: tuple
+    chunks: dict[tuple[int, int], tuple[tuple[int, int, int], ...]]
+    chunk_size: int
+    total_vertices: int
+    total_triangles: int
+    discarded_triangles: int
+    origin: tuple[int, int]
+
+    def view(self, focus=None, radius=1, triangle_limit=3500):
+        if radius < 0 or radius > 5 or not 1 <= triangle_limit <= 10000:
+            raise ValueError('Некорректные настройки отображения чанков.')
+        focus = self.origin if focus is None else focus
+        visible = [key for key in self.chunks
+                   if abs(key[0] - focus[0]) <= radius and
+                      abs(key[1] - focus[1]) <= radius]
+        visible.sort(key=lambda key: ((key[0]-focus[0])**2 + (key[1]-focus[1])**2, key))
+        if not visible:
+            return WireframeScene((), (), self.total_vertices,
+                                  self.total_triangles, self.discarded_triangles)
+        # Distribute the global draw budget across nearby chunks. The budget
+        # is never exceeded, and each selected triangle is complete.
+        remaining = triangle_limit
+        selected = []
+        for i, key in enumerate(visible):
+            if remaining <= 0:
+                break
+            pool = self.chunks[key]
+            quota = min(len(pool), max(1, remaining // (len(visible) - i)))
+            selected.extend(pool[k * len(pool) // quota] for k in range(quota))
+            remaining -= quota
+        used = sorted({vertex for face in selected for vertex in face})
+        mapping = {old: new for new, old in enumerate(used)}
+        return WireframeScene(
+            tuple(self.vertices[i] for i in used),
+            tuple(tuple(mapping[i] for i in face) for face in selected),
+            self.total_vertices, self.total_triangles, self.discarded_triangles)
+
+
+def build_world_chunks(geometry, chunk_size=6000):
+    """Group triangles by their X/Z centroid, preserving complete faces."""
+    if type(chunk_size) is not int or not 500 <= chunk_size <= 100000:
+        raise ValueError('Размер чанка должен быть от 500 до 100000 см.')
+    vertices = geometry.vertices
+    safe = tuple(len(v) == 3 and all(isfinite(x) and abs(x) <= 1e8 for x in v)
+                 for v in vertices)
+    groups = {}
+    discarded = 0
+    for face in geometry.triangles:
+        if (len(face) != 3 or not all(
+                isinstance(i, int) and 0 <= i < len(vertices) and safe[i] for i in face)):
+            discarded += 1
+            continue
+        x = sum(vertices[i][0] for i in face) / 3
+        z = sum(vertices[i][2] for i in face) / 3
+        key = (floor(x / chunk_size), floor(z / chunk_size))
+        groups.setdefault(key, []).append(tuple(face))
+    if groups:
+        lo_x, hi_x = min(x for x, _ in groups), max(x for x, _ in groups)
+        lo_z, hi_z = min(z for _, z in groups), max(z for _, z in groups)
+        middle = ((lo_x + hi_x) / 2, (lo_z + hi_z) / 2)
+        center = min(groups, key=lambda k: ((k[0]-middle[0])**2 + (k[1]-middle[1])**2, k))
+    else:
+        center = (0, 0)
+    return ChunkedWorld(tuple(vertices),
+                        {key: tuple(faces) for key, faces in groups.items()},
+                        chunk_size, geometry.vertex_count, geometry.triangle_count,
+                        discarded, center)
+
+
+def load_world_wireframe(path: str | Path | VdfEntry, chunk_size=6000):
     """Worker-thread entry point: never touches Tk widgets."""
     if not is_location_zen(path):
         raise ZenWorldError('Это служебный архив Gothic с пресетами, а не игровая локация.')
@@ -126,7 +198,7 @@ def load_world_wireframe(path: str | Path | VdfEntry):
             geometry = load_zen_geometry(destination, include_triangles=True)
     else:
         geometry = load_zen_geometry(path, include_triangles=True)
-    return prepare_wireframe(geometry)
+    return build_world_chunks(geometry, chunk_size)
 
 
 def project_wireframe(scene, width, height, yaw, pitch, zoom, pan_x=0.0, pan_y=0.0):
