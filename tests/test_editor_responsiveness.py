@@ -214,7 +214,9 @@ class ApplicationDraftTests(unittest.TestCase):
                         self.assertEqual(row.item.fields['name'],'"Saved in focus"')
                         self.assertIs(app.properties.inputs['name'],name)
                     name.insert('end',' again')
-                    app.select(second)
+                    with patch.object(app,'_show_resource_panels',wraps=app._show_resource_panels) as switch:
+                        app.select(second)
+                        switch.assert_not_called()
                     self.assertEqual(next(i for i in app.repo.project_items if i.instance==item.instance).fields['name'],
                                      '"Saved in focus again"')
                     other_root=root/'other'
