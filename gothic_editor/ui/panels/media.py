@@ -12,9 +12,9 @@ from .hierarchy import HierarchyBrowser, HierarchyCategory, CategoryRow, Hierarc
 
 class MediaPanel(HierarchyBrowser):
     """Use the exact category/row widgets shared with World and NPC."""
-    def __init__(self, parent, on_select, on_load):
+    def __init__(self, parent, on_select, on_load, on_import):
         super().__init__(parent)
-        self.on_select, self.on_load=on_select,on_load
+        self.on_select, self.on_load, self.on_import=on_select,on_load,on_import
         self.owner,self.origin=self,'project'
         self.resources={}
         self.entries={}
@@ -27,9 +27,10 @@ class MediaPanel(HierarchyBrowser):
         self.search.trace_add('write',lambda *_:self.rebuild())
         self.rebuild()
 
-    def set_resources(self,resources,loaded):
+    def set_resources(self,resources,loaded,selected=()):
         self.resources={row.kind+':'+row.name.casefold():row for row in resources
-                        if row.category in loaded or row.overridden}
+                        if row.category in loaded or row.overridden
+                        or row.kind+':'+row.name.casefold() in selected}
         self.rebuild()
 
     def rebuild(self):
@@ -80,7 +81,9 @@ class MediaPanel(HierarchyBrowser):
         return True
 
     def context(self,event,category):
-        self.popup(event,[('Загрузить все файлы медиа',
+        self.popup(event,[('Импортировать файл из Gothic…',
+                           lambda:self.on_import(category)),
+                          ('Загрузить все файлы медиа',
                            lambda:self.on_load(category))])
 
     def expand(self,category):
