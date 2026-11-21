@@ -1,10 +1,13 @@
 """World wireframe sampling and camera math tests (Tk is not required)."""
 import math
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 from gothic_editor.core.world_preview import (
     MAX_PREVIEW_TRIANGLES, prepare_wireframe, project_wireframe,
+    available_locations, is_location_zen, load_world_wireframe,
 )
 
 
@@ -38,6 +41,20 @@ class WorldPreviewTests(unittest.TestCase):
             prepare_wireframe(self.geometry, 0)
         with self.assertRaises(ValueError):
             prepare_wireframe(self.geometry, MAX_PREVIEW_TRIANGLES + 1)
+
+    def test_service_zen_files_are_not_locations(self):
+        with TemporaryDirectory() as temporary:
+            folder = Path(temporary) / '_work' / 'data' / 'Worlds'
+            folder.mkdir(parents=True)
+            for name in ('Lensflare.zen', 'DialogCams.zen',
+                         'LIGHTPRESETS.zen', 'NEWWORLD.ZEN'):
+                (folder / name).write_bytes(b'')
+            self.assertEqual([path.name for path in available_locations(temporary)],
+                             ['NEWWORLD.ZEN'])
+            for name in ('Lensflare.zen', 'DialogCams.zen', 'LIGHTPRESETS.zen'):
+                self.assertFalse(is_location_zen(name))
+                with self.assertRaisesRegex(ValueError, 'служебный архив'):
+                    load_world_wireframe(folder / name)
 
     def test_empty_geometry(self):
         empty = SimpleNamespace(vertices=(), triangles=(), vertex_count=0, triangle_count=0)
