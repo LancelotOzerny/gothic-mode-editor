@@ -83,17 +83,25 @@ class GameMedia:
         found = {}
         if archive_models is not None:
             for name, entry in archive_models.texture_entries.items():
-                if Path(name).suffix.lower() in ('.tex','.tga'):
-                    logical=self.target_name('images', name)
-                    found[('images',logical.casefold())] = MediaResource(
-                        logical,'images',entry,media_category(logical))
+                if Path(name).suffix.lower() not in ('.tex','.tga'):continue
+                try:logical=self.target_name('images', name)
+                except ValueError:continue
+                found[('images',logical.casefold())] = MediaResource(
+                    logical,'images',entry,media_category(logical))
+            for name, entry in archive_models.entries.items():
+                if Path(name).suffix.lower()=='.bik':
+                    try:logical=self.target_name('videos',name)
+                    except ValueError:continue
+                    found[('videos',logical.casefold())] = MediaResource(
+                        logical,'videos',entry,'videos')
         if game:
             game=Path(game)
             for folder in (game/'_work'/'Data'/'Textures'/'_compiled',game/'_work'/'Data'/'Textures'):
                 if folder.is_dir():
                     for path in folder.rglob('*'):
                         if path.is_file() and path.suffix.lower() in ('.tex','.tga'):
-                            logical=self.target_name('images',path.name)
+                            try:logical=self.target_name('images',path.name)
+                            except ValueError:continue
                             found[('images',logical.casefold())]=MediaResource(
                                 logical,'images',path,media_category(logical))
             videos=game/'_work'/'Data'/'Video'
