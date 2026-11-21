@@ -290,7 +290,9 @@ class GameMedia:
                 expected += 1
                 width //= 2
                 height //= 2
-            if kind not in (10, 12) or levels != expected:
+            is_power_of_two = ((texture.width & (texture.width - 1)) == 0 and
+                               (texture.height & (texture.height - 1)) == 0)
+            if kind not in (10, 12) or levels != expected or not is_power_of_two:
                 try:
                     data = write_ztex(texture)
                 except ValueError as exc:
