@@ -210,6 +210,11 @@ class ProjectTools:
                 ini=self.dist_dir/self.config.ini_name
                 pairs=[(temporary_archive,archive),(temporary_ini,ini)]
                 pairs.append((temporary_output if self.config.keep_dat else None,self.dist_dir/'Gothic.dat'))
+                # Gothic plays BIK videos from loose _work/Data/Video files, not the MOD.
+                # Export sidecars for manual installation; never overwrite game originals.
+                from .game_media import GameMedia
+                for video in GameMedia(self.project).videos():
+                    pairs.append((video,self.dist_dir/'Video'/video.name))
                 def verify():
                     if validate_build(archive,ini,self.config)!=packed:raise ValueError('Опубликованный MOD не совпадает с проверенной сборкой')
                 self._publish_artifacts(staging,pairs,commit=verify)
