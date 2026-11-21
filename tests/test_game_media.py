@@ -83,6 +83,18 @@ class GameMediaTests(unittest.TestCase):
                 self.assertEqual((decoded.width, decoded.height), expected)
                 self.assertEqual(struct.unpack_from('<I', encoded, 8)[0], 10)
 
+    def test_validation_rejects_unsafe_ztex_before_packaging(self):
+        from gothic_editor.core.textures import Texture, write_ztex, validate_gothic_ztex
+        encoded=write_ztex(Texture(12,8,bytes((20,100,180,255))*96))
+        self.assertTrue(validate_gothic_ztex(encoded))
+        self.assertEqual((read_ztex(encoded).width,read_ztex(encoded).height),(16,8))
+        with self.assertRaises(ValueError):
+            validate_gothic_ztex(encoded[:-8])
+        damaged=bytearray(encoded)
+        struct.pack_into('<I',damaged,12,12)
+        with self.assertRaises(ValueError):
+            validate_gothic_ztex(damaged)
+
     def test_build_repairs_non_power_of_two_legacy_dxt(self):
         from gothic_editor.core.textures import Texture
         # A correctly framed old TEX can still crash ZenGin if non-power-of-two.
