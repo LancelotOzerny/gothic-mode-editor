@@ -106,7 +106,7 @@ def inspect_zen(path: str | Path, *, include_objects: bool = True) -> ZenWorldIn
         version, archiver, encoding, saved, count, hash_offset = _header(stream)
         if encoding == 'BIN_SAFE' and include_objects:
             try:
-                entries, has_mesh, has_tree = read_binsafe(
+                entries, has_mesh, has_tree, _mesh = read_binsafe(
                     stream, stream.tell(), hash_offset, source.stat().st_size)
             except BinSafeError as exc:
                 raise ZenWorldError(str(exc)) from exc
@@ -176,3 +176,25 @@ def discover_zen(game: str | Path) -> list[Path]:
                     seen.add(resolved)
                     result.append(path)
     return sorted(result, key=lambda path: str(path).casefold())
+
+
+def load_zen_geometry(path: str | Path, *, include_triangles: bool = False):
+    """Extract compiled world mesh from BIN_SAFE ZEN without modifying the file.
+
+    By default returns only counts, keeping memory use bounded. Set
+    include_triangles=True to read positions and triangulated polygon indices.
+    """
+    source = Path(path)
+    with source.open('rb') as stream:
+        _, _, encoding, _, _, hash_offset = _header(stream)
+        if encoding != 'BIN_SAFE':
+            raise ZenWorldError('Чтение геометрии пока доступно только для BIN_SAFE ZEN.')
+        try:
+            _, has_mesh, _, geometry = read_binsafe(
+                stream, stream.tell(), hash_offset, source.stat().st_size,
+                include_geometry=include_triangles)
+        except BinSafeError as exc:
+            raise ZenWorldError(str(exc)) from exc
+        if not has_mesh or geometry is None:
+            raise ZenWorldError('В ZEN нет компилированного блока MeshAndBsp.')
+        return geometry
