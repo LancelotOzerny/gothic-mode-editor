@@ -45,7 +45,7 @@ class ZenWorldTests(unittest.TestCase):
     def test_binsafe_binary_header(self):
         self.path.write_bytes(HEADER.replace(b'zCArchiverGeneric', b'zCArchiverBinSafe')
                               .replace(b'{encoding}', b'BIN_SAFE') + struct.pack('<III', 1, 42, 2048))
-        info = inspect_zen(self.path)
+        info = inspect_zen(self.path, include_objects=False)
         self.assertEqual(info.object_count, 42)
         self.assertFalse(info.details_available)
 
