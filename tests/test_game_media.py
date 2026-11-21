@@ -68,6 +68,32 @@ class GameMediaTests(unittest.TestCase):
         self.assertEqual(len(rebuilt),len(correct))
         self.assertEqual(path.read_bytes(),wrong)
 
+    def test_small_and_non_aligned_images_build_without_error(self):
+        from gothic_editor.core.textures import Texture, write_ztex
+        for width, height, expected in (
+            (2, 2, (4, 4)), (4, 3, (4, 4)),
+            (5, 7, (8, 8)), (1920, 1080, (1920, 1080))
+        ):
+            with self.subTest(size=(width, height)):
+                pixels=bytes((75, 130, 220, 255)) * (width * height)
+                texture=Texture(width, height, pixels)
+                encoded=write_ztex(texture)
+                decoded=read_ztex(encoded)
+                self.assertEqual((decoded.width, decoded.height), expected)
+                self.assertEqual(struct.unpack_from('<I', encoded, 8)[0], 10)
+
+    def test_small_legacy_tex_is_repaired_at_build(self):
+        rgba=bytes((100, 50, 20, 255))*4
+        legacy=bytearray(b'ZTEX'+struct.pack('<8I',0,0,2,2,1,2,2,0))
+        for offset in range(0,len(rgba),4):
+            r,g,b,a=rgba[offset:offset+4]
+            legacy.extend((b,g,r,a))
+        path=self.media.path('images','LOADING.TGA')
+        path.parent.mkdir(parents=True,exist_ok=True)
+        path.write_bytes(legacy)
+        compiled=self.media.collect_images()['_work/data/Textures/_compiled/LOADING-C.TEX']
+        self.assertEqual((read_ztex(compiled).width,read_ztex(compiled).height),(4,4))
+
     def test_build_repairs_legacy_uncompressed_media(self):
         from gothic_editor.core.textures import Texture
         rgba = bytes((100, 50, 20, 255)) * 16
