@@ -48,6 +48,11 @@ class WorldController:
         self.app.history.record(saved)
         return result
 
+    def open_world_preview(self):
+        """Open a separate read-only .ZEN viewer; leave model selection intact."""
+        from gothic_editor.ui.windows.world_preview import WorldPreviewWindow
+        WorldPreviewWindow(self.app, self.app.repo.game)
+
     def add(self):
         self.refresh()
         options=self.catalog
