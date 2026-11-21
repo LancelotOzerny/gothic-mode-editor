@@ -27,7 +27,6 @@ class WorldPreviewPanel(tk.Frame):
         self._scene = None
         self._world = None
         self._focus = None
-        self._pressed.clear()
         self._camera_center = None
         self._camera_target = None
         self._world_height = 0.0
