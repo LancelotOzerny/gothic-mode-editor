@@ -73,7 +73,7 @@ class WorldPreviewWindow(tk.Toplevel):
         menu = self.location_menu['menu']
         menu.delete(0, 'end')
         for index, path in enumerate(self._location_paths):
-            label = path.stem
+            label = Path(path.name).stem + (f' [{path.archive.name}]' if hasattr(path, 'archive') else '')
             menu.add_command(label=label, command=lambda i=index: self._load_selection(i))
         if self._location_paths:
             self.status.configure(text=f'Найдено локаций: {len(self._location_paths)}. Выберите мир.')
@@ -82,7 +82,7 @@ class WorldPreviewWindow(tk.Toplevel):
 
     def _load_selection(self, index):
         path = self._location_paths[index]
-        self.location_value.set(path.stem)
+        self.location_value.set(Path(path.name).stem)
         self.open_file(path)
 
     def _selected_location(self, *_):
@@ -101,14 +101,14 @@ class WorldPreviewWindow(tk.Toplevel):
 
     def open_file(self, path):
         if not is_location_zen(path):
-            self.status.configure(text='Служебный ZEN (пресеты Gothic), не игровая локация: ' + Path(path).name)
+            self.status.configure(text='Служебный ZEN (пресеты Gothic), не игровая локация: ' + Path(path.name).name)
             self._scene = None
             self.queue_draw()
             return
         if self._future is not None:
             self.status.configure(text='Завершите загрузку текущего мира перед открытием другого.')
             return
-        self.status.configure(text='Чтение геометрии: ' + Path(path).name)
+        self.status.configure(text='Чтение геометрии: ' + Path(path.name).name)
         self._scene = None
         self.queue_draw()
         self._future = self._executor.submit(load_world_wireframe, path)
