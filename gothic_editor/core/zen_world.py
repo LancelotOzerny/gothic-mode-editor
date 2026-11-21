@@ -12,6 +12,8 @@ import re
 import struct
 
 from .zen_binsafe import BinSafeError, read_binsafe
+from .zen_binary import read_binary_world_mesh
+from .zen_geometry import ZenGeometryError
 
 
 _HEADER_BYTES = 16 * 1024
@@ -181,14 +183,21 @@ def discover_zen(game: str | Path) -> list[Path]:
 def load_zen_geometry(path: str | Path, *, include_triangles: bool = False):
     """Extract compiled world mesh from BIN_SAFE ZEN without modifying the file.
 
-    By default returns only counts, keeping memory use bounded. Set
-    include_triangles=True to read positions and triangulated polygon indices.
+    Supports BINARY and BIN_SAFE ZEN. By default returns only counts.
+    Set include_triangles=True to read positions and triangle indices.
     """
     source = Path(path)
     with source.open('rb') as stream:
         _, _, encoding, _, _, hash_offset = _header(stream)
+        if encoding == 'BINARY':
+            try:
+                return read_binary_world_mesh(
+                    stream, stream.tell(), source.stat().st_size,
+                    include_triangles=include_triangles)
+            except ZenGeometryError as exc:
+                raise ZenWorldError(str(exc)) from exc
         if encoding != 'BIN_SAFE':
-            raise ZenWorldError('Чтение геометрии пока доступно только для BIN_SAFE ZEN.')
+            raise ZenWorldError('Чтение геометрии ASCII ZEN пока не поддерживается.')
         try:
             _, has_mesh, _, geometry = read_binsafe(
                 stream, stream.tell(), hash_offset, source.stat().st_size,
