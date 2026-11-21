@@ -95,6 +95,7 @@ class EditorApp(tk.Tk):
         self.bind('<Control-o>',lambda e:self.open_project())
         self.bind('<Control-z>',lambda e:self._history_shortcut(False,e))
         self.bind('<Control-y>',lambda e:self._history_shortcut(True,e))
+        self.bind('<Control-Shift-Z>',lambda e:self._history_shortcut(True,e))
         self.bind('<Control-s>',lambda e:self._save_editors())
         self.bind('<Control-KeyPress>',self._save_shortcut,add='+')
         self.bind('<Alt-F4>',lambda e:self.destroy())
