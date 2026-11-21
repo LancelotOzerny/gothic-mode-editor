@@ -16,8 +16,9 @@ from gothic_editor.core.world_preview import (load_world_wireframe, project_wire
 
 
 class WorldPreviewPanel(tk.Frame):
-    def __init__(self, parent, game=None):
+    def __init__(self, parent, game=None, *, app=None):
         super().__init__(parent)
+        self._app = app if app is not None else self.winfo_toplevel()
         self.configure(bg='#191e29')
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._future = None
@@ -38,7 +39,7 @@ class WorldPreviewPanel(tk.Frame):
         self._tick_id = None
         self._last_tick = monotonic()
         self._fly_mouse = None
-        settings = getattr(parent, 'settings', None)
+        settings = getattr(self._app, 'settings', None)
         self._chunk_size = settings.get_value('interface.world_chunks.size') if settings else 6000
         self._chunk_radius = settings.get_value('interface.world_chunks.radius') if settings else 1
         self._triangle_limit = settings.get_value('interface.world_chunks.triangle_limit') if settings else 3500
@@ -109,6 +110,16 @@ class WorldPreviewPanel(tk.Frame):
         self.queue_draw()
         self._tick_id = self.after(33, self._tick)
 
+    def set_game(self, game):
+        game = Path(game) if game else None
+        if game != self._game:
+            self._game = game
+            self._scene = None
+            self._world = None
+            self._focus = None
+            self.refresh_locations()
+            self.queue_draw()
+
     def refresh_locations(self):
         self._location_paths = available_locations(self._game) if self._game else []
         menu = self.location_menu['menu']
@@ -167,7 +178,7 @@ class WorldPreviewPanel(tk.Frame):
 
     def _log_message(self, message, *, error=False):
         """Write to the main Gothic Editor bottom terminal, on the Tk thread."""
-        app = self.master
+        app = self._app
         terminal = getattr(app, 'terminal', None)
         if terminal is None:
             return
@@ -235,9 +246,9 @@ class WorldPreviewPanel(tk.Frame):
         if self._camera_center is None:
             return
         x, y, z = self._camera_center
-        self._fly_camera = FlyCamera(x=x, y=y + self._world.chunk_size * 0.35,
-                                     z=z - self._world.chunk_size,
-                                     speed=self._world.chunk_size * 0.8)
+        self._fly_camera = FlyCamera(x=x, y=y + self._world.chunk_size * 0.6,
+                                     z=z - self._world.chunk_size * 0.65,
+                                     pitch=-0.4, speed=self._world.chunk_size * 0.8)
 
     def toggle_camera(self):
         self._fly_mode = not self._fly_mode
