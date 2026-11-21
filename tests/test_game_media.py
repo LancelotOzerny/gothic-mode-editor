@@ -63,6 +63,14 @@ class GameMediaTests(unittest.TestCase):
         self.assertEqual(pixels[0],0)
         self.assertEqual(len(pixels),2*(1+2*4))
 
+    def test_bik_is_read_from_vdf_catalog(self):
+        from gothic_editor.core.mod_archive import write_mod
+        from gothic_editor.core.vdf import VdfArchive
+        archive=Path(self.temp.name)/'Videos.vdf'
+        write_mod(archive,{'_work/data/Video/Intro.bik':b'BIKi'+bytes(range(8))})
+        entry=VdfArchive(archive).entries['intro.bik']
+        self.assertEqual(entry.read_bytes(),b'BIKi'+bytes(range(8)))
+
     def test_export_video_is_byte_identical(self):
         from gothic_editor.core.game_media import MediaResource
         source=Path(self.temp.name)/'intro.bik'
