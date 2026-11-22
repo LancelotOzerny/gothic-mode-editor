@@ -32,7 +32,7 @@ def import_category_recipes(project, game, category, *, history=None):
     store = RecipeStore(project)
     existing_rows = {row['id'].casefold(): row for row in store.load()}
     existing_ids = set(existing_rows)
-    imported, already = [], 0
+    imported, upgrades, already = [], [], 0
     for template in matching:
         # The stock parser assigns a stable COPY_... ID per Gothic C_Info.
         if template['id'].casefold() in existing_ids:
@@ -42,7 +42,7 @@ def import_category_recipes(project, game, category, *, history=None):
                     and template['availability']['type'] == 'stock_talent'):
                 upgraded = deepcopy(saved)
                 upgraded['availability'] = deepcopy(template['availability'])
-                imported.append((upgraded, store.path(saved['id'])))
+                upgrades.append((upgraded, store.path(saved['id'])))
             continue
         data = deepcopy(template)
         data['category'] = category
@@ -53,12 +53,13 @@ def import_category_recipes(project, game, category, *, history=None):
             continue
         existing_ids.add(data['id'].casefold())
         imported.append((data, destination))
-    if imported:
-        paths = [path for _, path in imported]
+    changes = imported + upgrades
+    if changes:
+        paths = [path for _, path in changes]
         before = history.capture(paths) if history is not None else None
         with tempfile.TemporaryDirectory(prefix='gothic-recipe-import-') as folder:
             staged = []
-            for index, (data, destination) in enumerate(imported):
+            for index, (data, destination) in enumerate(changes):
                 source = Path(folder) / f'{index}.json'
                 source.write_text(json.dumps(data, ensure_ascii=False, indent=2), 'utf-8')
                 staged.append((source, destination))
