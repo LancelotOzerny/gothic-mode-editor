@@ -71,7 +71,7 @@ def prepare_recipe_learning(project, content):
         declarations.append(f'const int {constant} = {recipe_code(recipe["id"])};')
     cases = '\n'.join(
         '    if (recipe == GE_RECIPE_' + recipe['id'] + ') { ' +
-        recipe['availability']['variable'] + ' = TRUE; return; };'
+        recipe['availability']['variable'] + ' = TRUE; };'
         for recipe in recipes)
     body = ('// @INFO NAME="Изучить рецепт"\n'
             '// @PARAM VALUE=recipe NAME="Рецепт"\n'
