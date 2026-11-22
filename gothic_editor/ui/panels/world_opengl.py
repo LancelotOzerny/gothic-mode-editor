@@ -79,6 +79,11 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._warm_texture_names = ()
         self._warm_texture_cursor = 0
         self._can_warm_gpu = False
+        self._bound_texture = None
+        self._pending_mipmaps = OrderedDict()
+        self._view_state = None
+        self._last_camera_change = perf_counter()
+        self._last_mipmap_build = 0.0
 
     def _failed_context(self, exc):
         if self._failed:
@@ -113,6 +118,8 @@ class WorldOpenGLFrame(OpenGLFrame):
         width, height = max(1, self.winfo_width()), max(1, self.winfo_height())
         self._uploads_this_frame = 0
         self._frame_start = perf_counter()
+        self._update_camera_motion()
+        self._bound_texture = None
         glViewport(0, 0, width, height)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         if self.world is None:
@@ -146,13 +153,49 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._draw_chunks()
         self._draw_vobs()
         self._warm_gpu_textures()
+        self._finish_mipmaps_when_idle()
         glDisable(GL_TEXTURE_2D)
         glDisable(GL_ALPHA_TEST)
+
+    def _update_camera_motion(self):
+        camera = self.camera if self.fly else None
+        camera_pos = ((camera.x, camera.y, camera.z) if camera is not None else ())
+        state = (self.fly, camera_pos, self.center, self.yaw, self.pitch,
+                 self.zoom, self.focus, self.radius)
+        if state != self._view_state:
+            self._view_state = state
+            self._last_camera_change = self._frame_start
+
+    def _finish_mipmaps_when_idle(self):
+        # Generating mipmaps inside the visible draw creates GPU stalls when
+        # entering a new chunk. Upgrade one already uploaded texture only once
+        # camera motion has stopped.
+        if (not self._pending_mipmaps or self.render_mode != 'textures'
+                or self._uploads_this_frame or
+                self._frame_start - self._last_camera_change < 0.45 or
+                self._frame_start - self._last_mipmap_build < 0.15):
+            return
+        name, texture_id = self._pending_mipmaps.popitem(last=False)
+        if name not in self._gpu_textures:
+            return
+        try:
+            glBindTexture(GL_TEXTURE_2D, texture_id)
+            glGenerateMipmap(GL_TEXTURE_2D)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                            GL_LINEAR_MIPMAP_LINEAR)
+        except Exception as exc:
+            if self.textures is not None:
+                self.textures.report_error(name, exc)
+        finally:
+            self._bound_texture = None
+            self._last_mipmap_build = self._frame_start
 
     def _delete_textures(self):
         if self._gpu_textures:
             glDeleteTextures([entry[0] for entry in self._gpu_textures.values()])
         self._gpu_textures.clear()
+        self._pending_mipmaps.clear()
+        self._bound_texture = None
         self._gpu_texture_bytes = 0
         self._invalid_gpu.clear()
         self._visible_gpu_key = None
@@ -259,16 +302,8 @@ class WorldOpenGLFrame(OpenGLFrame):
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture.width, texture.height,
                          0, GL_RGBA, GL_UNSIGNED_BYTE, texture.pixels)
-            # Trilinear minification prevents distant rock/brick textures from
-            # aliasing into the grainy pattern caused by base-level GL_LINEAR.
-            # Mip generation happens once, never for every camera frame.
-            try:
-                glGenerateMipmap(GL_TEXTURE_2D)
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                                GL_LINEAR_MIPMAP_LINEAR)
-            except Exception:
-                # Keep the base level usable on older OpenGL contexts.
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+            # The first upload is just the base level; large synchronous
+            # glGenerateMipmap operations are deferred until camera idle.
         except Exception as exc:
             if tex_id:
                 glDeleteTextures([tex_id])
@@ -282,9 +317,11 @@ class WorldOpenGLFrame(OpenGLFrame):
                 glDeleteTextures([tex_id])
                 return 0
             old_id, old_size = self._gpu_textures.pop(victim)
+            self._pending_mipmaps.pop(victim, None)
             glDeleteTextures([old_id])
             self._gpu_texture_bytes -= old_size
         self._gpu_textures[identifier] = (tex_id, size)
+        self._pending_mipmaps[identifier] = tex_id
         self._gpu_texture_bytes += size
         self._uploads_this_frame += 1
         return tex_id
