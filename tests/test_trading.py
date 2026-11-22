@@ -26,7 +26,7 @@ class TradingTests(unittest.TestCase):
             'func void B_GiveTradeInv(var C_Npc slf) { CreateInvItems(slf, ItFo_Bread, 2); };\n',
             encoding='cp1251')
         (self.content / 'Gothic.src').write_text(
-            'NPC.d\nStory\\GE_Trading.d\nTrade.d\n', encoding='cp1251')
+            'NPC.d\nGE_Trading\\Stock.d\nTrade.d\n', encoding='cp1251')
 
     def config(self, **changes):
         result = dict(enabled=True, dialog=True, replace_original=False,
@@ -66,7 +66,7 @@ class TradingTests(unittest.TestCase):
         manifest=self.content/'Gothic.src'
         prioritize_trading(manifest)
         lines=manifest.read_text('cp1251').splitlines()
-        self.assertLess(lines.index('Story\\GE_Trading.d'),lines.index('Trade.d'))
+        self.assertLess(lines.index('GE_Trading\\Stock.d'),lines.index('Trade.d'))
 
     def test_replace_original_and_missing_item(self):
         self.store.save('NPC_Merchant', self.config(replace_original=True,dialog=False))
