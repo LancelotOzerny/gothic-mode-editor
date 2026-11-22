@@ -70,6 +70,8 @@ class WorldOpenGLFrame(OpenGLFrame):
         self.vobs = None
         self._cached_vobs = None
         self._vob_lists = {}
+        self._vob_batches_key = None
+        self._vob_batches = ()
         self.focus = None
         self.radius = 1
         self.triangle_limit = 200_000
@@ -350,6 +352,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         except Exception as exc:
             if tex_id:
                 glDeleteTextures([tex_id])
+            self._bound_texture = None
             self._invalid_gpu.add(identifier)
             self.textures.report_error(name, exc)
             return 0
@@ -477,6 +480,7 @@ class WorldOpenGLFrame(OpenGLFrame):
                 for _name, list_id in lists:
                     glDeleteLists(list_id, 1)
             self._vob_lists.clear()
+            self._vob_batches_key = None
             self._vob_names.clear()
             self._cached_vobs = scene
         if scene is None or not scene.objects or self.focus is None:
@@ -494,31 +498,37 @@ class WorldOpenGLFrame(OpenGLFrame):
                 visual = scene.objects[index].visual
                 if visual not in self._vob_lists:
                     self._compile_vob(visual, scene.models[visual])
+                    self._vob_batches_key = None
                     break
             else:
                 continue
             break
 
-        # Group by material instead of binding the same texture per instance.
-        # GL_ALPHA_TEST + depth testing makes these cutouts order-independent.
-        grouped = OrderedDict()
-        for key in nearby:
-            for index in scene.chunks[key]:
-                vob = scene.objects[index]
-                lists = self._vob_lists.get(vob.visual)
-                if lists is None:
-                    continue
-                rot = vob.rotation
-                px, py, pz = vob.position
-                matrix = (rot[0], rot[3], rot[6], 0.,
-                          rot[1], rot[4], rot[7], 0.,
-                          rot[2], rot[5], rot[8], 0.,
-                          px, py, pz, 1.)
-                for texture, list_id in lists:
-                    grouped.setdefault(texture, []).append((list_id, matrix))
+        # Build stable per-material batches only when the visible chunks or
+        # available VOB display lists change; do not rebuild 4k matrices each frame.
+        batch_key = (id(scene), tuple(nearby), len(self._vob_lists))
+        if batch_key != self._vob_batches_key:
+            grouped = OrderedDict()
+            for key in nearby:
+                for index in scene.chunks[key]:
+                    vob = scene.objects[index]
+                    lists = self._vob_lists.get(vob.visual)
+                    if lists is None:
+                        continue
+                    rot = vob.rotation
+                    px, py, pz = vob.position
+                    matrix = (rot[0], rot[3], rot[6], 0.,
+                              rot[1], rot[4], rot[7], 0.,
+                              rot[2], rot[5], rot[8], 0.,
+                              px, py, pz, 1.)
+                    for texture, list_id in lists:
+                        grouped.setdefault(texture, []).append((list_id, matrix))
+            self._vob_batches = tuple(
+                (texture, tuple(instances)) for texture, instances in grouped.items())
+            self._vob_batches_key = batch_key
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE if self.render_mode == 'wire' else GL_FILL)
         try:
-            for texture, instances in grouped.items():
+            for texture, instances in self._vob_batches:
                 tex_id = self._texture_id(texture)
                 self._bind_texture(tex_id)
                 for list_id, matrix in instances:
