@@ -6,10 +6,12 @@ All generated files are staging-only; project data and Gothic scripts stay intac
 from __future__ import annotations
 
 import zlib
+import re
 from pathlib import Path
 
 from .recipes import RecipeStore
 from .daedalus_merge import ScriptTree, definitions, target_path
+from .scripts import load_text
 
 
 ACTION_ID = 'recipe:learn#GE_LearnRecipe'
@@ -57,7 +59,7 @@ def prepare_recipe_learning(project, content):
                 path, definition = previous
                 block = tree.documents[path].text[definition.start:definition.end]
                 if (definition.kind != 'var' or
-                        not __import__('re').match(r'var\s+int\s+', block, __import__('re').I) or
+                        not re.match(r'var\s+int\s+', block, re.I) or
                         '[' in block):
                     raise ValueError(f'{variable}: требуется скалярная глобальная var int')
             else:
@@ -90,8 +92,7 @@ def prepare_recipe_learning(project, content):
 
 def prioritize_learning(manifest):
     """Ensure learning definitions precede action wrappers in Gothic.src."""
-    source, encoding = __import__(
-        'gothic_editor.core.scripts', fromlist=['load_text']).load_text(manifest)
+    source, encoding = load_text(manifest)
     lines = source.splitlines()
     name = OUTPUT.as_posix().casefold()
     matches = [line for line in lines if line.strip().replace('\\', '/').casefold() == name]
