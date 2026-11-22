@@ -176,7 +176,7 @@ def _dxt(data, width, height, kind):
     return bytes(output)
 
 
-def read_ztex(data):
+def read_ztex(data, *, max_dimension=None):
     if len(data) < 36 or data[:4] != b'ZTEX':
         raise ValueError('Invalid ZTEX header')
     version, kind, width, height, levels, _, _, _ = struct.unpack_from('<8I', data, 4)
@@ -189,9 +189,19 @@ def read_ztex(data):
     def size(w, h):
         return w * h * bytes_per_pixel[kind] if kind < 10 else ((w + 3) // 4) * ((h + 3) // 4) * (8 if kind == 10 else 16)
 
+    # ZenGin stores mipmaps from smallest to largest. Preview may decode an
+    # existing smaller level directly, avoiding full-resolution DXT decoding.
+    chosen = 0
+    if max_dimension is not None:
+        if not isinstance(max_dimension, int) or max_dimension <= 0:
+            raise ValueError('Invalid texture preview size')
+        while (chosen + 1 < levels and
+               max(max(1, width >> chosen), max(1, height >> chosen)) > max_dimension):
+            chosen += 1
     offset = 36 + (1024 if kind == 9 else 0)
-    # ZenGin stores mipmaps from smallest to largest.
-    offset += sum(size(max(1, width >> level), max(1, height >> level)) for level in range(levels - 1, 0, -1))
+    offset += sum(size(max(1, width >> level), max(1, height >> level))
+                  for level in range(levels - 1, chosen, -1))
+    width, height = max(1, width >> chosen), max(1, height >> chosen)
     if offset + size(width, height) > len(data):
         raise ValueError('Truncated ZTEX pixels')
     pixels = data[offset:offset + size(width, height)]
@@ -230,8 +240,9 @@ def read_ztex(data):
     return Texture(width, height, bytes(output))
 
 
-def read_texture(data):
-    return read_ztex(data) if data.startswith(b'ZTEX') else read_tga(data)
+def read_texture(data, *, max_dimension=None):
+    return (read_ztex(data, max_dimension=max_dimension)
+            if data.startswith(b'ZTEX') else read_tga(data))
 
 
 def _pack_rgb565(r, g, b):
