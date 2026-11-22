@@ -98,13 +98,38 @@ class DocumentPagesTests(unittest.TestCase):
         script = render_document('ITWR_NOTE', '# Записка\n\nТекст.', book=False)
         self.assertIn('Doc_SetMargins(doc, 0, 50, 50, 50, 50, TRUE);', script)
 
-    def test_two_pages_and_overflow(self):
+    def test_long_document_is_paginated_without_truncation(self):
         raw = '# Страница\n\n' + ' '.join(['трава'] * 42)
-        # A long paragraph is supported only when it fits a single page in v1.
         self.assertEqual(len(paginate(raw)), 1)
         long = ('# Заголовок\n\n' + ' '.join(['трава'] * 40) + '\n\n') * 4
-        with self.assertRaisesRegex(ValueError, 'двух страниц'):
-            paginate(long)
+        pages = paginate(long, book=True)
+        self.assertGreater(len(pages), 2)
+        script = render_document('ITWR_LONGBOOK', long, book=True)
+        self.assertIn('var int GE_DocSpread_ITWR_LONGBOOK;', script)
+        self.assertIn('func void GE_ShowDocument_ITWR_LONGBOOK_Part_0()', script)
+        self.assertIn('func void GE_ShowDocument_ITWR_LONGBOOK_Part_1()', script)
+        self.assertIn('GE_DocSpread_ITWR_LONGBOOK = GE_DocSpread_ITWR_LONGBOOK + 1;', script)
+        self.assertEqual(script.count('Doc_Show(doc);'), (len(pages) + 1) // 2)
+        self.assertNotIn('Doc_SetPages(doc, 3)', script)
+
+    def test_experience_essence_recipe_text_is_supported(self):
+        raw = (
+            '# Эссенция опыта\n'
+            'Мандибулы полевого хищника содержат редкое вещество, позволяющее существу действовать с '
+            'поразительной быстротой и точностью. Опытный алхимик способен извлечь эту силу и '
+            'заключить её в эссенцию.\n\n'
+            '# Способ приготовления:\n'
+            'Измельчить мандибулы полевого хищника до состояния мелкого порошка. Добавить его '
+            'в мензурку с водой и медленно нагревать, пока жидкость не приобретёт золотистый оттенок.\n\n'
+            'Полученная эссенция обостряет восприятие и дарует выпившему частицу знаний, '
+            'накопленных самой природой.\n\n'
+            'Предостережение: если переварить зелье, то есть риск превращения в мясного жука.'
+        )
+        pages = paginate(raw, book=True)
+        self.assertGreater(len(pages), 2)
+        script = render_document('ITWR_ESSENCE', raw, book=True)
+        self.assertIn('GE_ShowDocument_ITWR_ESSENCE_Part_1', script)
+        self.assertIn('мясного жука', script)
 
     def test_apply_documents_changes_staging_only(self):
         path = self.text()
@@ -127,6 +152,21 @@ class DocumentPagesTests(unittest.TestCase):
         changed = apply_documents(self.project, self.content)
         generated = (self.content / changed[0]).read_text('cp1251')
         self.assertIn('GE_ItemActions_ITWR_RECIPE();', generated)
+
+    def test_actions_on_long_books_are_invoked_by_dispatcher(self):
+        path = self.text('long.md', ('# Книга\n\n' + ' '.join(['алхимия'] * 100)))
+        import json
+        self.stage(metadata={
+            'document_text': path,
+            'item_actions': json.dumps([{'id': 'recipe:learn#GE_LearnRecipe',
+                                          'values': {'recipe': '123'}}])
+        })
+        changed = apply_documents(self.project, self.content)
+        generated = (self.content / changed[0]).read_text('cp1251')
+        dispatcher = generated[generated.index('func void GE_ShowDocument_ITWR_RECIPE()'):]
+        self.assertIn('GE_ItemActions_ITWR_RECIPE();', dispatcher)
+        self.assertEqual(generated.count('GE_ItemActions_ITWR_RECIPE();'), 1)
+        self.assertIn('GE_ShowDocument_ITWR_RECIPE_Part_1();', dispatcher)
 
     def test_missing_document_blocks_generation(self):
         target = self.stage(metadata={'document_text': 'Assets/Texts/Documents/missing.md'})
