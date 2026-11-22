@@ -1,6 +1,6 @@
 """Edit category titles and custom menu groups using shared form widgets."""
 from tkinter import messagebox
-from gothic_editor.core.recipe_categories import RecipeCategories, STOCK
+from gothic_editor.core.recipe_categories import RecipeCategories, STOCK, stock_binding
 from gothic_editor.core.recipes import RecipeStore
 from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets.panel import ScrollableArea
@@ -75,9 +75,16 @@ class RecipeCategoriesWindow(EditorDialog):
 
     def save(self):
         try:
-            rows = [{'id': code.get(), 'name': name.get(), 'parent': parent.get(),
-                     **({'binding': code.get()} if code.get() in STOCK else {})}
-                    for _, code, name, parent in self.rows]
+            existing = {row['id']: row for row in self.store.load()}
+            rows = []
+            for _, code, name, parent in self.rows:
+                item = {'id': code.get(), 'name': name.get(), 'parent': parent.get()}
+                original = existing.get(item['id'])
+                binding = stock_binding(original) if original is not None else (
+                    item['id'] if item['id'] in STOCK else None)
+                if binding is not None:
+                    item['binding'] = binding
+                rows.append(item)
             keys = {row['id'] for row in rows}
             for recipe in RecipeStore(self.project).load():
                 if recipe.get('category') and recipe['category'] not in keys:
