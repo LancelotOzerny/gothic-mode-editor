@@ -159,6 +159,24 @@ class RecipeController:
             except (OSError, ValueError) as exc:
                 messagebox.showerror(tr('recipes.title'), str(exc), parent=self.app)
 
+    def import_category(self, category):
+        if self.error or not self.app._save_editors():
+            return
+        try:
+            from gothic_editor.core.recipe_import import import_category_recipes
+            imported, existing, unsupported = import_category_recipes(
+                self.app.repo.root, self.app.repo.game, category,
+                history=self.app.history)
+            self.load()
+            messagebox.showinfo(
+                tr('recipes.title'),
+                f'Импортировано рецептов: {imported}\n'
+                f'Уже импортировано: {existing}\n'
+                f'Не удалось распознать рецептов Gothic: {unsupported}',
+                parent=self.app)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror(tr('recipes.title'), str(exc), parent=self.app)
+
     def categories(self):
         if not self.app._save_editors():return
         from gothic_editor.ui.windows.recipe_categories import RecipeCategoriesWindow
