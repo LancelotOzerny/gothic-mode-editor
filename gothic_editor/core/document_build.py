@@ -52,8 +52,8 @@ def apply_documents(project, content):
         # callback must not show its old page over this newly generated text.
         if any(row['id'] for row in assignments(item.editor_metadata.get('item_actions', ''))):
             action = 'GE_ItemActions_' + item.instance
-            script = script.replace('    doc = Doc_Create();',
-                                    f'    {action}();\n    doc = Doc_Create();', 1)
+            entry = f'func void GE_ShowDocument_{item.instance}()\n{{'
+            script = script.replace(entry, entry + f'\n    {action}();', 1)
         for parsed in definitions(script, item.instance):
             for name in parsed.names:
                 if tree.unique(name):
