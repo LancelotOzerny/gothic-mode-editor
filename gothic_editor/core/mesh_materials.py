@@ -19,6 +19,12 @@ def mrm_materials(data, count):
     if header is None:
         return result
     position = header.end()
+    if position + 4 > len(data):
+        return result
+    declared = struct.unpack_from('<i', data, position)[0]
+    if declared < 0 or declared > 65535:
+        return result
+    position += 4
 
     def string(limit):
         nonlocal position
@@ -29,7 +35,7 @@ def mrm_materials(data, count):
         position = end + 1
         return value
 
-    for index in range(count):
+    for index in range(min(count, declared)):
         try:
             string(len(data))  # external material name
             start = position
