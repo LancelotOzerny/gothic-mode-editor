@@ -773,7 +773,7 @@ class EditorApp(tk.Tk):
         self.viewer.pack_forget()
         self.media_viewer.pack_forget()
         self.editor_panes.paneconfigure(self.editor_middle,hide=False)
-        self.editor_panes.paneconfigure(self.editor_inspector,hide=True)
+        self.editor_panes.paneconfigure(self.editor_inspector,hide=False)
         self.trading_panel.pack(fill='both',expand=True)
 
     def close_trading(self):
