@@ -7,8 +7,8 @@ from .npcs import NpcCatalog
 from .scripts import mask_comments
 from .trading import TradingStore
 
-OUTPUT = Path('Story/GE_Trading.d')
-DIALOG_OUTPUT = Path('Dialoge/GE_TradeDialogs.d')
+OUTPUT = Path('GE_Trading/Stock.d')
+DIALOG_OUTPUT = Path('GE_Trading/Dialogs.d')
 MAIN = 'B_GiveTradeInv'
 
 def _code(npc, config):
