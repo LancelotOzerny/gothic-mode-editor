@@ -153,7 +153,7 @@ def render_document(instance, raw, *, book=False):
             lines.append(f'    if ({state} == {index}) {{ {name}_Part_{index}(); }};')
         lines.extend((
             f'    {state} = {state} + 1;',
-            f'    if ({state} >= {len(spreads)}) { {state} = 0; };',
+            f'    if ({state} >= {len(spreads)}) {{ {state} = 0; }};',
             '};',
         ))
         parts.append('\n'.join(lines))
