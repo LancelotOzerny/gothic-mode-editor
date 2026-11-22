@@ -73,11 +73,12 @@ def parsed_blocks(raw):
     return blocks
 
 
-def paginate(raw):
+def paginate(raw, *, book=False):
     pages = [[]]
     used = 0
+    max_lines = 10 if book else MAX_LINES
     for kind, value in parsed_blocks(raw):
-        width = HEADING_WIDTH if kind == 'heading' else LINE_WIDTH
+        width = (19 if kind == 'heading' else 24) if book else (HEADING_WIDTH if kind == 'heading' else LINE_WIDTH)
         # Gothic fonts are proportional. This is intentionally conservative,
         # not a pixel-perfect measurement.
         lines = textwrap.wrap(value, width=width,
@@ -85,16 +86,16 @@ def paginate(raw):
                               break_on_hyphens=False) or ['']
         while lines:
             if pages[-1]:
-                if used + 1 >= MAX_LINES:
+                if used + 1 >= max_lines:
                     pages.append([])
                     used = 0
                 else:
                     used += 1  # One paragraph gap
-            available = MAX_LINES - used
+            available = max_lines - used
             if kind == 'heading' and len(lines) > available and pages[-1]:
                 pages.append([])
                 used = 0
-                available = MAX_LINES
+                available = max_lines
             if len(pages) > MAX_PAGES:
                 raise ValueError('Текст занимает более двух страниц Gothic. Сократите или разделите книгу.')
             chunk, lines = lines[:available], lines[available:]
@@ -115,14 +116,17 @@ def literal(text):
 
 
 def render_document(instance, raw, *, book=False):
-    pages = paginate(raw)
+    pages = paginate(raw, book=book)
     lines = [f'func void GE_ShowDocument_{instance}()',
              '{', '    var int doc;', '    doc = Doc_Create();',
              f'    Doc_SetPages(doc, {len(pages)});']
     textures = ('Book_Mage_L.tga', 'Book_Mage_R.tga') if book else ('letters.TGA', 'letters.TGA')
     for page, blocks in enumerate(pages):
+        # Gothic book textures contain two halves on one canvas. For left
+        # and right pages, the unused half must be excluded by large margins.
+        margins = ((275, 20, 30, 20) if page == 0 else (30, 20, 275, 20)) if book else (50, 50, 50, 50)
         lines.extend((f'    Doc_SetPage(doc, {page}, {literal(textures[page])}, FALSE);',
-                      f'    Doc_SetMargins(doc, {page}, 60, 40, 60, 40, TRUE);'))
+                      f'    Doc_SetMargins(doc, {page}, {margins[0]}, {margins[1]}, {margins[2]}, {margins[3]}, TRUE);'))
         for number, (kind, value) in enumerate(blocks):
             if number:
                 lines.append(f'    Doc_PrintLine(doc, {page}, "");')
