@@ -258,6 +258,43 @@ class ResourcesPanel(Panel):
         self._selected=path
         self.context(event)
 
+    def _refresh_changed(self, source, result):
+        """Update only the affected tree nodes and the visible folder."""
+        # The tree is lazily populated; an unchanged ancestor can remain intact.
+        if source is not None and source != result:
+            for node, path in tuple(self._tree_paths.items()):
+                if path != source:
+                    continue
+                descendants = (node,) + tuple(self.tree.get_children(node))
+                # Remove mappings for every descendant, not just direct children.
+                def drop(current):
+                    for child in self.tree.get_children(current):
+                        drop(child)
+                    self._tree_paths.pop(current, None)
+                drop(node)
+                self.tree.delete(node)
+                break
+        if result is not None and (source != result):
+            parent = result.parent
+            parent_node = next((node for node, path in self._tree_paths.items()
+                                if path == parent), None)
+            if parent_node is not None:
+                children = self.tree.get_children(parent_node)
+                # A dummy child means the directory has not been loaded yet.
+                if not children or children[0] in self._tree_paths:
+                    if result.is_dir() or result.suffix.lower() == '.d':
+                        self._add_node(parent_node, result)
+                elif result.is_dir() or result.suffix.lower() == '.d':
+                    # Preserve lazy loading; the new child is discovered on expand.
+                    pass
+        # Existing tiles depend only on the contents of the visible directory.
+        self._show_files()
+        if result in self.tiles:
+            self.select_file(result)
+            self.tiles[result].focus_set()
+        else:
+            self.scroll_area.canvas.focus_set()
+
     def _operation(self,operation,*,source=None):
         try:
             if not self.before_change():return
@@ -267,15 +304,12 @@ class ResourcesPanel(Panel):
             if history is not None:history.record(snapshot,(result,) if result is not None else ())
             if source is not None:
                 if self.folder is not None and self.folder.is_relative_to(source):
-                    self.folder = result / self.folder.relative_to(source)
+                    self.folder = (result / self.folder.relative_to(source)
+                                   if result is not None else source.parent)
                 if self._copied is not None and self._copied.is_relative_to(source):
-                    self._copied = result / self._copied.relative_to(source)
-            self.refresh()
-            if result in self.tiles:
-                self.select_file(result)
-                self.tiles[result].focus_set()
-            else:
-                self.scroll_area.canvas.focus_set()
+                    self._copied = (result / self._copied.relative_to(source)
+                                    if result is not None else None)
+            self._refresh_changed(source, result)
             self.on_changed(source, result)
         except (OSError,ValueError) as exc:
             messagebox.showerror(tr('resources.title'),str(exc),parent=self.winfo_toplevel())
