@@ -231,6 +231,8 @@ class WorldPreviewPanel(tk.Frame):
             return
         self.status.configure(text='Чтение геометрии: ' + Path(path.name).name)
         if self._textures is not None:
+            if self._gl_view is not None:
+                self._gl_view.textures = None
             self._textures.close()
             self._textures = None
         self._texture_reported.clear()
