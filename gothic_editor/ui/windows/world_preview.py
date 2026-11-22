@@ -34,6 +34,9 @@ class WorldPreviewPanel(tk.Frame):
         self._world_height = 0.0
         self._animation_id = None
         self._solid = True
+        self._render_mode = 'textures'
+        self._textures = None
+        self._texture_reported = set()
         self._gl_view = None
         self._gl_error = None
         self._fly_mode = False
@@ -78,7 +81,7 @@ class WorldPreviewPanel(tk.Frame):
                   bg='#334155', fg='white', relief='flat').pack(side='left', padx=2)
         tk.Button(header, text='▼', command=lambda: self.move_focus(0, 1),
                   bg='#334155', fg='white', relief='flat').pack(side='left', padx=2)
-        self.surface_button = tk.Button(header, text='Поверхности', command=self.toggle_surfaces,
+        self.surface_button = tk.Button(header, text='Текстуры', command=self.toggle_surfaces,
                   bg='#334155', fg='white', relief='flat')
         self.surface_button.pack(side='left', padx=4)
         self.vob_button = tk.Button(header, text='VOB: вкл', command=self.toggle_vobs,
@@ -227,6 +230,27 @@ class WorldPreviewPanel(tk.Frame):
             self.status.configure(text='Завершите загрузку текущего мира перед открытием другого.')
             return
         self.status.configure(text='Чтение геометрии: ' + Path(path.name).name)
+        if self._textures is not None:
+            self._textures.close()
+            self._textures = None
+        self._texture_reported.clear()
+        from gothic_editor.core.world_textures import WorldTextures
+        from gothic_editor.core.world_resources import WorldResources
+        repo = getattr(self._app, 'repo', None)
+        sources_textures = {}
+        roots = []
+        if repo is not None:
+            sources_textures.update(repo.archive_models.texture_entries)
+            try:
+                sources_textures.update(WorldResources(repo.root).overrides('texture'))
+            except (OSError, ValueError) as exc:
+                self._log_message(f'[ZEN] Переопределения текстур: {exc}', error=True)
+            roots.extend((repo.root / 'Assets' / 'Textures',
+                          repo.root / 'Data'))
+        if self._game is not None:
+            roots.extend((self._game / '_work' / 'data' / 'Textures',
+                          self._game / '_work' / 'Data' / 'Textures'))
+        self._textures = WorldTextures(sources_textures, loose_roots=roots)
         self._scene = None
         self._world = None
         self._focus = None
@@ -424,8 +448,12 @@ class WorldPreviewPanel(tk.Frame):
         self.queue_draw()
 
     def toggle_surfaces(self):
-        self._solid = not self._solid
-        self.surface_button.config(text='Поверхности' if self._solid else 'Каркас')
+        modes = ('textures', 'solid', 'wire')
+        labels = {'textures': 'Текстуры', 'solid': 'Без текстур',
+                  'wire': 'Каркас'}
+        self._render_mode = modes[(modes.index(self._render_mode) + 1) % len(modes)]
+        self._solid = self._render_mode != 'wire'
+        self.surface_button.config(text=labels[self._render_mode])
         self.queue_draw()
 
     def _animate_camera(self):
@@ -584,6 +612,13 @@ class WorldPreviewPanel(tk.Frame):
             view.span = (self._world.chunk_size * (2*self._chunk_radius+1)
                          if self._world is not None else 6000.)
             view.solid = self._solid
+            view.render_mode = self._render_mode
+            view.textures = self._textures
+            if self._textures is not None:
+                for error in self._textures.get_errors():
+                    if error not in self._texture_reported:
+                        self._texture_reported.add(error)
+                        self._log_message(error, error=True)
             return
         self.canvas.delete('scene')
         w = max(2, self.canvas.winfo_width())
@@ -634,6 +669,9 @@ class WorldPreviewPanel(tk.Frame):
                 self._log_exception('Ошибка отображения', exc)
 
     def destroy(self):
+        if self._textures is not None:
+            self._textures.close()
+            self._textures = None
         if self._closed:
             return
         self._closed = True
