@@ -273,8 +273,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         if identifier in self._gpu_textures:
             self._gpu_textures.move_to_end(identifier)
             return self._gpu_textures[identifier][0]
-        if (self._uploads_this_frame >= 2 or
-                (self._uploads_this_frame and perf_counter() - self._frame_start > 0.006)):
+        if self._uploads_this_frame >= 1:
             return 0
         texture = self.textures.request(name)
         if texture is None:
@@ -335,7 +334,8 @@ class WorldOpenGLFrame(OpenGLFrame):
     def _warm_gpu_textures(self):
         """Upload at most one neighbor texture on otherwise idle frames."""
         if (self.render_mode != 'textures' or self.textures is None
-                or not self._can_warm_gpu or self._uploads_this_frame):
+                or not self._can_warm_gpu or self._uploads_this_frame
+                or self._frame_start - self._last_camera_change < 0.25):
             return
         count = len(self._warm_texture_names)
         for _ in range(min(32, count)):
