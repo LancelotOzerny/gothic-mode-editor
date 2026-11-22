@@ -6,7 +6,7 @@ from unittest.mock import patch
 import struct
 import unittest
 
-from gothic_editor.core.textures import Texture
+from gothic_editor.core.textures import Texture, read_ztex
 from gothic_editor.core.world_textures import WorldTextures
 
 
@@ -50,6 +50,19 @@ class WorldTextureQueueTests(unittest.TestCase):
         image = self.store._decode(self.root / 'A.TGA')
         self.assertEqual((image.width, image.height), (1, 1))
         self.assertEqual(image.pixels, bytes((255, 0, 0, 255)))
+
+    def test_compiled_tex_uses_existing_small_mipmap_in_preview(self):
+        # Three source levels in the Gothic order: 2x2, 4x4, 8x8.
+        header = b'ZTEX' + struct.pack('<8I', 0, 0, 8, 8, 3, 8, 8, 0)
+        levels = (bytes((0, 0, 255, 255)) * 4 +
+                  bytes((0, 255, 0, 255)) * 16 +
+                  bytes((255, 0, 0, 255)) * 64)
+        original = read_ztex(header + levels)
+        preview = read_ztex(header + levels, max_dimension=4)
+        self.assertEqual((original.width, original.height), (8, 8))
+        self.assertEqual(original.pixels[:4], bytes((0, 0, 255, 255)))
+        self.assertEqual((preview.width, preview.height), (4, 4))
+        self.assertEqual(preview.pixels[:4], bytes((0, 255, 0, 255)))
 
     def test_loose_index_pending_does_not_mark_texture_missing(self):
         future = Future()
