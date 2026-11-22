@@ -1,7 +1,7 @@
 """Bounded, read-only extraction of compiled ZenGin world mesh geometry.
 
-MeshAndBsp contains an embedded chunked MSH followed by a BSP tree. Materials
-and lightmaps are intentionally not decoded in the first wireframe iteration.
+MeshAndBsp contains an embedded chunked MSH followed by a BSP tree.
+The mesh material names and corner UVs are decoded without changing game files.
 """
 from __future__ import annotations
 from dataclasses import dataclass
@@ -73,10 +73,12 @@ def parse_mesh_and_bsp(stream, limit, *, include_triangles=False):
             # A binary zCMaterial archive, including the original texture names.
             # A broken archive must not prevent the valid geometry from loading.
             data = _read(stream, chunk_end - stream.tell(), chunk_end)
-            match = re.search(rb'objects\s+(\d+)', data[:4096])
-            if match is not None:
-                count = min(int(match.group(1)), 65535)
+            header = re.search(rb'\bBINARY\r?\n.*?\r?\nEND\r?\nobjects [^\n]*\nEND\r?\n(?:\r?\n)?', data[:4096], re.S)
+            if header is not None and header.end() + 4 <= len(data):
                 try:
+                    count = struct.unpack_from('<i', data, header.end())[0]
+                    if not 0 <= count <= 65535:
+                        count = 0
                     from .mesh_materials import mrm_materials
                     texture_names = tuple(texture for _, texture in mrm_materials(data, count))
                 except (ValueError, struct.error, UnicodeError):
