@@ -201,16 +201,20 @@ class ResourcesPanel(Panel):
         self.location.config(text='Assets'+('/'+relative if relative!='.' else ''))
         for index,path in enumerate(files):
             self.paths[str(index)]=path
-            self.tiles[path]=FileTile(self.scroll_area.content,path,path.name,
-                                     self.select_file,self.open_selected,self.context)
-            tile = self.tiles[path]
-            tile.bind('<Control-KeyPress>',self.shortcut)
-            tile.bind('<F2>',self._tile_rename)
-            tile.bind('<Button-1>', lambda event, path=path: self.start_drag(event, path), add='+')
-            self._bind_drag(tile)
+            self._make_tile(path)
         self.scroll_area.canvas.yview_moveto(0)
         self.layout()
         if selected in self.tiles:self.select_file(selected)
+
+    def _make_tile(self, path):
+        tile = FileTile(self.scroll_area.content,path,path.name,
+                        self.select_file,self.open_selected,self.context)
+        self.tiles[path] = tile
+        tile.bind('<Control-KeyPress>',self.shortcut)
+        tile.bind('<F2>',self._tile_rename)
+        tile.bind('<Button-1>', lambda event, resource=path: self.start_drag(event, resource), add='+')
+        self._bind_drag(tile)
+        return tile
 
     def layout(self,_event=None):
         columns=max(1,self.scroll_area.content.winfo_width()//122)
@@ -287,8 +291,25 @@ class ResourcesPanel(Panel):
                 elif result.is_dir() or result.suffix.lower() == '.d':
                     # Preserve lazy loading; the new child is discovered on expand.
                     pass
-        # Existing tiles depend only on the contents of the visible directory.
-        self._show_files()
+        # Keep the existing tiles. Large folders can have hundreds of files,
+        # and destroying/recreating their Tk widgets made every operation slow.
+        if self.folder is None or not self.folder.is_dir():
+            self._show_files()
+        elif source is not None and result is not None and self.folder == result:
+            # Moving/renaming the directory we were browsing changes its path.
+            self._show_files()
+        else:
+            if source is not None and source != result and source in self.tiles:
+                self.tiles.pop(source).destroy()
+                if self._selected == source:
+                    self._selected = None
+            if result is not None and result.parent == self.folder and result not in self.tiles:
+                self._make_tile(result)
+            self.tiles = dict(sorted(self.tiles.items(),
+                                     key=lambda pair: (not pair[0].is_dir(), pair[0].name.casefold())))
+            self.paths = {str(index): path for index, path in enumerate(self.tiles)}
+            self.columns = 0
+            self.layout()
         if result in self.tiles:
             self.select_file(result)
             self.tiles[result].focus_set()
