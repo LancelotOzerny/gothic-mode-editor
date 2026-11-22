@@ -17,6 +17,9 @@ def _code(npc, config):
     for chapter in sorted({r['chapter'] for r in config['stock']}):
         lines.append(f'var int GE_TradeChapter_{ident}_{chapter};')
     lines.append(f'func void GE_TradeStock_{ident}(var C_Npc slf) {{')
+    hours = config.get('refresh_hours', 0)
+    if hours:
+        lines += ['    var int geHour;', '    var int geMinute;', '    var int geNow;']
     for chapter in sorted({r['chapter'] for r in config['stock']}):
         lines.append(f'    if ((Kapitel >= {chapter}) && (GE_TradeChapter_{ident}_{chapter} == FALSE)) {{')
         for row in config['stock']:
@@ -24,10 +27,8 @@ def _code(npc, config):
                 lines.append(f"        CreateInvItems(slf, {row['item']}, {row['quantity']});")
         lines.append(f'        GE_TradeChapter_{ident}_{chapter} = TRUE;')
         lines.append('    };')
-    hours = config.get('refresh_hours', 0)
     if hours:
         lines += [
-            '    var int geHour;', '    var int geMinute;', '    var int geNow;',
             '    Wld_GetTime(geHour, geMinute);',
             '    geNow = (Wld_GetDay() * 24) + geHour + 1;',
             f'    if ((GE_TradeLast_{ident} == 0) || ((geNow - GE_TradeLast_{ident}) >= {hours})) {{'
@@ -49,7 +50,7 @@ def _code(npc, config):
                 ]
         lines += [f'        GE_TradeLast_{ident} = geNow;', '    };']
     lines.append('};')
-    if config.get('dialog', True):
+    if config.get('dialog', False):
         lines += [
             f'func int GE_TradeCondition_{ident}() {{',
             f"    if (Kapitel >= {config.get('min_chapter', 1)}) {{ return TRUE; }};",
