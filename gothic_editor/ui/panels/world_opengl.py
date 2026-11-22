@@ -19,7 +19,7 @@ from OpenGL.GL import (
     GL_FILL, GL_FRONT_AND_BACK, GL_LEQUAL, GL_LINE, GL_MODELVIEW,
     GL_PROJECTION, GL_TRIANGLES, glDepthFunc, GL_COMPILE,
     glBindTexture, glGenTextures, glDeleteTextures, glTexImage2D,
-    glTexParameteri, glTexCoord2f, glTexEnvi, glPixelStorei, glGenerateMipmap,
+    glTexParameteri, glTexCoord2f, glTexEnvi, glPixelStorei,
     GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER,
     GL_TEXTURE_WRAP_S, GL_TEXTURE_WRAP_T, GL_LINEAR, GL_LINEAR_MIPMAP_LINEAR, GL_REPEAT,
     GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE, GL_RGBA,
@@ -82,7 +82,9 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._vob_upload_cursor = 0
         self._profile_started = perf_counter()
         self._profile_frames = 0
-        self._profile_times = {'prepare': 0., 'terrain': 0., 'vobs': 0., 'warm': 0.}
+        self._profile_times = {'prepare': 0., 'terrain': 0., 'vobs': 0., 'warm': 0., 'upload': 0.}
+        self._profile_uploads = 0
+        self._profile_slowest_upload = ('', 0.)
         self._profile_peak = 0.
 
     def _failed_context(self, exc):
@@ -130,12 +132,17 @@ class WorldOpenGLFrame(OpenGLFrame):
                                        for name, value in self._profile_times.items())
                     message = (f'[OpenGL] {self.render_mode}: {frames/window:.1f} FPS, '
                                f'макс. кадр {self._profile_peak*1000:.0f}мс, '
-                               f'{stages}, GPU-текстур: {len(self._gpu_textures)}')
+                               f'{stages}, GPU-текстур: {len(self._gpu_textures)}, '
+                               f'загрузок: {self._profile_uploads}, '
+                               f'макс. upload: {self._profile_slowest_upload[1]*1000:.0f}мс '
+                               f'({self._profile_slowest_upload[0]})')
                     self.after_idle(lambda msg=message: self.master._log_message(msg))
                     self._profile_started = perf_counter()
                     self._profile_frames = 0
                     self._profile_peak = 0.
                     self._profile_times = dict.fromkeys(self._profile_times, 0.)
+                    self._profile_uploads = 0
+                    self._profile_slowest_upload = ('', 0.)
 
     def _redraw_scene(self):
         width, height = max(1, self.winfo_width()), max(1, self.winfo_height())
@@ -274,8 +281,8 @@ class WorldOpenGLFrame(OpenGLFrame):
         texture = self.textures.request(name)
         if texture is None:
             return 0
-        # GPU mip levels need about 1/3 more storage than the base level.
-        size = len(texture.pixels) * 4 // 3 + 16
+        # Current preview uses one GPU level; count only actual allocated bytes.
+        size = len(texture.pixels)
         if size > self._gpu_texture_budget:
             return 0
         if self._gpu_texture_bytes + size > self._gpu_texture_budget:
@@ -285,6 +292,7 @@ class WorldOpenGLFrame(OpenGLFrame):
                 # Insufficient free space without evicting a visible material.
                 return 0
         tex_id = 0
+        upload_start = perf_counter()
         try:
             tex_id = int(glGenTextures(1))
             if not tex_id:
@@ -297,22 +305,20 @@ class WorldOpenGLFrame(OpenGLFrame):
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture.width, texture.height,
                          0, GL_RGBA, GL_UNSIGNED_BYTE, texture.pixels)
-            # Trilinear minification prevents distant rock/brick textures from
-            # aliasing into the grainy pattern caused by base-level GL_LINEAR.
-            # Mip generation happens once, never for every camera frame.
-            try:
-                glGenerateMipmap(GL_TEXTURE_2D)
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                                GL_LINEAR_MIPMAP_LINEAR)
-            except Exception:
-                # Keep the base level usable on older OpenGL contexts.
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+            # No glGenerateMipmap during the draw: some software/legacy GL
+            # drivers stall for hundreds of milliseconds per new texture.
+            # Restore mipmaps only after the upload bottleneck is resolved.
         except Exception as exc:
             if tex_id:
                 glDeleteTextures([tex_id])
             self._invalid_gpu.add(identifier)
             self.textures.report_error(name, exc)
             return 0
+        elapsed = perf_counter() - upload_start
+        self._profile_times['upload'] += elapsed
+        self._profile_uploads += 1
+        if elapsed > self._profile_slowest_upload[1]:
+            self._profile_slowest_upload = (identifier, elapsed)
         while self._gpu_texture_bytes + size > self._gpu_texture_budget and self._gpu_textures:
             victim = next((key for key in self._gpu_textures
                            if key not in self._visible_gpu), None)
