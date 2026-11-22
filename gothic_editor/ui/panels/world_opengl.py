@@ -79,11 +79,6 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._warm_texture_names = ()
         self._warm_texture_cursor = 0
         self._can_warm_gpu = False
-        self._bound_texture = None
-        self._pending_mipmaps = OrderedDict()
-        self._view_state = None
-        self._last_camera_change = perf_counter()
-        self._last_mipmap_build = 0.0
 
     def _failed_context(self, exc):
         if self._failed:
@@ -118,8 +113,6 @@ class WorldOpenGLFrame(OpenGLFrame):
         width, height = max(1, self.winfo_width()), max(1, self.winfo_height())
         self._uploads_this_frame = 0
         self._frame_start = perf_counter()
-        self._update_camera_motion()
-        self._bound_texture = None
         glViewport(0, 0, width, height)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         if self.world is None:
@@ -153,49 +146,13 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._draw_chunks()
         self._draw_vobs()
         self._warm_gpu_textures()
-        self._finish_mipmaps_when_idle()
         glDisable(GL_TEXTURE_2D)
         glDisable(GL_ALPHA_TEST)
-
-    def _update_camera_motion(self):
-        camera = self.camera if self.fly else None
-        camera_pos = ((camera.x, camera.y, camera.z) if camera is not None else ())
-        state = (self.fly, camera_pos, self.center, self.yaw, self.pitch,
-                 self.zoom, self.focus, self.radius)
-        if state != self._view_state:
-            self._view_state = state
-            self._last_camera_change = self._frame_start
-
-    def _finish_mipmaps_when_idle(self):
-        # Generating mipmaps inside the visible draw creates GPU stalls when
-        # entering a new chunk. Upgrade one already uploaded texture only once
-        # camera motion has stopped.
-        if (not self._pending_mipmaps or self.render_mode != 'textures'
-                or self._uploads_this_frame or
-                self._frame_start - self._last_camera_change < 0.45 or
-                self._frame_start - self._last_mipmap_build < 0.15):
-            return
-        name, texture_id = self._pending_mipmaps.popitem(last=False)
-        if name not in self._gpu_textures:
-            return
-        try:
-            glBindTexture(GL_TEXTURE_2D, texture_id)
-            glGenerateMipmap(GL_TEXTURE_2D)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                            GL_LINEAR_MIPMAP_LINEAR)
-        except Exception as exc:
-            if self.textures is not None:
-                self.textures.report_error(name, exc)
-        finally:
-            self._bound_texture = None
-            self._last_mipmap_build = self._frame_start
 
     def _delete_textures(self):
         if self._gpu_textures:
             glDeleteTextures([entry[0] for entry in self._gpu_textures.values()])
         self._gpu_textures.clear()
-        self._pending_mipmaps.clear()
-        self._bound_texture = None
         self._gpu_texture_bytes = 0
         self._invalid_gpu.clear()
         self._visible_gpu_key = None
@@ -273,7 +230,8 @@ class WorldOpenGLFrame(OpenGLFrame):
         if identifier in self._gpu_textures:
             self._gpu_textures.move_to_end(identifier)
             return self._gpu_textures[identifier][0]
-        if self._uploads_this_frame >= 1:
+        if (self._uploads_this_frame >= 2 or
+                (self._uploads_this_frame and perf_counter() - self._frame_start > 0.006)):
             return 0
         texture = self.textures.request(name)
         if texture is None:
@@ -301,8 +259,16 @@ class WorldOpenGLFrame(OpenGLFrame):
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture.width, texture.height,
                          0, GL_RGBA, GL_UNSIGNED_BYTE, texture.pixels)
-            # The first upload is just the base level; large synchronous
-            # glGenerateMipmap operations are deferred until camera idle.
+            # Trilinear minification prevents distant rock/brick textures from
+            # aliasing into the grainy pattern caused by base-level GL_LINEAR.
+            # Mip generation happens once, never for every camera frame.
+            try:
+                glGenerateMipmap(GL_TEXTURE_2D)
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                                GL_LINEAR_MIPMAP_LINEAR)
+            except Exception:
+                # Keep the base level usable on older OpenGL contexts.
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
         except Exception as exc:
             if tex_id:
                 glDeleteTextures([tex_id])
@@ -316,11 +282,9 @@ class WorldOpenGLFrame(OpenGLFrame):
                 glDeleteTextures([tex_id])
                 return 0
             old_id, old_size = self._gpu_textures.pop(victim)
-            self._pending_mipmaps.pop(victim, None)
             glDeleteTextures([old_id])
             self._gpu_texture_bytes -= old_size
         self._gpu_textures[identifier] = (tex_id, size)
-        self._pending_mipmaps[identifier] = tex_id
         self._gpu_texture_bytes += size
         self._uploads_this_frame += 1
         return tex_id
@@ -334,8 +298,7 @@ class WorldOpenGLFrame(OpenGLFrame):
     def _warm_gpu_textures(self):
         """Upload at most one neighbor texture on otherwise idle frames."""
         if (self.render_mode != 'textures' or self.textures is None
-                or not self._can_warm_gpu or self._uploads_this_frame
-                or self._frame_start - self._last_camera_change < 0.25):
+                or not self._can_warm_gpu or self._uploads_this_frame):
             return
         count = len(self._warm_texture_names)
         for _ in range(min(32, count)):
@@ -346,22 +309,17 @@ class WorldOpenGLFrame(OpenGLFrame):
             if self._texture_id(name):
                 break
 
-    def _bind_cached_texture(self, tex_id):
-        if tex_id != self._bound_texture:
-            if tex_id:
-                if not self._bound_texture:
-                    glEnable(GL_TEXTURE_2D)
-                    glEnable(GL_ALPHA_TEST)
-                    glAlphaFunc(GL_GREATER, 0.1)
-                    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE)
-                glBindTexture(GL_TEXTURE_2D, tex_id)
-            elif self._bound_texture is not None:
-                glDisable(GL_TEXTURE_2D)
-                glDisable(GL_ALPHA_TEST)
-            self._bound_texture = tex_id
-
     def _draw_group(self, name, list_id):
-        self._bind_cached_texture(self._texture_id(name))
+        tex_id = self._texture_id(name)
+        if tex_id:
+            glEnable(GL_TEXTURE_2D)
+            glEnable(GL_ALPHA_TEST)
+            glAlphaFunc(GL_GREATER, 0.1)
+            glBindTexture(GL_TEXTURE_2D, tex_id)
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE)
+        else:
+            glDisable(GL_TEXTURE_2D)
+            glDisable(GL_ALPHA_TEST)
         glCallList(list_id)
 
     def _delete_lists(self):
@@ -445,35 +403,27 @@ class WorldOpenGLFrame(OpenGLFrame):
 
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE if self.render_mode == 'wire' else GL_FILL)
         try:
-            # Draw instances of one visual together to reduce GL texture
-            # switches, while keeping individual world transforms intact.
-            grouped = OrderedDict()
             for key in nearby:
                 for index in scene.chunks[key]:
                     vob = scene.objects[index]
-                    if vob.visual in self._vob_lists:
-                        grouped.setdefault(vob.visual, []).append(vob)
-            for visual, objects in grouped.items():
-                # Group by material before instance: shared meshes with many
-                # instances require one GL bind per material, not per VOB.
-                transforms = []
-                for vob in objects:
+                    lists = self._vob_lists.get(vob.visual)
+                    if lists is None:
+                        continue
                     rot = vob.rotation
                     px, py, pz = vob.position
-                    transforms.append((rot[0], rot[3], rot[6], 0.,
-                                       rot[1], rot[4], rot[7], 0.,
-                                       rot[2], rot[5], rot[8], 0.,
-                                       px, py, pz, 1.))
-                for texture, list_id in self._vob_lists[visual]:
-                    tex_id = self._texture_id(texture)
-                    self._bind_cached_texture(tex_id)
-                    for matrix in transforms:
-                        glPushMatrix()
-                        try:
-                            glMultMatrixf(matrix)
-                            glCallList(list_id)
-                        finally:
-                            glPopMatrix()
+                    # ZenGin 3x3 rotation in row-major order; OpenGL expects
+                    # column-major 4x4. Translation is world-space.
+                    matrix = (rot[0], rot[3], rot[6], 0.,
+                              rot[1], rot[4], rot[7], 0.,
+                              rot[2], rot[5], rot[8], 0.,
+                              px, py, pz, 1.)
+                    glPushMatrix()
+                    try:
+                        glMultMatrixf(matrix)
+                        for texture, list_id in lists:
+                            self._draw_group(texture, list_id)
+                    finally:
+                        glPopMatrix()
         finally:
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
 
