@@ -79,6 +79,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._warm_texture_names = ()
         self._warm_texture_cursor = 0
         self._can_warm_gpu = False
+        self._vob_upload_cursor = 0
         self._profile_started = perf_counter()
         self._profile_frames = 0
         self._profile_times = {'prepare': 0., 'terrain': 0., 'vobs': 0., 'warm': 0.}
@@ -249,12 +250,14 @@ class WorldOpenGLFrame(OpenGLFrame):
         # Start VOB decoding before terrain/neighbor prefetch fills the queue.
         self.textures.prefetch(
             name for name in self._visible_vob_names if self._needs_decode(name))
-        # Reserve at most one upload for current VOBs before the terrain draw.
-        for name in self._visible_vob_names:
-            if self._uploads_this_frame:
+        # Probe only a small rotating set each frame. Scanning every VOB
+        # material synchronously was expensive in densely decorated worlds.
+        count = len(self._visible_vob_names)
+        for _ in range(min(count, 8)):
+            name = self._visible_vob_names[self._vob_upload_cursor % count]
+            self._vob_upload_cursor = (self._vob_upload_cursor + 1) % count
+            if self._needs_decode(name) and self._texture_id(name):
                 break
-            if self._needs_decode(name):
-                self._texture_id(name)
 
     def _texture_id(self, name):
         if self.render_mode != 'textures' or self.textures is None or not name:
