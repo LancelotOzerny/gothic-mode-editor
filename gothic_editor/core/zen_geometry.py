@@ -5,6 +5,8 @@ and lightmaps are intentionally not decoded in the first wireframe iteration.
 """
 from __future__ import annotations
 from dataclasses import dataclass
+from math import isfinite
+import re
 import struct
 
 
@@ -20,6 +22,8 @@ class WorldGeometry:
     vertices: tuple[tuple[float, float, float], ...]
     triangles: tuple[tuple[int, int, int], ...]
     materials: tuple[int, ...]
+    triangle_uvs: tuple[tuple[tuple[float, float], ...] | None, ...] = ()
+    texture_names: tuple[str, ...] = ()
 
 
 MAX_VERTICES = 2_000_000
@@ -52,6 +56,7 @@ def parse_mesh_and_bsp(stream, limit, *, include_triangles=False):
     if end > limit:
         raise ZenGeometryError('Некорректный размер MeshAndBsp.')
     vertices, triangles, materials = [], [], []
+    triangle_uvs, features, texture_names = [], [], ()
     vertex_count = polygon_count = triangle_count = 0
     version = None
     finished = False
@@ -64,6 +69,30 @@ def parse_mesh_and_bsp(stream, limit, *, include_triangles=False):
             version = struct.unpack('<H', _read(stream, 2, chunk_end))[0]
             if version not in (9, 265):
                 raise ZenGeometryError('Неподдерживаемая версия MSH: ' + str(version))
+        elif kind == 0xB020 and include_triangles:
+            # A binary zCMaterial archive, including the original texture names.
+            # A broken archive must not prevent the valid geometry from loading.
+            data = _read(stream, chunk_end - stream.tell(), chunk_end)
+            match = re.search(rb'objects\s+(\d+)', data[:4096])
+            if match is not None:
+                count = min(int(match.group(1)), 65535)
+                try:
+                    from .mesh_materials import mrm_materials
+                    texture_names = tuple(texture for _, texture in mrm_materials(data, count))
+                except (ValueError, struct.error, UnicodeError):
+                    texture_names = ()
+        elif kind == 0xB040:
+            count = _uint(stream, chunk_end)
+            if count > MAX_VERTICES * 4 or count * 24 > chunk_end - stream.tell():
+                raise ZenGeometryError('Некорректное количество UV-признаков MSH.')
+            if include_triangles:
+                features = []
+                for _ in range(count):
+                    u, v = struct.unpack('<ff', _read(stream, 8, chunk_end))
+                    _read(stream, 16, chunk_end)  # vertex light and normal
+                    features.append((u, v) if isfinite(u) and isfinite(v) else None)
+            else:
+                stream.seek(count * 24, 1)
         elif kind == 0xB030:
             vertex_count = _uint(stream, chunk_end)
             if vertex_count > MAX_VERTICES or vertex_count * 12 > chunk_end - stream.tell():
@@ -91,17 +120,20 @@ def parse_mesh_and_bsp(stream, limit, *, include_triangles=False):
                 if corners * stride > chunk_end - stream.tell():
                     raise ZenGeometryError('Некорректные индексы полигона MSH.')
                 if include_triangles:
-                    indices = []
+                    indices, corner_uvs = [], []
                     for _ in range(corners):
                         index = (_uint(stream, chunk_end) if version == 265 else
                                  struct.unpack('<H', _read(stream, 2, chunk_end))[0])
-                        _read(stream, 4, chunk_end)
+                        feature = _uint(stream, chunk_end)
+                        corner_uvs.append(features[feature] if feature < len(features) else None)
                         if index >= vertex_count:
                             raise ZenGeometryError('Индекс полигона вне таблицы вершин.')
                         indices.append(index)
                     for j in range(1, corners - 1):
                         triangles.append((indices[0], indices[j], indices[j + 1]))
                         materials.append(material)
+                        coords = (corner_uvs[0], corner_uvs[j], corner_uvs[j + 1])
+                        triangle_uvs.append(coords if all(uv is not None for uv in coords) else None)
                 else:
                     stream.seek(corners * stride, 1)
         elif kind == 0xB060:
@@ -114,4 +146,5 @@ def parse_mesh_and_bsp(stream, limit, *, include_triangles=False):
     if include_triangles and not vertices and triangle_count:
         raise ZenGeometryError('Не найдены вершины меша.')
     return (WorldGeometry(vertex_count, polygon_count, triangle_count,
-                          tuple(vertices), tuple(triangles), tuple(materials)), end)
+                          tuple(vertices), tuple(triangles), tuple(materials),
+                          tuple(triangle_uvs), texture_names), end)
