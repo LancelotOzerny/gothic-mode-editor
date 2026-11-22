@@ -6,6 +6,7 @@ only when the optional dependencies are available. No engine/game files change.
 from __future__ import annotations
 
 from math import degrees
+from time import perf_counter
 from collections import OrderedDict
 
 from OpenGL.GL import (
@@ -52,7 +53,8 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._gpu_textures = OrderedDict()
         self._gpu_texture_bytes = 0
         self._invalid_gpu = set()
-        self._gpu_texture_budget = 96 * 1024 * 1024
+        self._gpu_texture_budget = 128 * 1024 * 1024
+        self._visible_gpu = set()
         self.animate = True
         self._failed = False
         self.world = None
@@ -105,6 +107,7 @@ class WorldOpenGLFrame(OpenGLFrame):
     def _redraw_scene(self):
         width, height = max(1, self.winfo_width()), max(1, self.winfo_height())
         self._uploads_this_frame = 0
+        self._frame_start = perf_counter()
         glViewport(0, 0, width, height)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         if self.world is None:
@@ -133,6 +136,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         if self.textures is not self._cached_textures:
             self._delete_textures()
             self._cached_textures = self.textures
+        self._pin_visible_textures()
         self._draw_chunks()
         self._draw_vobs()
         glDisable(GL_TEXTURE_2D)
@@ -145,18 +149,51 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._gpu_texture_bytes = 0
         self._invalid_gpu.clear()
 
+    def _canonical_texture(self, name):
+        from gothic_editor.core.texture_names import texture_candidates
+        return next((candidate for candidate in texture_candidates(name)
+                     if candidate in self.textures.sources), name.casefold())
+
+    def _pin_visible_textures(self):
+        """Avoid evicting textures still needed by this frame's world/VOBs."""
+        self._visible_gpu.clear()
+        if self.textures is None or self.render_mode != 'textures' or self.focus is None:
+            return
+        if self.world is not self._cached_world:
+            self._chunk_names.clear()
+        keys = self.world.visible_chunk_keys(self.focus, self.radius, self.triangle_limit)
+        for key in keys:
+            unique = self._chunk_names.get(key)
+            if unique is None:
+                unique = tuple(dict.fromkeys(
+                    name for uv, name in zip(
+                        self.world.chunk_uvs.get(key, ()),
+                        self.world.chunk_textures.get(key, ()))
+                    if uv is not None and name))
+                self._chunk_names[key] = unique
+            self._visible_gpu.update(self._canonical_texture(name) for name in unique)
+        if self.vobs is not None:
+            for key, indices in self.vobs.chunks.items():
+                if abs(key[0] - self.focus[0]) > self.radius or abs(key[1] - self.focus[1]) > self.radius:
+                    continue
+                for index in indices:
+                    visual = self.vobs.objects[index].visual
+                    mesh = self.vobs.models[visual]
+                    for uv, name in zip(mesh.uvs, mesh.texture_names):
+                        if uv is not None and name:
+                            self._visible_gpu.add(self._canonical_texture(name))
+
     def _texture_id(self, name):
         if self.render_mode != 'textures' or self.textures is None or not name:
             return 0
-        from gothic_editor.core.texture_names import texture_candidates
-        identifier = next((candidate for candidate in texture_candidates(name)
-                           if candidate in self.textures.sources), name.casefold())
+        identifier = self._canonical_texture(name)
         if identifier in self._invalid_gpu:
             return 0
         if identifier in self._gpu_textures:
             self._gpu_textures.move_to_end(identifier)
             return self._gpu_textures[identifier][0]
-        if self._uploads_this_frame >= 2:
+        if (self._uploads_this_frame >= 2 or
+                (self._uploads_this_frame and perf_counter() - self._frame_start > 0.006)):
             return 0
         texture = self.textures.request(name)
         if texture is None:
@@ -195,7 +232,12 @@ class WorldOpenGLFrame(OpenGLFrame):
             self.textures.report_error(name, exc)
             return 0
         while self._gpu_texture_bytes + size > self._gpu_texture_budget and self._gpu_textures:
-            _, (old_id, old_size) = self._gpu_textures.popitem(last=False)
+            victim = next((key for key in self._gpu_textures
+                           if key not in self._visible_gpu), None)
+            if victim is None:
+                glDeleteTextures([tex_id])
+                return 0
+            old_id, old_size = self._gpu_textures.pop(victim)
             glDeleteTextures([old_id])
             self._gpu_texture_bytes -= old_size
         self._gpu_textures[identifier] = (tex_id, size)
@@ -206,9 +248,7 @@ class WorldOpenGLFrame(OpenGLFrame):
     def _needs_decode(self, name):
         if not name:
             return False
-        from gothic_editor.core.texture_names import texture_candidates
-        candidate = next((item for item in texture_candidates(name)
-                          if item in self.textures.sources), name.casefold())
+        candidate = self._canonical_texture(name)
         return candidate not in self._gpu_textures and candidate not in self._invalid_gpu
 
     def _draw_group(self, name, list_id):
