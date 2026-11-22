@@ -71,6 +71,24 @@ class RecipeImportTests(unittest.TestCase):
                               if row['id'] == 'COPY_SPECIAL_1'),
                          'Моё изменённое имя')
 
+    def test_reimport_restores_stock_knowledge_without_touching_ingredients(self):
+        self.store.save(template('HEALTH', 'health'))
+        original = self.store.load()[0]
+        original['name'] = 'Мой рецепт'
+        original['ingredients'] = [{'instance': 'CUSTOM_WATER', 'count': 3}]
+        self.store.save(original, original['id'])
+        updated = template('HEALTH', 'health')
+        updated['availability'] = {'type': 'stock_talent',
+                                   'talent': 'POTION_Health_01'}
+        self.templates[0] = updated
+        imported, existing, _ = import_category_recipes(
+            self.root, None, 'health')
+        self.assertEqual((imported, existing), (0, 1))
+        saved = self.store.load()[0]
+        self.assertEqual(saved['name'], 'Мой рецепт')
+        self.assertEqual(saved['ingredients'], original['ingredients'])
+        self.assertEqual(saved['availability'], updated['availability'])
+
     def test_custom_root_without_gothic_binding_is_rejected(self):
         with self.assertRaisesRegex(ValueError, 'нет исходного раздела Gothic'):
             import_category_recipes(self.root, None, 'custom_root')
