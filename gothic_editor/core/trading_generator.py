@@ -8,6 +8,7 @@ from .scripts import mask_comments
 from .trading import TradingStore
 
 OUTPUT = Path('Story/GE_Trading.d')
+DIALOG_OUTPUT = Path('Dialoge/GE_TradeDialogs.d')
 MAIN = 'B_GiveTradeInv'
 
 def _code(npc, config):
@@ -50,6 +51,8 @@ def _code(npc, config):
                 ]
         lines += [f'        GE_TradeLast_{ident} = geNow;', '    };']
     lines.append('};')
+    stock = '\n'.join(lines)
+    lines = []
     if config.get('dialog', False):
         lines += [
             f'func int GE_TradeCondition_{ident}() {{',
@@ -65,7 +68,7 @@ def _code(npc, config):
             '    permanent = TRUE;', '    description = "Покажи мне свои товары";',
             '    trade = TRUE;', '};'
         ]
-    return '\n'.join(lines)
+    return stock, '\n'.join(lines)
 
 def prepare_trading(project, content):
     """Inject stock hooks into main vanilla dispatcher and create optional C_Info dialogs."""
@@ -76,6 +79,7 @@ def prepare_trading(project, content):
     known = {npc.instance.casefold(): npc.instance for npc in catalog.load()}
     tree = ScriptTree(content)
     chunks = []
+    dialogues = []
     for key, config in sorted(traders.items()):
         if key not in known:
             raise ValueError(f'Торговец {key}: NPC отсутствует в скриптах.')
@@ -88,7 +92,10 @@ def prepare_trading(project, content):
                      f'GE_TradeDialog_{npc.upper()}'):
             if tree.unique(name):
                 raise ValueError(f'Конфликт генерируемого торгового символа: {name}')
-        chunks.append(_code(npc, config))
+        stock, dialogue = _code(npc, config)
+        chunks.append(stock)
+        if dialogue:
+            dialogues.append(dialogue)
     # Patch vanilla dispatcher only in staging, preserving its original actions.
     match = tree.unique(MAIN, 'func')
     if match:
@@ -118,7 +125,16 @@ def prepare_trading(project, content):
         raise ValueError('Занят файл автогенерации торговцев: ' + str(destination))
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(('// Gothic Editor: торговцы\n' + '\n\n'.join(chunks) + '\n').encode('cp1251'))
-    return OUTPUT
+    paths = [OUTPUT]
+    if dialogues:
+        dialog_target = target_path(content, DIALOG_OUTPUT)
+        if dialog_target.exists():
+            raise ValueError('Занят файл автогенерации торговых диалогов: ' + str(dialog_target))
+        dialog_target.parent.mkdir(parents=True, exist_ok=True)
+        dialog_target.write_bytes(('// Gothic Editor: диалоги торговцев\n' +
+                                   '\n\n'.join(dialogues) + '\n').encode('cp1251'))
+        paths.append(DIALOG_OUTPUT)
+    return paths
 
 def prioritize_trading(manifest):
     """Place generated declarations before the vanilla merchant dispatcher and NPC dialogues."""
@@ -133,4 +149,14 @@ def prioritize_trading(manifest):
     index = next((i for i, line in enumerate(lines) if 'b_givetradeinv' in line.casefold()
                   or 'dialog' in line.casefold()), len(lines))
     lines.insert(index, matches[0])
+    dialog_path = DIALOG_OUTPUT.as_posix().casefold()
+    dialog_matches = [line for line in lines if line.strip().replace('\\','/').casefold() == dialog_path]
+    if dialog_matches:
+        if len(dialog_matches) != 1:
+            raise ValueError('Gothic.src: повторяется GE_TradeDialogs.d.')
+        lines = [line for line in lines if line not in dialog_matches]
+        # Dialogue instances need NPC identifiers declared in earlier scripts.
+        index = next((i for i, line in enumerate(lines) if 'dialoge/' in line.replace('\\','/').casefold()
+                      or 'dialog/' in line.replace('\\','/').casefold()), len(lines))
+        lines.insert(index, dialog_matches[0])
     manifest.write_text('\r\n'.join(lines) + '\r\n', encoding=codec, newline='')
