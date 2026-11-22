@@ -52,6 +52,8 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._cached_textures = None
         self._gpu_textures = OrderedDict()
         self._texture_alpha = {}
+        self._canonical_cache = {}
+        self._canonical_cache_sources = None
         self._bound_texture = None
         self._alpha_enabled = False
         self._draw_calls = 0
@@ -89,6 +91,8 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._profile_frames = 0
         self._profile_times = {'prepare': 0., 'terrain': 0., 'vobs': 0., 'warm': 0., 'upload': 0.}
         self._profile_uploads = 0
+        self._profile_draw_calls = 0
+        self._profile_texture_switches = 0
         self._profile_slowest_upload = ('', 0.)
         self._profile_peak = 0.
 
@@ -131,6 +135,8 @@ class WorldOpenGLFrame(OpenGLFrame):
             if self.world is not None:
                 duration = perf_counter() - started
                 self._profile_frames += 1
+                self._profile_draw_calls += self._draw_calls
+                self._profile_texture_switches += self._texture_switches
                 self._profile_peak = max(self._profile_peak, duration)
                 window = perf_counter() - self._profile_started
                 if window >= 5.0:
@@ -141,7 +147,8 @@ class WorldOpenGLFrame(OpenGLFrame):
                                f'макс. кадр {self._profile_peak*1000:.0f}мс, '
                                f'{stages}, GPU-текстур: {len(self._gpu_textures)}, '
                                f'загрузок: {self._profile_uploads}, '
-                               f'вызовов GL: {self._draw_calls}, переключений: {self._texture_switches}, '
+                               f'вызовов GL/кадр: {self._profile_draw_calls/frames:.0f}, '
+                               f'переключений/кадр: {self._profile_texture_switches/frames:.0f}, '
                                f'макс. upload: {self._profile_slowest_upload[1]*1000:.0f}мс '
                                f'({self._profile_slowest_upload[0]})')
                     self.after_idle(lambda msg=message: self.master._log_message(msg))
@@ -150,6 +157,8 @@ class WorldOpenGLFrame(OpenGLFrame):
                     self._profile_peak = 0.
                     self._profile_times = dict.fromkeys(self._profile_times, 0.)
                     self._profile_uploads = 0
+                    self._profile_draw_calls = 0
+                    self._profile_texture_switches = 0
                     self._profile_slowest_upload = ('', 0.)
 
     def _redraw_scene(self):
@@ -209,6 +218,8 @@ class WorldOpenGLFrame(OpenGLFrame):
             glDeleteTextures([entry[0] for entry in self._gpu_textures.values()])
         self._gpu_textures.clear()
         self._texture_alpha.clear()
+        self._canonical_cache.clear()
+        self._canonical_cache_sources = None
         self._bound_texture = None
         self._alpha_enabled = False
         self._gpu_texture_bytes = 0
@@ -216,9 +227,21 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._visible_gpu_key = None
 
     def _canonical_texture(self, name):
+        # Each visible material group calls this every frame. Cache filename
+        # normalization; pathlib and 4x lookup cost add up across thousands
+        # of individual OpenGL display lists.
+        source_key = (id(self.textures), len(self.textures.sources))
+        if source_key != self._canonical_cache_sources:
+            self._canonical_cache.clear()
+            self._canonical_cache_sources = source_key
+        cached = self._canonical_cache.get(name)
+        if cached is not None:
+            return cached
         from gothic_editor.core.texture_names import texture_candidates
-        return next((candidate for candidate in texture_candidates(name)
-                     if candidate in self.textures.sources), name.casefold())
+        identifier = next((candidate for candidate in texture_candidates(name)
+                           if candidate in self.textures.sources), name.casefold())
+        self._canonical_cache[name] = identifier
+        return identifier
 
     def _pin_visible_textures(self):
         """Avoid evicting textures still needed by this frame's world/VOBs."""
