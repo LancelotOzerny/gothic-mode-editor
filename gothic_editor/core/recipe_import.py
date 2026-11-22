@@ -30,12 +30,19 @@ def import_category_recipes(project, game, category, *, history=None):
     templates, skipped = game_recipes(game)
     matching = [row for row in templates if row['category'] == binding]
     store = RecipeStore(project)
-    existing_ids = {row['id'].casefold() for row in store.load()}
+    existing_rows = {row['id'].casefold(): row for row in store.load()}
+    existing_ids = set(existing_rows)
     imported, already = [], 0
     for template in matching:
         # The stock parser assigns a stable COPY_... ID per Gothic C_Info.
         if template['id'].casefold() in existing_ids:
             already += 1
+            saved = existing_rows[template['id'].casefold()]
+            if (saved['availability']['type'] == 'always'
+                    and template['availability']['type'] == 'stock_talent'):
+                upgraded = deepcopy(saved)
+                upgraded['availability'] = deepcopy(template['availability'])
+                imported.append((upgraded, store.path(saved['id'])))
             continue
         data = deepcopy(template)
         data['category'] = category
