@@ -28,14 +28,39 @@ class AssetFiles:
             raise ValueError('Укажите допустимое имя файла или папки без пути.')
         return value
 
-    def create(self, folder, name, script=False):
+    def create(self, folder, name, script=False, *, markdown=False):
         folder = self.checked(folder, allow_root=True)
         name = self.name(name)
-        if script and not name.lower().endswith('.d'):name += '.d'
+        if script and markdown:
+            raise ValueError('Выберите один тип создаваемого файла.')
+        if script:
+            if not name.lower().endswith('.d'):
+                name += '.d'
+            stem = Path(name).stem
+            if not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*', stem, re.ASCII):
+                raise ValueError('Имя скрипта должно быть идентификатором Daedalus: латиница, цифры, _.')
+        if markdown:
+            if not name.lower().endswith('.md'):
+                name += '.md'
+            texts = self.root / 'Texts'
+            if folder != texts and texts not in folder.parents:
+                raise ValueError('Markdown-документы создаются в Assets/Texts.')
         target = self.checked(folder / name)
         if script:
-            with target.open('x', encoding='utf-8'):pass
-        else:target.mkdir()
+            template = (
+                f'// @INFO NAME="{stem}"\\n\\n'
+                f'func void {stem}()\\n'
+                '{\\n'
+                '    // your script code\\n'
+                '};\\n'
+            )
+            with target.open('x', encoding='utf-8') as output:
+                output.write(template)
+        elif markdown:
+            with target.open('x', encoding='utf-8') as output:
+                output.write('# Название\\n\\n')
+        else:
+            target.mkdir()
         return target
 
     def _check_tree(self, path):
