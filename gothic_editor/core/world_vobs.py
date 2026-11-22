@@ -128,6 +128,10 @@ def _load_mesh(source):
         mesh = read_3ds_bytes(data, preview=True)
         # ZenGin's uncompiled 3DS files are Z-up, while compiled meshes are Y-up.
         mesh.vertices = [(x, z, y) for x, y, z in mesh.vertices]
+        # The 3DS preview reader adapts UV V for top-left 2D canvases.
+        # Here textures are already flipped for OpenGL, so restore native V.
+        mesh.uvs = [tuple((u, 1.0 - v) for u, v in corners)
+                    if corners is not None else None for corners in mesh.uvs]
     else:
         raise ValueError('Неподдерживаемая модель.')
     vertices, faces = mesh.vertices, mesh.faces
