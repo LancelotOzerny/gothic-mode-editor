@@ -12,17 +12,17 @@
 `GE_Recipes/Learning.d`:
 
 ```c
-const int GE_RECIPE_HEALTH = 123456; // Код зависит от ID, здесь пример
+const int GE_LEARN_ID_HEALTH = 123456; // Код зависит от ID, здесь пример
 var int GE_KnowsHealth;
 
 func void GE_LearnRecipe(var int recipe)
 {
-    if (recipe == GE_RECIPE_HEALTH) { GE_KnowsHealth = TRUE; };
+    if (recipe == GE_LEARN_ID_HEALTH) { GE_KnowsHealth = TRUE; };
 };
 ```
 
-Имена констант `GE_RECIPE_<ID>` можно использовать в Daedalus вручную:
-`GE_LearnRecipe(GE_RECIPE_HEALTH);`.
+Имена констант `GE_LEARN_ID_<ID>` можно использовать в Daedalus вручную:
+`GE_LearnRecipe(GE_LEARN_ID_HEALTH);`.
 
 Функция меняет только уже существующую переменную знания, которую проверяет
 алхимический стол. Повторное изучение безопасно. Если один флаг знания
