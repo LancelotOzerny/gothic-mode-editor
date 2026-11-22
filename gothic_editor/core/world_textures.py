@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .texture_names import texture_candidates
-from .textures import read_texture
+from .textures import Texture, read_texture
 
 
 class WorldTextures:
@@ -57,7 +57,13 @@ class WorldTextures:
         size = source.size if hasattr(source, 'size') else source.stat().st_size
         if size > 64 * 1024 * 1024:
             raise ValueError('Текстура превышает 64 МБ.')
-        return read_texture(source.read_bytes())
+        image = read_texture(source.read_bytes())
+        # Gothic's UV space uses a top-left image origin (Direct3D);
+        # OpenGL expects bottom-left pixel rows. Flip off the UI thread.
+        stride = image.width * 4
+        rows = (image.pixels[y * stride:(y + 1) * stride]
+                for y in range(image.height - 1, -1, -1))
+        return Texture(image.width, image.height, b''.join(rows))
 
     def request(self, name):
         """Nonblocking request. Returns a decoded Texture if available."""
