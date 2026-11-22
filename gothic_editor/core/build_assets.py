@@ -77,7 +77,7 @@ class BuildAssetService:
         for path in sorted(global_assets.rglob('*')):
             if not path.is_file():continue
             relative=path.relative_to(global_assets)
-            if relative.parts[0].casefold() in ('items','scripts','models','npc','recipes','media'):continue
+            if relative.parts[0].casefold() in ('items','scripts','models','npc','recipes','media','texts'):continue
             if (relative.as_posix().casefold() in ('worlds/overrides.json','worlds/catalog.json')
                     or tuple(part.casefold() for part in relative.parts[:2]) == ('textures','world')):continue
             self.store.layout.checked(path)
