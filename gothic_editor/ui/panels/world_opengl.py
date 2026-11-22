@@ -14,7 +14,7 @@ from OpenGL.GL import (
     glLoadIdentity, glMatrixMode, glMultMatrixf, glOrtho, glPolygonMode,
     glRotatef, glScalef, glTranslatef, glVertex3f, glViewport, glGetIntegerv,
     glCallList, glDeleteLists, glEndList, glGenLists, glNewList,
-    glPushMatrix, glPopMatrix,
+    glPushMatrix, glPopMatrix, glGetString, GL_RENDERER,
     GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT, GL_DEPTH_TEST, GL_DEPTH_BITS,
     GL_FILL, GL_FRONT_AND_BACK, GL_LEQUAL, GL_LINE, GL_MODELVIEW,
     GL_PROJECTION, GL_TRIANGLES, glDepthFunc, GL_COMPILE,
@@ -79,6 +79,10 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._warm_texture_names = ()
         self._warm_texture_cursor = 0
         self._can_warm_gpu = False
+        self._profile_started = perf_counter()
+        self._profile_frames = 0
+        self._profile_times = {'prepare': 0., 'terrain': 0., 'vobs': 0., 'warm': 0.}
+        self._profile_peak = 0.
 
     def _failed_context(self, exc):
         if self._failed:
@@ -98,16 +102,39 @@ class WorldOpenGLFrame(OpenGLFrame):
             # World polygons can have inconsistent winding. Double-sided.
             from OpenGL.GL import GL_CULL_FACE
             glDisable(GL_CULL_FACE)
+            gpu_name = glGetString(GL_RENDERER)
+            if gpu_name:
+                label = gpu_name.decode('utf-8', errors='replace') if isinstance(gpu_name, bytes) else str(gpu_name)
+                self.after_idle(lambda text=label: self.master._log_message('[OpenGL] Видеоустройство: ' + text))
         except Exception as exc:
             self._failed_context(exc)
 
     def redraw(self):
         if self._failed:
             return
+        started = perf_counter()
         try:
             self._redraw_scene()
         except Exception as exc:
             self._failed_context(exc)
+        finally:
+            if self.world is not None:
+                duration = perf_counter() - started
+                self._profile_frames += 1
+                self._profile_peak = max(self._profile_peak, duration)
+                window = perf_counter() - self._profile_started
+                if window >= 5.0:
+                    frames = max(1, self._profile_frames)
+                    stages = ', '.join(f'{name}={1000*value/frames:.0f}мс'
+                                       for name, value in self._profile_times.items())
+                    message = (f'[OpenGL] {self.render_mode}: {frames/window:.1f} FPS, '
+                               f'макс. кадр {self._profile_peak*1000:.0f}мс, '
+                               f'{stages}, GPU-текстур: {len(self._gpu_textures)}')
+                    self.after_idle(lambda msg=message: self.master._log_message(msg))
+                    self._profile_started = perf_counter()
+                    self._profile_frames = 0
+                    self._profile_peak = 0.
+                    self._profile_times = dict.fromkeys(self._profile_times, 0.)
 
     def _redraw_scene(self):
         width, height = max(1, self.winfo_width()), max(1, self.winfo_height())
@@ -141,11 +168,19 @@ class WorldOpenGLFrame(OpenGLFrame):
         if self.textures is not self._cached_textures:
             self._delete_textures()
             self._cached_textures = self.textures
+        timestamp = perf_counter()
         self._pin_visible_textures()
         self._prepare_visible_vobs()
+        self._profile_times['prepare'] += perf_counter() - timestamp
+        timestamp = perf_counter()
         self._draw_chunks()
+        self._profile_times['terrain'] += perf_counter() - timestamp
+        timestamp = perf_counter()
         self._draw_vobs()
+        self._profile_times['vobs'] += perf_counter() - timestamp
+        timestamp = perf_counter()
         self._warm_gpu_textures()
+        self._profile_times['warm'] += perf_counter() - timestamp
         glDisable(GL_TEXTURE_2D)
         glDisable(GL_ALPHA_TEST)
 
