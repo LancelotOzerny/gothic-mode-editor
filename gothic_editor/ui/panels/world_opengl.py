@@ -51,6 +51,11 @@ class WorldOpenGLFrame(OpenGLFrame):
         self.textures = None
         self._cached_textures = None
         self._gpu_textures = OrderedDict()
+        self._texture_alpha = {}
+        self._bound_texture = None
+        self._alpha_enabled = False
+        self._draw_calls = 0
+        self._texture_switches = 0
         self._gpu_texture_bytes = 0
         self._invalid_gpu = set()
         self._gpu_texture_budget = 128 * 1024 * 1024
@@ -105,6 +110,8 @@ class WorldOpenGLFrame(OpenGLFrame):
             # World polygons can have inconsistent winding. Double-sided.
             from OpenGL.GL import GL_CULL_FACE
             glDisable(GL_CULL_FACE)
+            glDisable(GL_ALPHA_TEST)
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE)
             gpu_name = glGetString(GL_RENDERER)
             if gpu_name:
                 label = gpu_name.decode('utf-8', errors='replace') if isinstance(gpu_name, bytes) else str(gpu_name)
@@ -134,6 +141,7 @@ class WorldOpenGLFrame(OpenGLFrame):
                                f'макс. кадр {self._profile_peak*1000:.0f}мс, '
                                f'{stages}, GPU-текстур: {len(self._gpu_textures)}, '
                                f'загрузок: {self._profile_uploads}, '
+                               f'вызовов GL: {self._draw_calls}, переключений: {self._texture_switches}, '
                                f'макс. upload: {self._profile_slowest_upload[1]*1000:.0f}мс '
                                f'({self._profile_slowest_upload[0]})')
                     self.after_idle(lambda msg=message: self.master._log_message(msg))
@@ -147,6 +155,10 @@ class WorldOpenGLFrame(OpenGLFrame):
     def _redraw_scene(self):
         width, height = max(1, self.winfo_width()), max(1, self.winfo_height())
         self._uploads_this_frame = 0
+        self._draw_calls = 0
+        self._texture_switches = 0
+        self._bound_texture = None
+        self._alpha_enabled = False
         self._frame_start = perf_counter()
         glViewport(0, 0, width, height)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -196,6 +208,9 @@ class WorldOpenGLFrame(OpenGLFrame):
         if self._gpu_textures:
             glDeleteTextures([entry[0] for entry in self._gpu_textures.values()])
         self._gpu_textures.clear()
+        self._texture_alpha.clear()
+        self._bound_texture = None
+        self._alpha_enabled = False
         self._gpu_texture_bytes = 0
         self._invalid_gpu.clear()
         self._visible_gpu_key = None
@@ -326,9 +341,11 @@ class WorldOpenGLFrame(OpenGLFrame):
                 glDeleteTextures([tex_id])
                 return 0
             old_id, old_size = self._gpu_textures.pop(victim)
+            self._texture_alpha.pop(old_id, None)
             glDeleteTextures([old_id])
             self._gpu_texture_bytes -= old_size
         self._gpu_textures[identifier] = (tex_id, size)
+        self._texture_alpha[tex_id] = self.textures.has_alpha(name)
         self._gpu_texture_bytes += size
         self._uploads_this_frame += 1
         return tex_id
@@ -355,16 +372,27 @@ class WorldOpenGLFrame(OpenGLFrame):
 
     def _draw_group(self, name, list_id):
         tex_id = self._texture_id(name)
-        if tex_id:
-            glEnable(GL_TEXTURE_2D)
-            glEnable(GL_ALPHA_TEST)
-            glAlphaFunc(GL_GREATER, 0.1)
-            glBindTexture(GL_TEXTURE_2D, tex_id)
-            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE)
-        else:
-            glDisable(GL_TEXTURE_2D)
-            glDisable(GL_ALPHA_TEST)
+        if tex_id != self._bound_texture:
+            if tex_id:
+                if not self._bound_texture:
+                    glEnable(GL_TEXTURE_2D)
+                glBindTexture(GL_TEXTURE_2D, tex_id)
+            elif self._bound_texture:
+                glDisable(GL_TEXTURE_2D)
+            self._bound_texture = tex_id
+            self._texture_switches += 1
+        # Most terrain textures are fully opaque. Alpha testing every world
+        # polygon puts some drivers on a slow compatibility rendering path.
+        wants_alpha = bool(tex_id and self._texture_alpha.get(tex_id, False))
+        if wants_alpha != self._alpha_enabled:
+            if wants_alpha:
+                glEnable(GL_ALPHA_TEST)
+                glAlphaFunc(GL_GREATER, 0.1)
+            else:
+                glDisable(GL_ALPHA_TEST)
+            self._alpha_enabled = wants_alpha
         glCallList(list_id)
+        self._draw_calls += 1
 
     def _delete_lists(self):
         for groups, _count in self._lists.values():
