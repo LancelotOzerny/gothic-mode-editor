@@ -47,9 +47,20 @@ class WorldTextureQueueTests(unittest.TestCase):
         self.assertEqual(list(self.store._pending), ['a.tga'])
 
     def test_decode_orientation_and_single_pixel(self):
-        image = self.store._decode(self.root / 'A.TGA')
+        image, has_alpha = self.store._decode(self.root / 'A.TGA')
         self.assertEqual((image.width, image.height), (1, 1))
         self.assertEqual(image.pixels, bytes((255, 0, 0, 255)))
+        self.assertFalse(has_alpha)
+
+    def test_alpha_cutout_is_detected_before_gpu_upload(self):
+        translucent = self.root / 'C.TGA'
+        # A 1x1, 32-bit TGA with valid alpha bits and fully transparent pixel.
+        translucent.write_bytes(
+            struct.pack('<BBBHHBHHHHBB', 0, 0, 2, 0, 0, 0,
+                        0, 0, 1, 1, 32, 0x28) +
+            bytes((0, 0, 255, 0)))
+        _image, has_alpha = self.store._decode(translucent)
+        self.assertTrue(has_alpha)
 
     def test_compiled_tex_uses_existing_small_mipmap_in_preview(self):
         # Three source levels in the Gothic order: 2x2, 4x4, 8x8.
