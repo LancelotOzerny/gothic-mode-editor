@@ -20,7 +20,7 @@ def _code(npc, config):
     lines.append(f'func void GE_TradeStock_{ident}(var C_Npc slf) {{')
     hours = config.get('refresh_hours', 0)
     if hours:
-        lines += ['    var int geHour;', '    var int geNow;']
+        lines += ['    var int geHour;', '    var int geEnd;', '    var int geNow;']
     for chapter in sorted({r['chapter'] for r in config['stock']}):
         lines.append(f'    if ((Kapitel >= {chapter}) && (GE_TradeChapter_{ident}_{chapter} == FALSE)) {{')
         for row in config['stock']:
@@ -33,7 +33,9 @@ def _code(npc, config):
             '    geHour = 0;',
             '    geNow = (Wld_GetDay() * 24) + 1;',
             '    while (geHour < 24) {',
-            '        if (Wld_IsTime(geHour, 0, (geHour + 1) % 24, 0)) {',
+            '        geEnd = geHour + 1;',
+            '        if (geEnd == 24) { geEnd = 0; };',
+            '        if (Wld_IsTime(geHour, 0, geEnd, 0)) {',
             '            geNow = geNow + geHour;',
             '        };',
             '        geHour = geHour + 1;',
