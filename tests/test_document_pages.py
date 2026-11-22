@@ -86,6 +86,18 @@ class DocumentPagesTests(unittest.TestCase):
         self.assertIn('Doc_PrintLines(doc, 0, "Смешайте траву и воду.")', script)
         self.assertEqual(len(definitions(script)), 1)
 
+    def test_book_margins_keep_text_on_each_page(self):
+        short = render_document('ITWR_BOOK', '# Заголовок\n\nТекст.', book=True)
+        self.assertIn('Doc_SetMargins(doc, 0, 275, 20, 30, 20, TRUE);', short)
+        raw = '# Книга\n\n' + ' '.join(['алхимия'] * 35)
+        long = render_document('ITWR_BOOK', raw, book=True)
+        self.assertIn('Doc_SetPages(doc, 2);', long)
+        self.assertIn('Doc_SetMargins(doc, 1, 30, 20, 275, 20, TRUE);', long)
+
+    def test_notes_retain_note_margins(self):
+        script = render_document('ITWR_NOTE', '# Записка\n\nТекст.', book=False)
+        self.assertIn('Doc_SetMargins(doc, 0, 50, 50, 50, 50, TRUE);', script)
+
     def test_two_pages_and_overflow(self):
         raw = '# Страница\n\n' + ' '.join(['трава'] * 42)
         # A long paragraph is supported only when it fits a single page in v1.
