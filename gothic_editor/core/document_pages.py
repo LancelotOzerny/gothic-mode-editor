@@ -5,7 +5,6 @@ instead of silently generating unreachable content.
 """
 from __future__ import annotations
 
-import re
 import textwrap
 from pathlib import Path
 
@@ -76,29 +75,38 @@ def parsed_blocks(raw):
 
 def paginate(raw):
     pages = [[]]
-    height = 0
+    used = 0
     for kind, value in parsed_blocks(raw):
         width = HEADING_WIDTH if kind == 'heading' else LINE_WIDTH
         # Gothic fonts are proportional. This is intentionally conservative,
         # not a pixel-perfect measurement.
-        lines = []
-        for segment in value.splitlines() or ['']:
-            lines.extend(textwrap.wrap(segment, width=width,
-                                       break_long_words=True,
-                                       break_on_hyphens=False) or [''])
-        cost = len(lines) + (1 if pages[-1] else 0)
-        if len(lines) > MAX_LINES:
-            raise ValueError('Слишком длинный абзац или заголовок: разделите текст.')
-        if height + cost > MAX_LINES:
-            pages.append([])
-            height = 0
-            cost = len(lines)
-        if len(pages) > MAX_PAGES:
-            raise ValueError('Текст занимает более двух страниц Gothic. Сократите или разделите книгу.')
-        pages[-1].append((kind, value))
-        height += cost
+        lines = textwrap.wrap(value, width=width,
+                              break_long_words=False,
+                              break_on_hyphens=False) or ['']
+        while lines:
+            if pages[-1]:
+                if used == MAX_LINES:
+                    pages.append([])
+                    used = 0
+                else:
+                    used += 1  # One paragraph gap
+            available = MAX_LINES - used
+            if kind == 'heading' and len(lines) > available and pages[-1]:
+                pages.append([])
+                used = 0
+                available = MAX_LINES
+            if len(pages) > MAX_PAGES:
+                raise ValueError('Текст занимает более двух страниц Gothic. Сократите или разделите книгу.')
+            chunk, lines = lines[:available], lines[available:]
+            # The engine wraps each paragraph again to the actual font width.
+            pages[-1].append((kind, ' '.join(chunk)))
+            used += len(chunk)
+            if lines:
+                pages.append([])
+                used = 0
+    if len(pages) > MAX_PAGES:
+        raise ValueError('Текст занимает более двух страниц Gothic. Сократите или разделите книгу.')
     return pages
-
 
 def literal(text):
     if '\x00' in text or any(ord(c) < 32 for c in text):
