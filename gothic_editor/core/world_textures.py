@@ -19,6 +19,7 @@ class WorldTextures:
         self._executor = ThreadPoolExecutor(max_workers=2)
         self._index_future = self._executor.submit(self._index_loose, tuple(loose_roots)) if loose_roots else None
         self._pending = {}
+        self._max_pending = 8
         self._ready = OrderedDict()
         self._missing = set()
         self._errors = []
@@ -65,10 +66,50 @@ class WorldTextures:
                 for y in range(image.height - 1, -1, -1))
         return Texture(image.width, image.height, b''.join(rows))
 
+    def _collect_ready(self):
+        """Collect every finished task, even for textures no longer on screen.
+
+        Previously only requests for the same material collected their futures:
+        four completed off-screen jobs could permanently occupy all slots.
+        """
+        for candidate, future in tuple(self._pending.items()):
+            if not future.done():
+                continue
+            del self._pending[candidate]
+            try:
+                texture = future.result()
+            except Exception as exc:
+                self._missing.add(candidate)
+                self._errors.append(f'[ZEN] Текстура {candidate}: {exc}')
+                continue
+            self._ready[candidate] = texture
+            self._bytes += len(texture.pixels)
+        while self._bytes > self._max_ready_bytes and len(self._ready) > 1:
+            _, discarded = self._ready.popitem(last=False)
+            self._bytes -= len(discarded.pixels)
+
+    def prefetch(self, names):
+        """Nonblocking bulk scheduling, with callers supplying visible first."""
+        self._collect_ready()
+        for name in dict.fromkeys(names):
+            if not name:
+                continue
+            candidate, source = self._source(name)
+            if source is None:
+                # Do not mark names missing until optional loose-file indexing ends.
+                continue
+            if (candidate in self._ready or candidate in self._pending
+                    or candidate in self._missing):
+                continue
+            if len(self._pending) >= self._max_pending:
+                break
+            self._pending[candidate] = self._executor.submit(self._decode, source)
+
     def request(self, name):
-        """Nonblocking request. Returns a decoded Texture if available."""
+        """Nonblocking lookup; calling it never performs disk I/O or decoding."""
         if not name:
             return None
+        self._collect_ready()
         candidate, source = self._source(name)
         if source is None:
             if self._index_future is None and name.casefold() not in self._missing:
@@ -79,27 +120,10 @@ class WorldTextures:
         if candidate in self._ready:
             self._ready.move_to_end(candidate)
             return self._ready[candidate]
-        future = self._pending.get(candidate)
-        if future is None:
-            if candidate not in self._missing and len(self._pending) < 4:
-                self._pending[candidate] = self._executor.submit(self._decode, source)
-            return None
-        if not future.done():
-            return None
-        del self._pending[candidate]
-        try:
-            texture = future.result()
-        except Exception as exc:
-            # Isolate malformed textures and decoder failures from world loading.
-            self._missing.add(candidate)
-            self._errors.append(f'[ZEN] Текстура {candidate}: {exc}')
-            return None
-        self._ready[candidate] = texture
-        self._bytes += len(texture.pixels)
-        while self._bytes > self._max_ready_bytes and len(self._ready) > 1:
-            _, discarded = self._ready.popitem(last=False)
-            self._bytes -= len(discarded.pixels)
-        return texture
+        if (candidate not in self._missing and candidate not in self._pending
+                and len(self._pending) < self._max_pending):
+            self._pending[candidate] = self._executor.submit(self._decode, source)
+        return None
 
     def report_error(self, name, error):
         candidate, _source = self._source(name)
