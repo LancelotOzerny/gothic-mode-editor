@@ -43,6 +43,7 @@ class ValueChoiceWindow(EditorDialog):
         self.query = tk.StringVar(self)
         if searchable:
             search = make_entry(table, textvariable=self.query)
+            self.search_entry=search
             search.pack(fill='x', pady=(0,8), before=self.scroll_area)
             self.query.trace_add('write', lambda *_:self.filter_options())
         for index,(name,_) in enumerate(options):
@@ -63,6 +64,7 @@ class ValueChoiceWindow(EditorDialog):
         self.focus_option(max(0,self.current))
         if self.searchable:
             self.query.set('')
+            self.search_entry.focus_set()
 
     def _first_visible(self):
         return next((i for i, button in enumerate(self.option_buttons) if button.winfo_manager()), 0)
