@@ -72,8 +72,11 @@ class NpcController:
                 'Удалить NPC из списка проекта и отменить изменения его свойств?',parent=self.app):return
         try:
             selection=ProjectSelection(self.app.repo.root,'NPC')
-            saved=self.app.history.capture((self.store.path,selection.path))
+            from gothic_editor.core.trading import TradingStore
+            trading=TradingStore(self.app.repo.root)
+            saved=self.app.history.capture((self.store.path,selection.path,trading.path))
             self.store.save(npc.instance,{})
+            trading.save(npc.instance,None)
             selection.remove(npc.instance)
             self.app.history.record(saved)
             self.deselect()
@@ -157,6 +160,12 @@ class NpcController:
             self.select(self.catalog.base[npc.instance.casefold()])
             self.app.world_panel.update_npc(self.current)
         except (OSError,ValueError) as exc:messagebox.showerror('NPC',str(exc),parent=self.app)
+
+    def configure_trading(self):
+        if self.current is None or not self.save():return
+        from gothic_editor.ui.windows.trading import TradingWindow
+        try:TradingWindow(self.app,self)
+        except (OSError,ValueError) as exc:self.app.terminal.append('Торговля: '+str(exc))
 
     def import_model(self,kind):
         suffix='mdm' if kind=='body' else 'mmb'
