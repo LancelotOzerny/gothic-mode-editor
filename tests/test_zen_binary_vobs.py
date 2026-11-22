@@ -59,6 +59,25 @@ class BinaryVobTests(unittest.TestCase):
             self.assertEqual(objects[0].position, (10., 20., -30.))
             self.assertEqual(objects[1].chunk, (1, -1))
 
+    def test_packed_gothic1_world(self):
+        tree = obj('VobTree', '%',
+                   struct.pack('<i', 1) +
+                   obj('root', 'zCVob',
+                       packed_vob('Tree', 'TREE.3DS', -200., gothic2=False)) +
+                   struct.pack('<i', 0))
+        mesh = obj('MeshAndBsp', '%', struct.pack('<I', 0x2090000))
+        world = obj('%', 'oCWorld:zCWorld', mesh + tree)
+        header = (b'ZenGin Archive\\nver 1\\nzCArchiverGeneric\\nBINARY\\n'
+                  b'saveGame 0\\nEND\\nobjects 3\\nEND\\n')
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / 'OLDWORLD.ZEN'
+            path.write_bytes(header + world)
+            nodes, _ = read_binary_vobs(path)
+            self.assertEqual(len(nodes), 1)
+            self.assertEqual(nodes[0].properties['visual'], 'TREE.3DS')
+            self.assertEqual(nodes[0].properties['trafoOSToWSPos'],
+                             '-200.0 20.0 -30.0')
+
     def test_packed_binsafe_coordinates(self):
         raw = struct.pack('<18f', *((0.,)*6 + (25., 100., 75.) +
                    (1., 0., 0., 0., 1., 0., 0., 0., 1.)))
