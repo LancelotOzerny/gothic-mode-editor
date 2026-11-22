@@ -16,10 +16,15 @@ class TradingStore:
 
     @staticmethod
     def validate(config):
-        if not isinstance(config, dict) or set(config) - {'enabled','dialog','replace_original','min_chapter','refresh_hours','stock'}:
+        if not isinstance(config, dict) or set(config) - {'enabled','dialog','dialog_text','replace_original','min_chapter','refresh_hours','stock'}:
             raise ValueError('Некорректные свойства торговца.')
         if type(config.get('enabled', True)) is not bool or type(config.get('dialog', True)) is not bool or type(config.get('replace_original', False)) is not bool:
             raise ValueError('Флаги торговца должны быть логическими.')
+        phrase=config.get('dialog_text','Покажи товары')
+        if not isinstance(phrase,str) or not phrase.strip() or len(phrase)>120 or any(ord(char)<32 for char in phrase):
+            raise ValueError('Фраза торгового диалога должна содержать от 1 до 120 символов.')
+        try:phrase.encode('cp1251')
+        except UnicodeEncodeError as exc:raise ValueError('Фраза диалога должна быть в кодировке Gothic (Windows-1251).') from exc
         chapter = config.get('min_chapter', 1)
         hours = config.get('refresh_hours', 0)
         if type(chapter) is not int or not 1 <= chapter <= 6:
