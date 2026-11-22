@@ -15,6 +15,7 @@ class ActionParameter:
     name: str
     kind: str
     label: str
+    options: tuple[tuple[str, str], ...] = ()
 
     @property
     def default(self):return '' if self.kind=='string' else '0'
@@ -123,6 +124,16 @@ class ActionCatalog:
             self.functions.update((value.identifier.casefold(),value) for value in values)
         return self._files[key]
 
+    def _recipe_action(self):
+        from .recipe_learning import ACTION_ID, recipe_options
+        options = recipe_options(self.project)
+        if not options:
+            return None
+        return ActionFunction(
+            ACTION_ID, 'GE_LearnRecipe', 'Изучить рецепт',
+            (ActionParameter('recipe', 'int', 'Рецепт', options),),
+            self.project / 'GE_Recipes' / 'Learning.d')
+
     def groups(self):
         from .localization import tr
         if self._group_options is not None:
@@ -140,10 +151,20 @@ class ActionCatalog:
                     for function in self._read(path,key):
                         options.append((f'{function.label} — {function.name} ({path.relative_to(root).as_posix()})',function.identifier))
             groups.append((title,sorted(options,key=lambda pair:pair[0].casefold())))
+        recipe_action = self._recipe_action()
+        if recipe_action:
+            groups.insert(0, ('Алхимия', [('Изучить рецепт — GE_LearnRecipe', recipe_action.identifier)]))
+            self.functions[recipe_action.identifier.casefold()] = recipe_action
         self._group_options=[options for _,options in groups]
         return groups
 
     def resolve(self,identifier):
+        from .recipe_learning import ACTION_ID
+        if identifier.casefold() == ACTION_ID.casefold():
+            action = self._recipe_action()
+            if action is None:
+                raise ValueError('Нет рецептов, доступных для изучения.')
+            return action
         cached=self.functions.get(identifier.casefold())
         if cached is not None:return cached
         file,separator,name=identifier.partition('#')
