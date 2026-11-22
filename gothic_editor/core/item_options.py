@@ -8,6 +8,10 @@ from .item_layout import project_scripts
 
 def item_options(repo, source):
     if source == 'item_schemes':return list(POTION_SCHEMES)
+    if source == 'document_texts':
+        from .document_pages import document_files
+        return [(path.rsplit('/',1)[-1] + ' — ' + path, path)
+                for path in document_files(repo.root)]
     if source == 'item_actions':return action_catalog(repo).groups()
     if source == 'item_action_catalog':return action_catalog(repo)
     key = {'visual_effects': 'effect'}.get(source)
