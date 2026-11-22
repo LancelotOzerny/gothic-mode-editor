@@ -50,6 +50,25 @@ class DocumentPagesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Недоступный'):
             load_document(self.project, '../secret.md')
 
+    def test_nested_text_files_are_listed_and_loaded(self):
+        nested = self.project / 'Assets/Texts/Recepts/Potions/recept-potions-exp-100.md'
+        nested.parent.mkdir(parents=True)
+        nested.write_text('# Эссенция опыта\n\nМандибулы полевого хищника.', 'utf-8')
+        reference = nested.relative_to(self.project).as_posix()
+        self.assertIn(reference, document_files(self.project))
+        self.assertIn('Мандибулы', load_document(self.project, reference))
+
+    def test_text_paths_outside_assets_texts_are_rejected(self):
+        self.text()
+        outside = self.project / 'Assets/Other/hidden.md'
+        outside.parent.mkdir(parents=True)
+        outside.write_text('# Не документ', 'utf-8')
+        self.assertNotIn('Assets/Other/hidden.md', document_files(self.project))
+        with self.assertRaisesRegex(ValueError, 'Недоступный'):
+            load_document(self.project, 'Assets/Other/hidden.md')
+        with self.assertRaisesRegex(ValueError, 'Недоступный'):
+            load_document(self.project, 'Assets/Texts/../Other/hidden.md')
+
     def test_document_schema_exposes_markdown_picker(self):
         from gothic_editor.core.properties_schema import schema_for
         schema = schema_for('documents')
