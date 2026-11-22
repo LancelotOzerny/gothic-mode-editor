@@ -70,6 +70,8 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._selected_chunks = ()
         self._warm_key = None
         self._warm_chunks = ()
+        self._chunk_names = {}
+        self._vob_names = {}
 
     def _failed_context(self, exc):
         if self._failed:
@@ -154,7 +156,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         if identifier in self._gpu_textures:
             self._gpu_textures.move_to_end(identifier)
             return self._gpu_textures[identifier][0]
-        if self._uploads_this_frame >= 1:
+        if self._uploads_this_frame >= 2:
             return 0
         texture = self.textures.request(name)
         if texture is None:
@@ -271,6 +273,7 @@ class WorldOpenGLFrame(OpenGLFrame):
                 for _name, list_id in lists:
                     glDeleteLists(list_id, 1)
             self._vob_lists.clear()
+            self._vob_names.clear()
             self._cached_vobs = scene
         if scene is None or not scene.objects or self.focus is None:
             return
@@ -281,6 +284,20 @@ class WorldOpenGLFrame(OpenGLFrame):
                abs(key[1] - self.focus[1]) <= self.radius
         ]
         nearby.sort()
+        if self.render_mode == 'textures' and self.textures is not None:
+            visible_names = []
+            for key in nearby:
+                for index in scene.chunks[key]:
+                    visual = scene.objects[index].visual
+                    names = self._vob_names.get(visual)
+                    if names is None:
+                        mesh = scene.models[visual]
+                        names = tuple(dict.fromkeys(
+                            name for uv, name in zip(mesh.uvs, mesh.texture_names)
+                            if uv is not None and name))
+                        self._vob_names[visual] = names
+                    visible_names.extend(names)
+            self.textures.prefetch(visible_names)
         # Precompile one unique visual per frame, just like the terrain chunks.
         for key in nearby:
             for index in scene.chunks[key]:
@@ -357,6 +374,7 @@ class WorldOpenGLFrame(OpenGLFrame):
             return
         if self._cached_world is not self.world:
             self._delete_lists()
+            self._chunk_names.clear()
             self._cached_world = self.world
             self._selected_key = None
             self._warm_key = None
@@ -392,6 +410,22 @@ class WorldOpenGLFrame(OpenGLFrame):
                     remaining -= count
             self._warm_chunks = tuple(extra)
             self._warm_key = warm_key
+
+        if self.render_mode == 'textures' and self.textures is not None:
+            # Decode visible materials before warm neighbors; one chunk may
+            # reference a texture hundreds of times, so cache unique names.
+            names = []
+            for key in (*visible, *self._warm_chunks):
+                unique = self._chunk_names.get(key)
+                if unique is None:
+                    unique = tuple(dict.fromkeys(
+                        name for uv, name in zip(
+                            self.world.chunk_uvs.get(key, ()),
+                            self.world.chunk_textures.get(key, ()))
+                        if uv is not None and name))
+                    self._chunk_names[key] = unique
+                names.extend(unique)
+            self.textures.prefetch(names)
 
         missing_visible = [key for key in visible if key not in self._lists]
         missing_warm = [key for key in self._warm_chunks
