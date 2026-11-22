@@ -30,6 +30,12 @@ def game_recipes(game):
             condition_body = blocks.get(condition[1].casefold(), ('',''))[1]
             category = next((key for key, value in STOCK.items() if re.search(r'\b'+value+r'Start\s*==\s*TRUE\b', condition_body, re.I)), None)
             if category is None:raise ValueError('Неизвестная категория')
+            # Preserve the teacher-controlled Gothic knowledge requirement.
+            talents = re.findall(
+                r'\bPLAYER_TALENT_ALCHEMY\s*\[\s*([A-Za-z_]\w*)\s*\]'
+                r'\s*==\s*TRUE\b', condition_body, re.I)
+            if len(talents) != 1:
+                raise ValueError('Не удалось однозначно определить условие изучения Gothic')
             # Only the success branch is copied; no arbitrary script is executed.
             start = body.index('{', body.index('{')+1)
             stop = block_end(body, start)
@@ -57,7 +63,7 @@ def game_recipes(game):
             else:ingredients.append({'instance': flask[1], 'count': 1})
             recipe = dict(schema_version=1, id='COPY_'+code.upper(), name=title[1], category=category,
                           result=products[0][0], result_count=int(products[0][1]), ingredients=ingredients,
-                          availability={'type':'always'})
+                          availability={'type':'stock_talent', 'talent':talents[0]})
             results.append(validate_recipe(recipe))
         except (ValueError, StopIteration):skipped.append(code)
     return results, skipped
