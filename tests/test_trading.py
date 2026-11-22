@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from gothic_editor.core.trading import TradingStore
-from gothic_editor.core.trading_generator import prepare_trading, prioritize_trading, OUTPUT
+from gothic_editor.core.trading_generator import prepare_trading, prioritize_trading, OUTPUT, DIALOG_OUTPUT
 from gothic_editor.core.scripts import load_text
 
 
@@ -52,9 +52,9 @@ class TradingTests(unittest.TestCase):
     def test_stage_preserves_source_and_generates_dialog_and_refresh(self):
         self.store.save('NPC_Merchant', self.config())
         original=(self.content / 'Trade.d').read_bytes()
-        self.assertEqual(prepare_trading(self.project,self.content), OUTPUT)
+        self.assertEqual(prepare_trading(self.project,self.content), [OUTPUT,DIALOG_OUTPUT])
         code,_ = load_text(self.content / OUTPUT)
-        self.assertIn('GE_TradeDialog_NPC_MERCHANT', code)
+        self.assertIn('GE_TradeDialog_NPC_MERCHANT', (self.content / DIALOG_OUTPUT).read_text('cp1251'))
         self.assertIn('Kapitel >= 2', code)
         self.assertIn('Wld_GetTime(geHour, geMinute)', code)
         self.assertIn('Npc_HasItems(slf, ItFo_Bread)', code)
@@ -73,7 +73,7 @@ class TradingTests(unittest.TestCase):
         prepare_trading(self.project,self.content)
         text=(self.content/'Trade.d').read_text('cp1251')
         self.assertIn('return;', text)
-        self.assertNotIn('GE_TradeDialog_NPC_MERCHANT',(self.content/OUTPUT).read_text('cp1251'))
+        self.assertFalse((self.content/DIALOG_OUTPUT).exists())
         self.store.save('NPC_Merchant',self.config(stock=[dict(item='Missing',quantity=2,chapter=1)]))
         with self.assertRaisesRegex(ValueError,'Missing'):
             prepare_trading(self.project,self.content)
