@@ -63,10 +63,10 @@ try {
         $pythonRoot = (& $Python -c "import sys; print(sys.base_prefix)").Trim()
         $tclRoot = Join-Path $pythonRoot 'tcl'
         $tclCandidates = @(Get-ChildItem -LiteralPath $tclRoot -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '^tcl8\\.' -and (Test-Path -LiteralPath (Join-Path $_.FullName 'init.tcl')) } |
+            Where-Object { $_.Name -match '^tcl8\.' -and (Test-Path -LiteralPath (Join-Path $_.FullName 'init.tcl')) } |
             Sort-Object Name -Descending)
         $tkCandidates = @(Get-ChildItem -LiteralPath $tclRoot -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '^tk8\\.' -and (Test-Path -LiteralPath (Join-Path $_.FullName 'tk.tcl')) } |
+            Where-Object { $_.Name -match '^tk8\.' -and (Test-Path -LiteralPath (Join-Path $_.FullName 'tk.tcl')) } |
             Sort-Object Name -Descending)
         if ($tclCandidates.Count -gt 0 -and $tkCandidates.Count -gt 0) {
             $env:TCL_LIBRARY = $tclCandidates[0].FullName
@@ -79,7 +79,7 @@ try {
         }
         & $Python -c "import tkinter; t = tkinter.Tcl(); t.eval('info library'); t.eval('package require Tk')" 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
-            throw "Tcl/Tk is still unavailable for '$Python'. Repair the Python installation, or run .\\compile.ps1 -Python <path-to-working-python.exe>."
+            throw "Tcl/Tk is still unavailable for '$Python'. Repair the Python installation, or run .\compile.ps1 -Python <path-to-working-python.exe>."
         }
     }
 
