@@ -36,6 +36,8 @@ class StaticVob:
 class StaticMesh:
     vertices: tuple[tuple[float, float, float], ...]
     faces: tuple[tuple[int, int, int], ...]
+    uvs: tuple = ()
+    texture_names: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -121,18 +123,20 @@ def _load_mesh(source):
     name = source.name.lower()
     data = source.read_bytes()
     if name.endswith('.mrm'):
-        vertices, faces = read_mrm(data)
+        mesh = read_mrm(data, preview=True)
     elif name.endswith('.3ds'):
-        vertices, faces = read_3ds_bytes(data)
+        mesh = read_3ds_bytes(data, preview=True)
         # ZenGin's uncompiled 3DS files are Z-up, while compiled meshes are Y-up.
-        vertices = [(x, z, y) for x, y, z in vertices]
+        mesh.vertices = [(x, z, y) for x, y, z in mesh.vertices]
     else:
         raise ValueError('Неподдерживаемая модель.')
+    vertices, faces = mesh.vertices, mesh.faces
     if len(faces) > _MAX_MODEL_TRIANGLES:
         raise ValueError('Слишком много полигонов в одной модели.')
     if not all(all(isfinite(x) and abs(x) < 1e8 for x in v) for v in vertices):
         raise ValueError('Некорректные координаты модели.')
-    return StaticMesh(tuple(vertices), tuple(faces))
+    return StaticMesh(tuple(vertices), tuple(faces),
+                      tuple(mesh.uvs), tuple(mesh.texture_names))
 
 
 def load_vob_scene(path, sources, chunk_size):
