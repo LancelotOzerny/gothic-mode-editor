@@ -151,7 +151,9 @@ def load_vob_scene(path, sources, chunk_size):
     else:
         objects, status, skipped = static_vobs(info, chunk_size)
     if not objects:
-        return VobScene((), {}, {}, status, skipped)
+        return VobScene((), {}, {}, status + ' · подходящих статических VOB: 0',
+                        skipped)
+    found = len(objects)
     models = {}
     missing = set()
     triangles_loaded = 0
@@ -177,6 +179,11 @@ def load_vob_scene(path, sources, chunk_size):
     groups = {}
     for i, v in enumerate(kept):
         groups.setdefault(v.chunk, []).append(i)
+    absent = len(objects) - len(kept)
+    report = (f'{status} · найдено: {found}, показано: {len(kept)}, '
+              f'моделей: {len(models)}, без модели: {absent}')
+    if missing:
+        report += ' · примеры отсутствующих: ' + ', '.join(sorted(missing)[:5])
     return VobScene(kept, models,
                     {k: tuple(v) for k, v in groups.items()},
-                    status, skipped + len(objects) - len(kept))
+                    report, skipped + absent)
