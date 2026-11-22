@@ -199,11 +199,11 @@ instance {prefix}(C_Info)
         back = (f'GE_RecipeCategory_{parent}_Info();'
                 if parent and bindings[parent] is None
                 else f'Info_ClearChoices({holder});')
-        choices = '\\n'.join(
+        choices = '\n'.join(
             f'if ({known}) {{ Info_AddChoice({holder}, {literal(recipe["name"])}, GE_Recipe_{recipe["id"]}_Info); }};'
             for recipe, known in custom.get(key, ())
         )
-        child_choices = '\\n'.join(
+        child_choices = '\n'.join(
             f'if ({" || ".join("(" + k + ")" for k in known_for(child))}) '
             f'{{ Info_AddChoice({holder}, {literal(category_index[child]["name"])}, GE_RecipeCategory_{child}_Info); }};'
             for child in children[key] if known_for(child)
