@@ -38,6 +38,8 @@ from gothic_editor.ui.controllers.item_appearance import ItemAppearanceControlle
 from gothic_editor.ui.controllers.world import WorldController
 from gothic_editor.ui.panels.world import WorldPanel, WorldPropertiesPanel
 from gothic_editor.ui.panels.npc import NpcPropertiesPanel
+from gothic_editor.ui.panels.trading import TradingPanel
+from gothic_editor.ui.widgets.buttons import PropertyButton
 from gothic_editor.ui.controllers.npc import NpcController
 from gothic_editor.ui.controllers.recipes import RecipeController
 from gothic_editor.ui.panels.recipes import RecipeListPanel, RecipePropertiesPanel
@@ -106,7 +108,8 @@ class EditorApp(tk.Tk):
         self.deiconify()
 
     def _save_editors(self):
-        return self.properties.save(automatic=True) and self.npcs.save() and self.recipes.save()
+        return (self.properties.save(automatic=True) and self.npcs.save() and self.recipes.save()
+                and (not getattr(self,'trading_active',False) or self.trading_panel.save()))
 
     def _save_shortcut(self,event):
         if (event.keysym.lower() in ('s','cyrillic_yeru') or
@@ -186,6 +189,14 @@ class EditorApp(tk.Tk):
         header=tk.Frame(self.editor_frame,bg=BG);header.pack(fill='x',padx=14,pady=12)
         header.columnconfigure(0,weight=1,uniform='header_side')
         header.columnconfigure(2,weight=1,uniform='header_side')
+        self.trading_active=False
+        self.workspace_tabs=tk.Frame(header,bg=BG)
+        self.workspace_tabs.grid(row=1,column=0,columnspan=3,sticky='w',pady=(8,0))
+        self.editor_tab=PropertyButton(self.workspace_tabs,self.close_trading,text='Редактор',height=32)
+        self.editor_tab.pack(side='left',padx=(0,6))
+        self.project_tab=PropertyButton(self.workspace_tabs,self.open_trading,text='Проект',height=32)
+        self.project_tab.pack(side='left')
+        self.editor_tab.set_selected(True)
         mode_frame=tk.Frame(header,bg=BG);mode_frame.grid(row=0,column=0,sticky='w')
         label(mode_frame,tr('app.mode'),bg=BG,font=('Arial',11)).pack(side='left',padx=(0,10))
         self.mode=create_field(mode_frame,'choice',options=((tr('app.items'),'items'),('Мир','world'),('Редактор мира','locations'),('NPC','npc'),(tr('recipes.title'),'recipes'),('Медиа','media')),caption=tr('app.mode'))
@@ -231,6 +242,7 @@ class EditorApp(tk.Tk):
         self.viewer.on_texture_mode=self._texture_mode_changed
         self.viewer.pack(fill='both',expand=True)
         self.media_viewer=MediaPreview(middle)
+        self.trading_panel=TradingPanel(middle,self.npcs)
         self.location_viewer=None
         from .core.item_options import item_options
         inspector=tk.Frame(panes,bg=PANEL)
@@ -372,6 +384,7 @@ class EditorApp(tk.Tk):
 
     def show_project(self,reset_hierarchy=False):
         self._show_editor()
+        if getattr(self,'trading_active',False):self.close_trading()
         self._cancel_model_load()
         self.current=None
         self.world.current=None
@@ -743,7 +756,37 @@ class EditorApp(tk.Tk):
             entry=mesh
         self._show_model_source(entry,camera)
 
+    def open_trading(self):
+        if self.repo.root is None or self.npcs.current is None:
+            self.terminal.append('Торговля: сначала выберите NPC в редакторе.')
+            return
+        if not self.npcs.save():return
+        self.trading_active=True
+        self.editor_tab.set_selected(False)
+        self.project_tab.set_selected(True)
+        self.trading_panel.show(self.npcs.current)
+        self.viewer.pack_forget()
+        self.media_viewer.pack_forget()
+        self.editor_panes.paneconfigure(self.editor_middle,hide=False)
+        self.editor_panes.paneconfigure(self.editor_inspector,hide=True)
+        self.trading_panel.pack(fill='both',expand=True)
+
+    def close_trading(self):
+        if not getattr(self,'trading_active',False):return
+        if not self.trading_panel.save():return
+        self.trading_active=False
+        self.trading_panel.pack_forget()
+        self.editor_tab.set_selected(True)
+        self.project_tab.set_selected(False)
+        self._show_resource_panels(self._resource_browser)
+
     def _show_resource_panels(self,mode):
+        if getattr(self,'trading_active',False):
+            if not self.trading_panel.save():return
+            self.trading_active=False
+            self.trading_panel.pack_forget()
+            self.editor_tab.set_selected(True)
+            self.project_tab.set_selected(False)
         # Location editor uses the entire main area, keeping the terminal below.
         if mode=='locations':
             self._resource_browser=mode
