@@ -74,6 +74,9 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._warm_chunks = ()
         self._chunk_names = {}
         self._vob_names = {}
+        self._warm_texture_names = ()
+        self._warm_texture_cursor = 0
+        self._can_warm_gpu = False
 
     def _failed_context(self, exc):
         if self._failed:
@@ -139,6 +142,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._pin_visible_textures()
         self._draw_chunks()
         self._draw_vobs()
+        self._warm_gpu_textures()
         glDisable(GL_TEXTURE_2D)
         glDisable(GL_ALPHA_TEST)
 
@@ -262,6 +266,20 @@ class WorldOpenGLFrame(OpenGLFrame):
             return False
         candidate = self._canonical_texture(name)
         return candidate not in self._gpu_textures and candidate not in self._invalid_gpu
+
+    def _warm_gpu_textures(self):
+        """Upload at most one neighbor texture on otherwise idle frames."""
+        if (self.render_mode != 'textures' or self.textures is None
+                or not self._can_warm_gpu or self._uploads_this_frame):
+            return
+        count = len(self._warm_texture_names)
+        for _ in range(min(32, count)):
+            name = self._warm_texture_names[self._warm_texture_cursor % count]
+            self._warm_texture_cursor = (self._warm_texture_cursor + 1) % count
+            if not self._needs_decode(name):
+                continue
+            if self._texture_id(name):
+                break
 
     def _draw_group(self, name, list_id):
         tex_id = self._texture_id(name)
@@ -438,6 +456,8 @@ class WorldOpenGLFrame(OpenGLFrame):
             self._cached_world = self.world
             self._selected_key = None
             self._warm_key = None
+            self._warm_texture_names = ()
+            self._warm_texture_cursor = 0
         if self.focus is None:
             return
 
@@ -470,6 +490,8 @@ class WorldOpenGLFrame(OpenGLFrame):
                     remaining -= count
             self._warm_chunks = tuple(extra)
             self._warm_key = warm_key
+            self._warm_texture_names = ()
+            self._warm_texture_cursor = 0
 
         if self.render_mode == 'textures' and self.textures is not None:
             # Decode visible materials before warm neighbors; one chunk may
@@ -486,10 +508,14 @@ class WorldOpenGLFrame(OpenGLFrame):
                     self._chunk_names[key] = unique
                 names.extend(unique)
             self.textures.prefetch(name for name in names if self._needs_decode(name))
+            if not self._warm_texture_names and self._warm_chunks:
+                self._warm_texture_names = tuple(dict.fromkeys(
+                    name for key in self._warm_chunks for name in self._chunk_names[key]))
 
         missing_visible = [key for key in visible if key not in self._lists]
         missing_warm = [key for key in self._warm_chunks
                         if key not in self._lists]
+        self._can_warm_gpu = not missing_visible and not missing_warm
         # Limit compilation to one chunk per frame; the camera never rebuilds
         # a combined mesh when crossing a chunk boundary.
         for key in (missing_visible or missing_warm)[:1]:
