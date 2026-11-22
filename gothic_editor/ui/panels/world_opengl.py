@@ -348,15 +348,20 @@ class WorldOpenGLFrame(OpenGLFrame):
 
     def _draw_group(self, name, list_id):
         tex_id = self._texture_id(name)
-        if tex_id:
-            glEnable(GL_TEXTURE_2D)
-            glEnable(GL_ALPHA_TEST)
-            glAlphaFunc(GL_GREATER, 0.1)
-            glBindTexture(GL_TEXTURE_2D, tex_id)
-            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE)
-        else:
-            glDisable(GL_TEXTURE_2D)
-            glDisable(GL_ALPHA_TEST)
+        # Binding/alpha state changes used to run for every VOB instance,
+        # including thousands of identical barrels and trees.
+        if tex_id != self._bound_texture:
+            if tex_id:
+                if not self._bound_texture:
+                    glEnable(GL_TEXTURE_2D)
+                    glEnable(GL_ALPHA_TEST)
+                    glAlphaFunc(GL_GREATER, 0.1)
+                    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE)
+                glBindTexture(GL_TEXTURE_2D, tex_id)
+            elif self._bound_texture is not None:
+                glDisable(GL_TEXTURE_2D)
+                glDisable(GL_ALPHA_TEST)
+            self._bound_texture = tex_id
         glCallList(list_id)
 
     def _delete_lists(self):
@@ -440,16 +445,19 @@ class WorldOpenGLFrame(OpenGLFrame):
 
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE if self.render_mode == 'wire' else GL_FILL)
         try:
+            # Draw instances of one visual together to reduce GL texture
+            # switches, while keeping individual world transforms intact.
+            grouped = OrderedDict()
             for key in nearby:
                 for index in scene.chunks[key]:
                     vob = scene.objects[index]
-                    lists = self._vob_lists.get(vob.visual)
-                    if lists is None:
-                        continue
+                    if vob.visual in self._vob_lists:
+                        grouped.setdefault(vob.visual, []).append(vob)
+            for visual, objects in grouped.items():
+                lists = self._vob_lists[visual]
+                for vob in objects:
                     rot = vob.rotation
                     px, py, pz = vob.position
-                    # ZenGin 3x3 rotation in row-major order; OpenGL expects
-                    # column-major 4x4. Translation is world-space.
                     matrix = (rot[0], rot[3], rot[6], 0.,
                               rot[1], rot[4], rot[7], 0.,
                               rot[2], rot[5], rot[8], 0.,
