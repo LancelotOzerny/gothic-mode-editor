@@ -23,6 +23,7 @@ from OpenGL.GL import (
     GL_TEXTURE_WRAP_S, GL_TEXTURE_WRAP_T, GL_LINEAR, GL_REPEAT,
     GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE, GL_RGBA,
     GL_UNSIGNED_BYTE, GL_UNPACK_ALIGNMENT,
+    glAlphaFunc, GL_ALPHA_TEST, GL_GREATER,
 )
 from OpenGL.GLU import gluPerspective
 from pyopengltk import OpenGLFrame
@@ -133,6 +134,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._draw_chunks()
         self._draw_vobs()
         glDisable(GL_TEXTURE_2D)
+        glDisable(GL_ALPHA_TEST)
 
     def _delete_textures(self):
         if self._gpu_textures:
@@ -192,10 +194,13 @@ class WorldOpenGLFrame(OpenGLFrame):
         tex_id = self._texture_id(name)
         if tex_id:
             glEnable(GL_TEXTURE_2D)
+            glEnable(GL_ALPHA_TEST)
+            glAlphaFunc(GL_GREATER, 0.1)
             glBindTexture(GL_TEXTURE_2D, tex_id)
             glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE)
         else:
             glDisable(GL_TEXTURE_2D)
+            glDisable(GL_ALPHA_TEST)
         glCallList(list_id)
 
     def _delete_lists(self):
