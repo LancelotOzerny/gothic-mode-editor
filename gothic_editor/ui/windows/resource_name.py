@@ -6,19 +6,19 @@ from gothic_editor.core.localization import tr
 
 
 class ResourceNameDialog(EditorDialog):
-    def __init__(self, parent, script=False, *, resource=None):
+    def __init__(self, parent, script=False, *, resource=None, markdown=False):
         super().__init__(parent)
         self.result = None
         title = 'rename' if resource is not None else 'empty_script' if script else 'create_directory'
-        self.title(tr('resources.' + title))
+        self.title('Создать Markdown-документ' if markdown and resource is None else tr('resources.' + title))
         self.resizable(False, False)
         content = tk.Frame(self, bg=BG, padx=20, pady=20)
         content.pack(fill='both', expand=True)
         caption = 'resource_name' if resource is not None else 'script_name' if script else 'directory_name'
-        label(content, tr('resources.' + caption), bg=BG).pack(anchor='w')
+        label(content, 'Имя документа' if markdown and resource is None else tr('resources.' + caption), bg=BG).pack(anchor='w')
         self.entry = make_entry(content)
         self.entry.pack(fill='x', pady=12)
-        name = resource.name if resource is not None else 'NewScript.d' if script else 'NewFolder'
+        name = resource.name if resource is not None else 'NewScript.d' if script else 'NewDocument.md' if markdown else 'NewFolder'
         self.entry.insert(0, name)
         end = len(resource.stem) if resource is not None and resource.is_file() else 'end'
         self.entry.selection_range(0, end)
