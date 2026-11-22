@@ -89,7 +89,7 @@ class RecipeController:
         try:
             data = deepcopy(self.current)
             data.update({key: field.get() for key, field in self.panel.fields.items()
-                         if key not in ('availability', 'variable')})
+                         if key not in ('availability', 'variable', 'talent')})
             def number(value, field):
                 if not re.fullmatch(r'[0-9]+', value):
                     raise RecipeError(field, 'Нужно положительное целое число.')
@@ -100,6 +100,8 @@ class RecipeController:
             data['availability'] = {'type': self.panel.fields['availability'].get()}
             if data['availability']['type'] == 'global_variable':
                 data['availability']['variable'] = self.panel.fields['variable'].get()
+            elif data['availability']['type'] == 'stock_talent':
+                data['availability']['talent'] = self.panel.fields['talent'].get()
             validate_recipe(data)
             if data == self.current and self.persisted:
                 return True
