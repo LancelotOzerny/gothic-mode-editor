@@ -50,6 +50,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._cached_textures = None
         self._gpu_textures = OrderedDict()
         self._gpu_texture_bytes = 0
+        self._invalid_gpu = set()
         self._gpu_texture_budget = 96 * 1024 * 1024
         self.animate = True
         self._failed = False
@@ -138,6 +139,7 @@ class WorldOpenGLFrame(OpenGLFrame):
             glDeleteTextures([entry[0] for entry in self._gpu_textures.values()])
         self._gpu_textures.clear()
         self._gpu_texture_bytes = 0
+        self._invalid_gpu.clear()
 
     def _texture_id(self, name):
         if self.render_mode != 'textures' or self.textures is None or not name:
@@ -145,6 +147,8 @@ class WorldOpenGLFrame(OpenGLFrame):
         from gothic_editor.core.texture_names import texture_candidates
         identifier = next((candidate for candidate in texture_candidates(name)
                            if candidate in self.textures.sources), name.casefold())
+        if identifier in self._invalid_gpu:
+            return 0
         if identifier in self._gpu_textures:
             self._gpu_textures.move_to_end(identifier)
             return self._gpu_textures[identifier][0]
@@ -172,6 +176,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         except Exception as exc:
             if tex_id:
                 glDeleteTextures([tex_id])
+            self._invalid_gpu.add(identifier)
             self.textures.report_error(name, exc)
             return 0
         while self._gpu_texture_bytes + size > self._gpu_texture_budget and self._gpu_textures:
