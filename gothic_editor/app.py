@@ -68,7 +68,7 @@ class EditorApp(tk.Tk):
         self.register_bottom_tab('terminal','terminal.title',lambda parent:TerminalPanel(parent,self.hide_terminal))
         self.register_bottom_tab('resources','resources.title',lambda parent:ResourcesPanel(
             parent,lambda:self.repo.resource_editor_path,lambda:self.hide_bottom_tab('resources'),
-            on_changed=lambda:self.refresh(project_only=True),before_change=lambda:self._save_editors(),
+            on_changed=self._resource_files_changed,before_change=lambda:self._save_editors(),
             history=lambda:self.history))
         self.terminal_visible=self._bottom_tab_variables['terminal']
         self.resources_visible=self._bottom_tab_variables['resources']
@@ -613,6 +613,37 @@ class EditorApp(tk.Tk):
                     self.viewer.angle_x,self.viewer.angle_y,self.viewer.zoom=camera
                     self.viewer.draw()
         elif showing_welcome:self.show_welcome()
+
+    def _resource_files_changed(self, source=None, result=None):
+        """Avoid rescanning Gothic and rebuilding the item hierarchy for plain assets.
+
+        Script/item/model/world assets affect the repository indexes and still need
+        a full project-only refresh. Texts and other independent resource files
+        only invalidate option lists and cached previews.
+        """
+        from pathlib import Path
+        root = self.repo.root
+        if root is None:
+            return
+        assets = root / 'Assets'
+        indexed_roots = {
+            'scripts', 'items', 'models', 'worlds', 'npc', 'npcs',
+            'textures', 'animations', 'meshes',
+        }
+        for changed in (source, result):
+            if changed is None:
+                continue
+            path = Path(changed)
+            try:
+                relative = path.relative_to(assets)
+            except ValueError:
+                self.refresh(project_only=True)
+                return
+            if relative.parts and relative.parts[0].casefold() in indexed_roots:
+                self.refresh(project_only=True)
+                return
+        self.repo.options_cache.clear()
+        self.repo.resource_revision += 1
 
     def refresh(self,project_only=False):
         if not self.need_project():return
