@@ -49,7 +49,11 @@ class RecipeCategories:
             except UnicodeEncodeError as exc:raise RecipeError('category', 'Название категории несовместимо с Windows-1251.') from exc
             seen.add(key)
         index = {row['id'].casefold(): row for row in rows}
+        exact_ids = {row['id'] for row in rows}
         for row in rows:
+            if row.get('parent') and row['parent'] not in exact_ids:
+                raise RecipeError('category',
+                                  f'{row["id"]}: родительская категория {row["parent"]} не найдена.')
             parent = (row.get('parent') or '').casefold()
             trail = {row['id'].casefold()}
             while parent:
