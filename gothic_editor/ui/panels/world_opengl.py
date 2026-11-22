@@ -457,6 +457,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._vob_lists[name] = tuple(lists)
 
     def _draw_chunks(self):
+        self._can_warm_gpu = False
         if self.world is None:
             return
         if self._cached_world is not self.world:
