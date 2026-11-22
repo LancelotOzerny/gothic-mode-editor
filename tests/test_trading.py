@@ -75,17 +75,17 @@ class TradingTests(unittest.TestCase):
         prepare_trading(self.project,self.content)
         result=(self.content / DIALOG_OUTPUT).read_text('cp1251')
         self.assertIn('Покажи', result)
-        self.assertIn(r'\\"зелья\\"', result)
+        self.assertIn(r'\"зелья\"', result)
         with self.assertRaisesRegex(ValueError, 'Windows-1251'):
             self.store.save('NPC_Merchant',self.config(dialog_text='Potion 🧪'))
 
     def test_import_reads_items_not_npcs(self):
         (self.content / 'TradeExtra.d').write_text(
-            'func void B_GiveTradeInv_Vatras() {\\n'
-            '    if (Kapitel >= 3) {\\n'
-            '        CreateInvItems(self, ItFo_Bread, 7);\\n'
-            '    };\\n'
-            '};\\n', encoding='cp1251')
+            'func void B_GiveTradeInv_Vatras() {\n'
+            '    if (Kapitel >= 3) {\n'
+            '        CreateInvItems(self, ItFo_Bread, 7);\n'
+            '    };\n'
+            '};\n', encoding='cp1251')
         rows=game_trade_goods(self.content)
         self.assertEqual(rows,[{'source':'B_GiveTradeInv_Vatras',
                                  'item':'ItFo_Bread','quantity':7,'chapter':3}])
