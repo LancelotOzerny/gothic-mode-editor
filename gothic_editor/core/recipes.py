@@ -56,10 +56,12 @@ def validate_recipe(data):
             raise RecipeError('ingredients', 'Ингредиент повторяется: объедините количество в одной строке.')
         seen.add(key)
     availability = data.get('availability')
-    if not isinstance(availability, dict) or availability.get('type') not in ('always', 'global_variable'):
+    if not isinstance(availability, dict) or availability.get('type') not in ('always', 'global_variable', 'stock_talent'):
         raise RecipeError('availability', 'Неизвестный способ доступности.')
     if availability['type'] == 'global_variable':
         identifier(availability.get('variable'), 'variable')
+    elif availability['type'] == 'stock_talent':
+        identifier(availability.get('talent'), 'availability')
     return data
 
 
