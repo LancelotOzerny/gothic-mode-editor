@@ -13,10 +13,11 @@ from .textures import read_texture
 
 
 class WorldTextures:
-    def __init__(self, sources, *, max_ready_bytes=96 * 1024 * 1024):
+    def __init__(self, sources, *, loose_roots=(), max_ready_bytes=96 * 1024 * 1024):
         self.sources = {Path(name.replace('\\', '/')).name.casefold(): source
                         for name, source in sources.items()}
         self._executor = ThreadPoolExecutor(max_workers=2)
+        self._index_future = self._executor.submit(self._index_loose, tuple(loose_roots)) if loose_roots else None
         self._pending = {}
         self._ready = OrderedDict()
         self._missing = set()
@@ -24,7 +25,27 @@ class WorldTextures:
         self._max_ready_bytes = max_ready_bytes
         self._bytes = 0
 
+    @staticmethod
+    def _index_loose(roots):
+        result = {}
+        for root in roots:
+            root = Path(root)
+            if not root.is_dir():
+                continue
+            for path in root.rglob('*'):
+                if path.is_file() and path.suffix.casefold() in ('.tex', '.tga'):
+                    result.setdefault(path.name.casefold(), path)
+        return result
+
     def _source(self, name):
+        if self._index_future is not None and self._index_future.done():
+            try:
+                for filename, path in self._index_future.result().items():
+                    self.sources.setdefault(filename, path)
+            except OSError as exc:
+                self._errors.append(f'[ZEN] Поиск исходных текстур: {exc}')
+            self._index_future = None
+
         for candidate in texture_candidates(name):
             source = self.sources.get(candidate)
             if source is not None:
