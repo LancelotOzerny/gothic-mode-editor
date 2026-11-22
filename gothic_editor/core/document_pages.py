@@ -1,7 +1,6 @@
 """Compile small Markdown-like Gothic books and notes without touching source files.
 
-Gothic's ordinary document UI has one/two visible pages; enforce that limit
-instead of silently generating unreachable content.
+Vanilla Gothic shows only one spread. Reopening a long book displays the next spread.
 """
 from __future__ import annotations
 
@@ -11,7 +10,6 @@ from pathlib import Path
 from .daedalus_merge import definitions
 
 DOCUMENT_ROOT = Path('Assets/Texts')
-MAX_PAGES = 2
 # Conservative preview budgets; Gothic fonts vary with language / font assets.
 MAX_LINES = 13
 LINE_WIDTH = 37
@@ -96,8 +94,6 @@ def paginate(raw, *, book=False):
                 pages.append([])
                 used = 0
                 available = max_lines
-            if len(pages) > MAX_PAGES:
-                raise ValueError('Текст занимает более двух страниц Gothic. Сократите или разделите книгу.')
             chunk, lines = lines[:available], lines[available:]
             # The engine wraps each paragraph again to the actual font width.
             pages[-1].append((kind, ' '.join(chunk)))
@@ -105,8 +101,6 @@ def paginate(raw, *, book=False):
             if lines:
                 pages.append([])
                 used = 0
-    if len(pages) > MAX_PAGES:
-        raise ValueError('Текст занимает более двух страниц Gothic. Сократите или разделите книгу.')
     return pages
 
 def literal(text):
@@ -115,15 +109,13 @@ def literal(text):
     return '"' + text.replace('\\', '\\\\').replace('"', '\\"') + '"'
 
 
-def render_document(instance, raw, *, book=False):
-    pages = paginate(raw, book=book)
-    lines = [f'func void GE_ShowDocument_{instance}()',
+def _render_spread(function_name, pages, *, book=False):
+    """Create a normal Gothic document displaying one or two pages."""
+    lines = [f'func void {function_name}()',
              '{', '    var int doc;', '    doc = Doc_Create();',
              f'    Doc_SetPages(doc, {len(pages)});']
     textures = ('Book_Mage_L.tga', 'Book_Mage_R.tga') if book else ('letters.TGA', 'letters.TGA')
     for page, blocks in enumerate(pages):
-        # Gothic book textures contain two halves on one canvas. For left
-        # and right pages, the unused half must be excluded by large margins.
         margins = ((275, 20, 30, 20) if page == 0 else (30, 20, 275, 20)) if book else (50, 50, 50, 50)
         lines.extend((f'    Doc_SetPage(doc, {page}, {literal(textures[page])}, FALSE);',
                       f'    Doc_SetMargins(doc, {page}, {margins[0]}, {margins[1]}, {margins[2]}, {margins[3]}, TRUE);'))
@@ -132,11 +124,39 @@ def render_document(instance, raw, *, book=False):
                 lines.append(f'    Doc_PrintLine(doc, {page}, "");')
             font = 'FONT_BookHeadline' if kind == 'heading' else 'FONT_Book'
             lines.append(f'    Doc_SetFont(doc, {page}, {font});')
-            # Chunks are bounded to keep compiler string literals manageable.
             for chunk in textwrap.wrap(value, width=180,
                                        break_long_words=False, break_on_hyphens=False):
                 lines.append(f'    Doc_PrintLines(doc, {page}, {literal(chunk)});')
     lines.extend(('    Doc_Show(doc);', '};'))
-    script = '\n'.join(lines)
+    return '\n'.join(lines)
+
+
+def render_document(instance, raw, *, book=False):
+    pages = paginate(raw, book=book)
+    name = f'GE_ShowDocument_{instance}'
+    if len(pages) <= 2:
+        script = _render_spread(name, pages, book=book)
+    else:
+        # Vanilla Gothic cannot turn a page in an open document.
+        # Reusing the item shows successive spreads (including after saving).
+        spreads = [pages[index:index + 2] for index in range(0, len(pages), 2)]
+        state = f'GE_DocSpread_{instance}'
+        parts = [f'var int {state};']
+        for index, spread in enumerate(spreads):
+            parts.append(_render_spread(f'{name}_Part_{index}', spread, book=book))
+        lines = [f'func void {name}()', '{']
+        lines.extend((
+            f'    if ({state} < 0) { {state} = 0; };',
+            f'    if ({state} >= {len(spreads)}) { {state} = 0; };',
+        ))
+        for index in range(len(spreads)):
+            lines.append(f'    if ({state} == {index}) { {name}_Part_{index}(); };')
+        lines.extend((
+            f'    {state} = {state} + 1;',
+            f'    if ({state} >= {len(spreads)}) { {state} = 0; };',
+            '};',
+        ))
+        parts.append('\n'.join(lines))
+        script = '\n\n'.join(parts)
     definitions(script, instance)
     return script
