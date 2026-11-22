@@ -15,7 +15,7 @@ from gothic_editor.ui.widgets.dock import TAB_ACTION_HEIGHT
 
 
 class ResourcesPanel(Panel):
-    def __init__(self,parent,get_editor,on_hide,on_changed=lambda:None,before_change=lambda:True,history=None):
+    def __init__(self,parent,get_editor,on_hide,on_changed=lambda *_:None,before_change=lambda:True,history=None):
         super().__init__(parent,bg=BG)
         self.project=self.folder=self.menu=self._selected=None
         self._tree_paths={}
@@ -269,7 +269,6 @@ class ResourcesPanel(Panel):
             for node, path in tuple(self._tree_paths.items()):
                 if path != source:
                     continue
-                descendants = (node,) + tuple(self.tree.get_children(node))
                 # Remove mappings for every descendant, not just direct children.
                 def drop(current):
                     for child in self.tree.get_children(current):
