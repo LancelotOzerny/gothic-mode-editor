@@ -235,8 +235,9 @@ class WorldOpenGLFrame(OpenGLFrame):
     def _draw_vobs(self):
         scene = self.vobs
         if scene is not self._cached_vobs:
-            for list_id in self._vob_lists.values():
-                glDeleteLists(list_id, 1)
+            for lists in self._vob_lists.values():
+                for _name, list_id in lists:
+                    glDeleteLists(list_id, 1)
             self._vob_lists.clear()
             self._cached_vobs = scene
         if scene is None or not scene.objects or self.focus is None:
@@ -264,8 +265,8 @@ class WorldOpenGLFrame(OpenGLFrame):
             for key in nearby:
                 for index in scene.chunks[key]:
                     vob = scene.objects[index]
-                    list_id = self._vob_lists.get(vob.visual)
-                    if list_id is None:
+                    lists = self._vob_lists.get(vob.visual)
+                    if lists is None:
                         continue
                     rot = vob.rotation
                     px, py, pz = vob.position
@@ -278,31 +279,46 @@ class WorldOpenGLFrame(OpenGLFrame):
                     glPushMatrix()
                     try:
                         glMultMatrixf(matrix)
-                        glCallList(list_id)
+                        for texture, list_id in lists:
+                            self._draw_group(texture, list_id)
                     finally:
                         glPopMatrix()
         finally:
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
 
     def _compile_vob(self, name, mesh):
-        list_id = int(glGenLists(1))
-        if not list_id:
-            raise RuntimeError('Не удалось выделить OpenGL-список для VOB.')
-        glNewList(list_id, GL_COMPILE)
+        batches = OrderedDict()
+        for i, face in enumerate(mesh.faces):
+            uv = mesh.uvs[i] if i < len(mesh.uvs) else None
+            texture = mesh.texture_names[i] if i < len(mesh.texture_names) and uv else ''
+            batches.setdefault(texture.casefold(), []).append((face, uv))
+        lists = []
         try:
-            glBegin(GL_TRIANGLES)
-            try:
-                for face in mesh.faces:
-                    color = face_color(mesh.vertices, face)
-                    glColor3f(*(int(color[i:i+2], 16)/255.0
-                                for i in (1, 3, 5)))
-                    for index in face:
-                        glVertex3f(*mesh.vertices[index])
-            finally:
-                glEnd()
-        finally:
-            glEndList()
-        self._vob_lists[name] = list_id
+            for texture, entries in batches.items():
+                list_id = int(glGenLists(1))
+                if not list_id:
+                    raise RuntimeError('Не удалось выделить OpenGL-список для VOB.')
+                lists.append((texture, list_id))
+                glNewList(list_id, GL_COMPILE)
+                try:
+                    glBegin(GL_TRIANGLES)
+                    try:
+                        for face, uv in entries:
+                            color = face_color(mesh.vertices, face)
+                            glColor3f(*(int(color[j:j+2], 16)/255.0 for j in (1, 3, 5)))
+                            for corner, index in enumerate(face):
+                                if uv is not None:
+                                    glTexCoord2f(*uv[corner])
+                                glVertex3f(*mesh.vertices[index])
+                    finally:
+                        glEnd()
+                finally:
+                    glEndList()
+        except Exception:
+            for _texture, list_id in lists:
+                glDeleteLists(list_id, 1)
+            raise
+        self._vob_lists[name] = tuple(lists)
 
     def _draw_chunks(self):
         if self.world is None:
