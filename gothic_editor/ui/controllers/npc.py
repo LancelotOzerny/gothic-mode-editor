@@ -54,7 +54,7 @@ class NpcController:
             self.show_list()
             self.select(npc)
         window=ValueChoiceWindow(self.app,[(value.title+' / '+value.instance,value.instance) for value in options],-1,
-                                 'Добавить NPC из Gothic',choose,lambda:window.destroy())
+                                 'Добавить NPC из Gothic',choose,lambda:window.destroy(),searchable=True)
         window.show()
 
     def deselect(self):
@@ -163,8 +163,7 @@ class NpcController:
 
     def configure_trading(self):
         if self.current is None or not self.save():return
-        from gothic_editor.ui.windows.trading import TradingWindow
-        try:TradingWindow(self.app,self)
+        try:self.app.open_trading()
         except (OSError,ValueError) as exc:self.app.terminal.append('Торговля: '+str(exc))
 
     def import_model(self,kind):
