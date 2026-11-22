@@ -120,6 +120,8 @@ def prepare_trading(project, content):
             hooks.append('    };')
         updated = source[:header.end()] + '\n' + '\n'.join(hooks) + '\n' + source[header.end():]
         tree.apply({path: [(definition.start, definition.end, updated)]})
+    elif any(not config.get('dialog', False) for config in traders.values()):
+        raise ValueError('В Gothic не найдена B_GiveTradeInv: для торговцев без нового диалога нужен стандартный обработчик торговли.')
     destination = target_path(content, OUTPUT)
     if destination.exists():
         raise ValueError('Занят файл автогенерации торговцев: ' + str(destination))
