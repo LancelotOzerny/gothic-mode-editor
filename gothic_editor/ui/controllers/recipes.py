@@ -71,7 +71,12 @@ class RecipeController:
         self.persisted = persisted
         self.panel.show(self.current)
         self.app.recipe_list.select_category(None)
-        self.app.recipe_list.expanded[('project', self.current.get('category',''))] = True
+        from gothic_editor.core.recipe_categories import RecipeCategories
+        categories = {row['id']: row for row in RecipeCategories(self.app.repo.root).load()}
+        code = self.current.get('category', '')
+        while code:
+            self.app.recipe_list.expanded[('project', code)] = True
+            code = (categories.get(code) or {}).get('parent') or ''
         self.app.recipe_list.populate()
 
     def save(self):
