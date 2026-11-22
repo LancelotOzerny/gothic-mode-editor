@@ -100,6 +100,7 @@ class WorldOpenGLFrame(OpenGLFrame):
 
     def _redraw_scene(self):
         width, height = max(1, self.winfo_width()), max(1, self.winfo_height())
+        self._uploads_this_frame = 0
         glViewport(0, 0, width, height)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         if self.world is None:
@@ -141,35 +142,45 @@ class WorldOpenGLFrame(OpenGLFrame):
     def _texture_id(self, name):
         if self.render_mode != 'textures' or self.textures is None or not name:
             return 0
-        texture = self.textures.request(name)
-        if texture is None:
-            return 0
         from gothic_editor.core.texture_names import texture_candidates
         identifier = next((candidate for candidate in texture_candidates(name)
                            if candidate in self.textures.sources), name.casefold())
         if identifier in self._gpu_textures:
             self._gpu_textures.move_to_end(identifier)
             return self._gpu_textures[identifier][0]
+        if self._uploads_this_frame >= 1:
+            return 0
+        texture = self.textures.request(name)
+        if texture is None:
+            return 0
         size = len(texture.pixels)
         if size > self._gpu_texture_budget:
+            return 0
+        tex_id = 0
+        try:
+            tex_id = int(glGenTextures(1))
+            if not tex_id:
+                return 0
+            glBindTexture(GL_TEXTURE_2D, tex_id)
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture.width, texture.height,
+                         0, GL_RGBA, GL_UNSIGNED_BYTE, texture.pixels)
+        except Exception as exc:
+            if tex_id:
+                glDeleteTextures([tex_id])
+            self.textures.report_error(name, exc)
             return 0
         while self._gpu_texture_bytes + size > self._gpu_texture_budget and self._gpu_textures:
             _, (old_id, old_size) = self._gpu_textures.popitem(last=False)
             glDeleteTextures([old_id])
             self._gpu_texture_bytes -= old_size
-        tex_id = int(glGenTextures(1))
-        if not tex_id:
-            return 0
-        glBindTexture(GL_TEXTURE_2D, tex_id)
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture.width, texture.height,
-                     0, GL_RGBA, GL_UNSIGNED_BYTE, texture.pixels)
         self._gpu_textures[identifier] = (tex_id, size)
         self._gpu_texture_bytes += size
+        self._uploads_this_frame += 1
         return tex_id
 
     def _draw_group(self, name, list_id):
