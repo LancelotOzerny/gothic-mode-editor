@@ -56,6 +56,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._gpu_texture_budget = 128 * 1024 * 1024
         self._visible_gpu = set()
         self._visible_gpu_key = None
+        self._visible_vob_names = ()
         self.animate = True
         self._failed = False
         self.world = None
@@ -141,6 +142,7 @@ class WorldOpenGLFrame(OpenGLFrame):
             self._delete_textures()
             self._cached_textures = self.textures
         self._pin_visible_textures()
+        self._prepare_visible_vobs()
         self._draw_chunks()
         self._draw_vobs()
         self._warm_gpu_textures()
@@ -164,6 +166,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         """Avoid evicting textures still needed by this frame's world/VOBs."""
         if self.textures is None or self.render_mode != 'textures' or self.focus is None:
             self._visible_gpu.clear()
+            self._visible_vob_names = ()
             self._visible_gpu_key = None
             return
         key = (id(self.world), id(self.vobs), id(self.textures),
@@ -185,6 +188,7 @@ class WorldOpenGLFrame(OpenGLFrame):
                     if uv is not None and name))
                 self._chunk_names[key] = unique
             self._visible_gpu.update(self._canonical_texture(name) for name in unique)
+        vob_names = []
         if self.vobs is not None:
             if self.vobs is not self._cached_vobs:
                 self._vob_names.clear()
@@ -201,6 +205,21 @@ class WorldOpenGLFrame(OpenGLFrame):
                             if uv is not None and name))
                         self._vob_names[visual] = names
                     self._visible_gpu.update(self._canonical_texture(name) for name in names)
+                    vob_names.extend(names)
+        self._visible_vob_names = tuple(dict.fromkeys(vob_names))
+
+    def _prepare_visible_vobs(self):
+        if self.textures is None or self.render_mode != 'textures':
+            return
+        # Start VOB decoding before terrain/neighbor prefetch fills the queue.
+        self.textures.prefetch(
+            name for name in self._visible_vob_names if self._needs_decode(name))
+        # Reserve at most one upload for current VOBs before the terrain draw.
+        for name in self._visible_vob_names:
+            if self._uploads_this_frame:
+                break
+            if self._needs_decode(name):
+                self._texture_id(name)
 
     def _texture_id(self, name):
         if self.render_mode != 'textures' or self.textures is None or not name:
@@ -371,20 +390,6 @@ class WorldOpenGLFrame(OpenGLFrame):
                abs(key[1] - self.focus[1]) <= self.radius
         ]
         nearby.sort()
-        if self.render_mode == 'textures' and self.textures is not None:
-            visible_names = []
-            for key in nearby:
-                for index in scene.chunks[key]:
-                    visual = scene.objects[index].visual
-                    names = self._vob_names.get(visual)
-                    if names is None:
-                        mesh = scene.models[visual]
-                        names = tuple(dict.fromkeys(
-                            name for uv, name in zip(mesh.uvs, mesh.texture_names)
-                            if uv is not None and name))
-                        self._vob_names[visual] = names
-                    visible_names.extend(names)
-            self.textures.prefetch(name for name in visible_names if self._needs_decode(name))
         # Precompile one unique visual per frame, just like the terrain chunks.
         for key in nearby:
             for index in scene.chunks[key]:
