@@ -89,7 +89,8 @@ class WorldTextures:
         del self._pending[candidate]
         try:
             texture = future.result()
-        except (OSError, ValueError, IndexError) as exc:
+        except Exception as exc:
+            # Isolate malformed textures and decoder failures from world loading.
             self._missing.add(candidate)
             self._errors.append(f'[ZEN] Текстура {candidate}: {exc}')
             return None
