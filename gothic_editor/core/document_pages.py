@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .daedalus_merge import definitions
 
-DOCUMENT_ROOT = Path('Assets/Texts/Documents')
+DOCUMENT_ROOT = Path('Assets/Texts')
 MAX_PAGES = 2
 # Conservative preview budgets; Gothic fonts vary with language / font assets.
 MAX_LINES = 13
@@ -34,7 +34,7 @@ def document_files(project):
 
 def load_document(project, reference):
     if not isinstance(reference, str) or not reference or '\\' in reference:
-        raise ValueError('Выберите текст книги или записки в Assets/Texts/Documents.')
+        raise ValueError('Выберите текст книги или записки в Assets/Texts.')
     project = Path(project).resolve()
     root = (project / DOCUMENT_ROOT).resolve()
     path = (project / reference).resolve()
