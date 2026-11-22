@@ -346,10 +346,7 @@ class WorldOpenGLFrame(OpenGLFrame):
             if self._texture_id(name):
                 break
 
-    def _draw_group(self, name, list_id):
-        tex_id = self._texture_id(name)
-        # Binding/alpha state changes used to run for every VOB instance,
-        # including thousands of identical barrels and trees.
+    def _bind_cached_texture(self, tex_id):
         if tex_id != self._bound_texture:
             if tex_id:
                 if not self._bound_texture:
@@ -362,6 +359,9 @@ class WorldOpenGLFrame(OpenGLFrame):
                 glDisable(GL_TEXTURE_2D)
                 glDisable(GL_ALPHA_TEST)
             self._bound_texture = tex_id
+
+    def _draw_group(self, name, list_id):
+        self._bind_cached_texture(self._texture_id(name))
         glCallList(list_id)
 
     def _delete_lists(self):
@@ -454,21 +454,26 @@ class WorldOpenGLFrame(OpenGLFrame):
                     if vob.visual in self._vob_lists:
                         grouped.setdefault(vob.visual, []).append(vob)
             for visual, objects in grouped.items():
-                lists = self._vob_lists[visual]
+                # Group by material before instance: shared meshes with many
+                # instances require one GL bind per material, not per VOB.
+                transforms = []
                 for vob in objects:
                     rot = vob.rotation
                     px, py, pz = vob.position
-                    matrix = (rot[0], rot[3], rot[6], 0.,
-                              rot[1], rot[4], rot[7], 0.,
-                              rot[2], rot[5], rot[8], 0.,
-                              px, py, pz, 1.)
-                    glPushMatrix()
-                    try:
-                        glMultMatrixf(matrix)
-                        for texture, list_id in lists:
-                            self._draw_group(texture, list_id)
-                    finally:
-                        glPopMatrix()
+                    transforms.append((rot[0], rot[3], rot[6], 0.,
+                                       rot[1], rot[4], rot[7], 0.,
+                                       rot[2], rot[5], rot[8], 0.,
+                                       px, py, pz, 1.))
+                for texture, list_id in self._vob_lists[visual]:
+                    tex_id = self._texture_id(texture)
+                    self._bind_cached_texture(tex_id)
+                    for matrix in transforms:
+                        glPushMatrix()
+                        try:
+                            glMultMatrixf(matrix)
+                            glCallList(list_id)
+                        finally:
+                            glPopMatrix()
         finally:
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
 
