@@ -6,6 +6,7 @@ import unittest
 from gothic_editor.core.trading import TradingStore
 from gothic_editor.core.trading_generator import prepare_trading, prioritize_trading, OUTPUT, DIALOG_OUTPUT
 from gothic_editor.core.scripts import load_text
+from gothic_editor.core.trading_import import game_trade_goods
 
 
 class TradingTests(unittest.TestCase):
@@ -68,6 +69,27 @@ class TradingTests(unittest.TestCase):
         prioritize_trading(manifest)
         lines=manifest.read_text('cp1251').splitlines()
         self.assertLess(lines.index('GE_Trading\\Stock.d'),lines.index('Trade.d'))
+
+    def test_dialog_text_is_saved_escaped_and_validated(self):
+        self.store.save('NPC_Merchant', self.config(dialog_text='Покажи \\"зелья\\"'))
+        prepare_trading(self.project,self.content)
+        result=(self.content / DIALOG_OUTPUT).read_text('cp1251')
+        self.assertIn('Покажи', result)
+        self.assertIn('зелья', result)
+        self.assertIn('\\\\"зелья\\\\"', result)
+        with self.assertRaisesRegex(ValueError, 'Windows-1251'):
+            self.store.save('NPC_Merchant',self.config(dialog_text='Potion 🧪'))
+
+    def test_import_reads_items_not_npcs(self):
+        (self.content / 'TradeExtra.d').write_text(
+            'func void B_GiveTradeInv_Vatras() {\\n'
+            '    if (Kapitel >= 3) {\\n'
+            '        CreateInvItems(self, ItFo_Bread, 7);\\n'
+            '    };\\n'
+            '};\\n', encoding='cp1251')
+        rows=game_trade_goods(self.content)
+        self.assertEqual(rows,[{'source':'B_GiveTradeInv_Vatras',
+                                 'item':'ItFo_Bread','quantity':7,'chapter':3}])
 
     def test_replace_original_and_missing_item(self):
         self.store.save('NPC_Merchant', self.config(replace_original=True,dialog=False))
