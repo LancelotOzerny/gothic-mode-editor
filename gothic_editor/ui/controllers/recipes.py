@@ -181,7 +181,9 @@ class RecipeController:
         try:
             category = next((row for row in store.load() if row['id']==code), None)
             if action in ('create', 'edit'):
-                window = RecipeCategoryDialog(self.app, store, refresh, category)
+                window = RecipeCategoryDialog(self.app, store, refresh,
+                                              category if action == 'edit' else None,
+                                              parent=code if action == 'create' else None)
                 window.show_centered(modal=True)
             elif action == 'duplicate':
                 store.duplicate(code)
