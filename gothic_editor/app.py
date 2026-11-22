@@ -627,7 +627,7 @@ class EditorApp(tk.Tk):
             return
         assets = root / 'Assets'
         indexed_roots = {
-            'scripts', 'items', 'models', 'worlds', 'npc', 'npcs',
+            'items', 'models', 'worlds', 'world', 'locations', 'npc', 'npcs',
             'textures', 'animations', 'meshes',
         }
         for changed in (source, result):
@@ -639,7 +639,9 @@ class EditorApp(tk.Tk):
             except ValueError:
                 self.refresh(project_only=True)
                 return
-            if relative.parts and relative.parts[0].casefold() in indexed_roots:
+            parts = [part.casefold() for part in relative.parts]
+            if parts and (parts[0] in indexed_roots or
+                          (parts[0] == 'scripts' and len(parts) > 1 and parts[1] == 'content')):
                 self.refresh(project_only=True)
                 return
         self.repo.options_cache.clear()
