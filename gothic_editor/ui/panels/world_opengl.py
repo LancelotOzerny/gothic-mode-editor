@@ -203,6 +203,14 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._uploads_this_frame += 1
         return tex_id
 
+    def _needs_decode(self, name):
+        if not name:
+            return False
+        from gothic_editor.core.texture_names import texture_candidates
+        candidate = next((item for item in texture_candidates(name)
+                          if item in self.textures.sources), name.casefold())
+        return candidate not in self._gpu_textures and candidate not in self._invalid_gpu
+
     def _draw_group(self, name, list_id):
         tex_id = self._texture_id(name)
         if tex_id:
@@ -297,7 +305,7 @@ class WorldOpenGLFrame(OpenGLFrame):
                             if uv is not None and name))
                         self._vob_names[visual] = names
                     visible_names.extend(names)
-            self.textures.prefetch(visible_names)
+            self.textures.prefetch(name for name in visible_names if self._needs_decode(name))
         # Precompile one unique visual per frame, just like the terrain chunks.
         for key in nearby:
             for index in scene.chunks[key]:
@@ -425,7 +433,7 @@ class WorldOpenGLFrame(OpenGLFrame):
                         if uv is not None and name))
                     self._chunk_names[key] = unique
                 names.extend(unique)
-            self.textures.prefetch(names)
+            self.textures.prefetch(name for name in names if self._needs_decode(name))
 
         missing_visible = [key for key in visible if key not in self._lists]
         missing_warm = [key for key in self._warm_chunks
