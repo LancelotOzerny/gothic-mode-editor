@@ -88,7 +88,7 @@ class TradingPanel(Panel):
         self.dialog_text.trace_add('write', lambda *_:self.changed())
         self.dialog_entry = self._row(self.dialog_container, 'Фраза торгового диалога',
                                       'text', self.dialog_text)
-        self._control(general, 'Заменить оригинальный ассортимент', 'boolean', self.replace)
+        self.replace_row = self._control(general, 'Заменить оригинальный ассортимент', 'boolean', self.replace)
         self._control(general, 'Доступно с главы', 'choice', self.chapter,
                       options=[(str(n), str(n)) for n in range(1,7)])
         self._control(general, 'Пополнение каждые N игровых часов (0 — отключено)', 'number',
@@ -127,7 +127,7 @@ class TradingPanel(Panel):
 
     def _dialog_state(self):
         if self.dialog.get():
-            self.dialog_container.pack(fill='x',padx=8)
+            self.dialog_container.pack(fill='x',padx=8,before=self.replace_row)
         else:
             self.dialog_container.pack_forget()
 
