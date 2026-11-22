@@ -18,9 +18,9 @@ from OpenGL.GL import (
     GL_FILL, GL_FRONT_AND_BACK, GL_LEQUAL, GL_LINE, GL_MODELVIEW,
     GL_PROJECTION, GL_TRIANGLES, glDepthFunc, GL_COMPILE,
     glBindTexture, glGenTextures, glDeleteTextures, glTexImage2D,
-    glTexParameteri, glTexCoord2f, glTexEnvi, glPixelStorei,
+    glTexParameteri, glTexCoord2f, glTexEnvi, glPixelStorei, glGenerateMipmap,
     GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER,
-    GL_TEXTURE_WRAP_S, GL_TEXTURE_WRAP_T, GL_LINEAR, GL_REPEAT,
+    GL_TEXTURE_WRAP_S, GL_TEXTURE_WRAP_T, GL_LINEAR, GL_LINEAR_MIPMAP_LINEAR, GL_REPEAT,
     GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE, GL_RGBA,
     GL_UNSIGNED_BYTE, GL_UNPACK_ALIGNMENT,
     glAlphaFunc, GL_ALPHA_TEST, GL_GREATER,
@@ -159,7 +159,8 @@ class WorldOpenGLFrame(OpenGLFrame):
         texture = self.textures.request(name)
         if texture is None:
             return 0
-        size = len(texture.pixels)
+        # GPU mip levels need about 1/3 more storage than the base level.
+        size = len(texture.pixels) * 4 // 3 + 16
         if size > self._gpu_texture_budget:
             return 0
         tex_id = 0
@@ -175,6 +176,16 @@ class WorldOpenGLFrame(OpenGLFrame):
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture.width, texture.height,
                          0, GL_RGBA, GL_UNSIGNED_BYTE, texture.pixels)
+            # Trilinear minification prevents distant rock/brick textures from
+            # aliasing into the grainy pattern caused by base-level GL_LINEAR.
+            # Mip generation happens once, never for every camera frame.
+            try:
+                glGenerateMipmap(GL_TEXTURE_2D)
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                                GL_LINEAR_MIPMAP_LINEAR)
+            except Exception:
+                # Keep the base level usable on older OpenGL contexts.
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
         except Exception as exc:
             if tex_id:
                 glDeleteTextures([tex_id])
