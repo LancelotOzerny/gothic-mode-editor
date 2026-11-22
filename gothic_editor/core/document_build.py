@@ -40,9 +40,14 @@ def apply_documents(project, content):
             raise ValueError(f'{item.instance}: документ отсутствует в исходниках сборки.')
         path, definition = location
         source = tree.documents[path].text[definition.start:definition.end]
-        raw = load_document(project, reference)
-        book = 'book' in item.visual.casefold()
-        script = render_document(item.instance, raw, book=book)
+        try:
+            raw = load_document(project, reference)
+            book = 'book' in item.visual.casefold()
+            script = render_document(item.instance, raw, book=book)
+        except (OSError, ValueError) as exc:
+            raise ValueError(
+                f'Документ {item.instance} ({reference}): {exc}'
+            ) from exc
         # The user-selected actions still run, but a replaced original read
         # callback must not show its old page over this newly generated text.
         if any(row['id'] for row in assignments(item.editor_metadata.get('item_actions', ''))):
