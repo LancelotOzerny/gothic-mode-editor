@@ -146,11 +146,11 @@ def render_document(instance, raw, *, book=False):
             parts.append(_render_spread(f'{name}_Part_{index}', spread, book=book))
         lines = [f'func void {name}()', '{']
         lines.extend((
-            f'    if ({state} < 0) { {state} = 0; };',
-            f'    if ({state} >= {len(spreads)}) { {state} = 0; };',
+            f'    if ({state} < 0) {{ {state} = 0; }};',
+            f'    if ({state} >= {len(spreads)}) {{ {state} = 0; }};',
         ))
         for index in range(len(spreads)):
-            lines.append(f'    if ({state} == {index}) { {name}_Part_{index}(); };')
+            lines.append(f'    if ({state} == {index}) {{ {name}_Part_{index}(); }};')
         lines.extend((
             f'    {state} = {state} + 1;',
             f'    if ({state} >= {len(spreads)}) { {state} = 0; };',
