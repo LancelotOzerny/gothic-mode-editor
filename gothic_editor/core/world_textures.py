@@ -20,6 +20,7 @@ class WorldTextures:
         self._executor = ThreadPoolExecutor(max_workers=2)
         self._index_future = self._executor.submit(self._index_loose, tuple(loose_roots)) if loose_roots else None
         self._pending = {}
+        self._alpha = {}
         self._max_pending = 8
         self._ready = OrderedDict()
         self._missing = set()
@@ -78,7 +79,11 @@ class WorldTextures:
         stride = image.width * 4
         rows = (image.pixels[y * stride:(y + 1) * stride]
                 for y in range(image.height - 1, -1, -1))
-        return Texture(image.width, image.height, b''.join(rows))
+        flipped = Texture(image.width, image.height, b''.join(rows))
+        # Detect cutout alpha away from the UI thread. Opaque terrain must
+        # never be rendered with the expensive fixed-function GL_ALPHA_TEST.
+        has_alpha = flipped.pixels[3::4].count(255) != flipped.width * flipped.height
+        return flipped, has_alpha
 
     def _collect_ready(self):
         """Collect every finished task, even for textures no longer on screen.
@@ -96,6 +101,12 @@ class WorldTextures:
                 self._missing.add(candidate)
                 self._errors.append(f'[ZEN] Текстура {candidate}: {exc}')
                 continue
+            if isinstance(texture, tuple):
+                texture, has_alpha = texture
+            else:
+                # Tolerate legacy/mocked decoders returning Texture directly.
+                has_alpha = texture.pixels[3::4].count(255) != texture.width * texture.height
+            self._alpha[candidate] = has_alpha
             self._ready[candidate] = texture
             self._bytes += len(texture.pixels)
         while self._bytes > self._max_ready_bytes and len(self._ready) > 1:
@@ -139,6 +150,10 @@ class WorldTextures:
             self._pending[candidate] = self._executor.submit(self._decode, source)
         return None
 
+    def has_alpha(self, name):
+        candidate, _source = self._source(name)
+        return self._alpha.get(candidate, False)
+
     def report_error(self, name, error):
         candidate, _source = self._source(name)
         key = candidate or name.casefold()
@@ -154,3 +169,4 @@ class WorldTextures:
         self._executor.shutdown(wait=False, cancel_futures=True)
         self._pending.clear()
         self._ready.clear()
+        self._alpha.clear()
