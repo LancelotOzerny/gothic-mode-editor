@@ -65,7 +65,10 @@ class WorldTextures:
             return None
         candidate, source = self._source(name)
         if source is None:
-            self._missing.add(name.casefold())
+            if self._index_future is None and name.casefold() not in self._missing:
+                self._missing.add(name.casefold())
+                if len(self._missing) <= 20:
+                    self._errors.append(f'[ZEN] Не найдена текстура: {name}')
             return None
         if candidate in self._ready:
             self._ready.move_to_end(candidate)
@@ -92,7 +95,8 @@ class WorldTextures:
         return texture
 
     def report_error(self, name, error):
-        key = name.casefold()
+        candidate, _source = self._source(name)
+        key = candidate or name.casefold()
         if key not in self._missing:
             self._missing.add(key)
             self._errors.append(f'[ZEN] Текстура {name}: {error}')
