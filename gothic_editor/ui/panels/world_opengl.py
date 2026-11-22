@@ -17,6 +17,12 @@ from OpenGL.GL import (
     GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT, GL_DEPTH_TEST, GL_DEPTH_BITS,
     GL_FILL, GL_FRONT_AND_BACK, GL_LEQUAL, GL_LINE, GL_MODELVIEW,
     GL_PROJECTION, GL_TRIANGLES, glDepthFunc, GL_COMPILE,
+    glBindTexture, glGenTextures, glDeleteTextures, glTexImage2D,
+    glTexParameteri, glTexCoord2f, glTexEnvi, glPixelStorei,
+    GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER,
+    GL_TEXTURE_WRAP_S, GL_TEXTURE_WRAP_T, GL_LINEAR, GL_REPEAT,
+    GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE, GL_RGBA,
+    GL_UNSIGNED_BYTE, GL_UNPACK_ALIGNMENT,
 )
 from OpenGL.GLU import gluPerspective
 from pyopengltk import OpenGLFrame
@@ -39,6 +45,12 @@ class WorldOpenGLFrame(OpenGLFrame):
         self.zoom = 1.0
         self.span = 6000.0
         self.solid = True
+        self.render_mode = 'textures'
+        self.textures = None
+        self._cached_textures = None
+        self._gpu_textures = OrderedDict()
+        self._gpu_texture_bytes = 0
+        self._gpu_texture_budget = 96 * 1024 * 1024
         self.animate = True
         self._failed = False
         self.world = None
@@ -113,12 +125,67 @@ class WorldOpenGLFrame(OpenGLFrame):
             glRotatef(degrees(self.yaw), 0., 1., 0.)
             glTranslatef(-self.center[0], -self.center[1], -self.center[2])
 
+        if self.textures is not self._cached_textures:
+            self._delete_textures()
+            self._cached_textures = self.textures
         self._draw_chunks()
         self._draw_vobs()
+        glDisable(GL_TEXTURE_2D)
+
+    def _delete_textures(self):
+        if self._gpu_textures:
+            glDeleteTextures([entry[0] for entry in self._gpu_textures.values()])
+        self._gpu_textures.clear()
+        self._gpu_texture_bytes = 0
+
+    def _texture_id(self, name):
+        if self.render_mode != 'textures' or self.textures is None or not name:
+            return 0
+        texture = self.textures.request(name)
+        if texture is None:
+            return 0
+        from gothic_editor.core.texture_names import texture_candidates
+        identifier = next((candidate for candidate in texture_candidates(name)
+                           if candidate in self.textures.sources), name.casefold())
+        if identifier in self._gpu_textures:
+            self._gpu_textures.move_to_end(identifier)
+            return self._gpu_textures[identifier][0]
+        size = len(texture.pixels)
+        if size > self._gpu_texture_budget:
+            return 0
+        while self._gpu_texture_bytes + size > self._gpu_texture_budget and self._gpu_textures:
+            _, (old_id, old_size) = self._gpu_textures.popitem(last=False)
+            glDeleteTextures([old_id])
+            self._gpu_texture_bytes -= old_size
+        tex_id = int(glGenTextures(1))
+        if not tex_id:
+            return 0
+        glBindTexture(GL_TEXTURE_2D, tex_id)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture.width, texture.height,
+                     0, GL_RGBA, GL_UNSIGNED_BYTE, texture.pixels)
+        self._gpu_textures[identifier] = (tex_id, size)
+        self._gpu_texture_bytes += size
+        return tex_id
+
+    def _draw_group(self, name, list_id):
+        tex_id = self._texture_id(name)
+        if tex_id:
+            glEnable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, tex_id)
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE)
+        else:
+            glDisable(GL_TEXTURE_2D)
+        glCallList(list_id)
 
     def _delete_lists(self):
-        for list_id, _count in self._lists.values():
-            glDeleteLists(list_id, 1)
+        for groups, _count in self._lists.values():
+            for _name, list_id in groups:
+                glDeleteLists(list_id, 1)
         self._lists.clear()
         self._cached_triangles = 0
 
