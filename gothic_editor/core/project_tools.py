@@ -163,6 +163,9 @@ class ProjectTools:
             project_files.append(learning_script)
         for generated in apply_potions(self.project,content):
             if generated not in project_files:project_files.append(generated)
+        from .document_build import apply_documents
+        for generated in apply_documents(self.project, content):
+            if generated not in project_files:project_files.append(generated)
         from .npcs import apply_npc_overrides
         for changed in apply_npc_overrides(self.project,content):
             if changed not in project_files:project_files.append(changed)
