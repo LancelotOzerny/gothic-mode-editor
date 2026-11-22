@@ -137,7 +137,18 @@ class RecipePropertiesPanel(Panel):
             return
         group = self.add_group(tr('recipes.general'), parent=self.area.content)
         from gothic_editor.core.recipe_categories import RecipeCategories
-        options = [(tr('recipes.root_category'), '')] + [(row['name'], row['id']) for row in RecipeCategories(self.controller.app.repo.root).load()]
+        category_rows = RecipeCategories(self.controller.app.repo.root).load()
+        by_id = {row['id']: row for row in category_rows}
+        def category_title(row):
+            titles = [row['name']]
+            parent = row.get('parent') or ''
+            while parent:
+                ancestor = by_id[parent]
+                titles.insert(0, ancestor['name'])
+                parent = ancestor.get('parent') or ''
+            return ' / '.join(titles)
+        options = [(tr('recipes.root_category'), '')] + [
+            (category_title(row), row['id']) for row in category_rows]
         self.field(group, 'category', data.get('category', ''), kind='choice', options=options)
         for key in ('id', 'name', 'result', 'result_count'):
             variable = self.field(group, key, data[key])
