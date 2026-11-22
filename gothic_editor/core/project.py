@@ -44,6 +44,7 @@ class ProjectRepository:
         if config.exists():raise ValueError(tr('project.already_exists'))
         (root/'Assets'/'Scripts'/'Content'/'Items').mkdir(parents=True,exist_ok=True)
         (root/'Assets'/'Items'/'Potions').mkdir(parents=True,exist_ok=True)
+        (root/'Assets'/'Texts'/'Documents').mkdir(parents=True,exist_ok=True)
         (root/'Assets'/'Models').mkdir(parents=True,exist_ok=True)
         config.write_text(json.dumps({'name':name,'game_path':''},ensure_ascii=False,indent=2),encoding='utf-8')
         self.open(root)
