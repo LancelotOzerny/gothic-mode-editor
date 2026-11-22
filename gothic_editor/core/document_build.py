@@ -6,6 +6,7 @@ from pathlib import Path
 from .categories import classify
 from .daedalus_merge import ScriptTree, definitions, target_path
 from .document_pages import load_document, render_document
+from .item_actions import assignments
 from .item_layout import project_scripts
 from .scripts import parse_items, replace_field
 
@@ -44,7 +45,7 @@ def apply_documents(project, content):
         script = render_document(item.instance, raw, book=book)
         # The user-selected actions still run, but a replaced original read
         # callback must not show its old page over this newly generated text.
-        if item.editor_metadata.get('item_actions'):
+        if any(row['id'] for row in assignments(item.editor_metadata.get('item_actions', ''))):
             action = 'GE_ItemActions_' + item.instance
             script = script.replace('    doc = Doc_Create();',
                                     f'    {action}();\n    doc = Doc_Create();', 1)
