@@ -48,9 +48,11 @@ class TradingPanel(Panel):
         general = self.add_group('Настройки торговца', parent=self.area.content, compact=True)
         self._control(general, 'Включить торговлю', 'boolean', self.enabled)
         self._control(general, 'Добавить торговый диалог', 'boolean', self.dialog)
-        self.dialog_label = label(general.body, 'Фраза торгового диалога')
+        self.dialog_container = tk.Frame(general.body, bg=general.body.cget('bg'))
+        self.dialog_container.pack(fill='x')
+        self.dialog_label = label(self.dialog_container, 'Фраза торгового диалога')
         self.dialog_label.pack(fill='x', padx=8)
-        self.dialog_entry = create_field(general.body, variable=self.dialog_text)
+        self.dialog_entry = create_field(self.dialog_container, variable=self.dialog_text)
         self.dialog_entry.pack(fill='x', padx=8, pady=(0,8))
         self._control(general, 'Заменить оригинальный ассортимент', 'boolean', self.replace)
         self._control(general, 'Доступно с главы', 'choice', self.chapter,
