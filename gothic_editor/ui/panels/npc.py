@@ -40,7 +40,7 @@ class NpcPropertiesPanel(Panel):
             button=appearance.add_button(title,lambda field=kind:self.controller.import_model(field))
             if not npc.body_args:button.config(state='disabled')
         trade=self.add_group('Торговля',parent=self.area.content)
-        trade.add_button('Настроить ассортимент и условия',self.controller.configure_trading)
+        trade.add_button('Открыть вкладку проекта → Торговля',self.controller.configure_trading)
         self.reset_button=appearance.add_button('Отменить изменения NPC',self.controller.reset)
         self.reset_button.config(state='normal' if npc.overridden else 'disabled')
         for key,field in self.fields.items():
