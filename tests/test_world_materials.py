@@ -55,7 +55,7 @@ class WorldMaterialsTests(unittest.TestCase):
         # index per polygon corner, unlike Gothic II's two 32-bit indices.
         payload = (struct.pack('<I', 1) +
                    struct.pack('<Hhf3f', 0, -1, 0., 0., 0., 1.) +
-                   b'\\0' * 4 + b'\\x03' +
+                   bytes(4) + bytes([3]) +
                    b''.join(struct.pack('<HI', i, i) for i in range(3)))
         original_chunk = chunk(0xB050, struct.pack('<I', 1) +
                                struct.pack('<Hhf3fBhB', 0, -1, 0., 0., 0., 1., 0, 0, 3) +
