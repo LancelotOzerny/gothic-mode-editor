@@ -43,9 +43,44 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller is not installed for '$Python'. Install it in that environment before building."
     }
-    & $Python -c "import tkinter; tkinter.Tcl().eval('info library')"
+    # PyInstaller's frozen executable can leave Tcl/Tk environment variables
+    # pointing to a temporary _MEI... directory. Those paths break a normal
+    # Python interpreter in the same terminal, even when Tcl/Tk is installed.
+    foreach ($variable in @('TCL_LIBRARY', 'TK_LIBRARY')) {
+        $value = [Environment]::GetEnvironmentVariable($variable, 'Process')
+        if ($value -and ($value -match '(?i)[\\/]_MEI[0-9A-Za-z]+[\\/]' -or
+                         -not (Test-Path -LiteralPath $value -PathType Container))) {
+            Write-Host "Ignoring stale ${variable}: $value"
+            [Environment]::SetEnvironmentVariable($variable, $null, 'Process')
+        }
+    }
+
+    # Check Tcl and Tk separately and without opening a GUI window.
+    & $Python -c "import tkinter; t = tkinter.Tcl(); t.eval('info library'); t.eval('package require Tk')" 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        throw "Tcl/Tk is unavailable for '$Python'. Build from an environment with a working Tkinter installation."
+        # Explicitly locate the standard Windows python.org Tcl directory.
+        # Some Python setups do not find it when run from another environment.
+        $pythonRoot = (& $Python -c "import sys; print(sys.base_prefix)").Trim()
+        $tclRoot = Join-Path $pythonRoot 'tcl'
+        $tclCandidates = @(Get-ChildItem -LiteralPath $tclRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^tcl8\\.' -and (Test-Path -LiteralPath (Join-Path $_.FullName 'init.tcl')) } |
+            Sort-Object Name -Descending)
+        $tkCandidates = @(Get-ChildItem -LiteralPath $tclRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^tk8\\.' -and (Test-Path -LiteralPath (Join-Path $_.FullName 'tk.tcl')) } |
+            Sort-Object Name -Descending)
+        if ($tclCandidates.Count -gt 0 -and $tkCandidates.Count -gt 0) {
+            $env:TCL_LIBRARY = $tclCandidates[0].FullName
+            $env:TK_LIBRARY = $tkCandidates[0].FullName
+            Write-Host "Tcl: $env:TCL_LIBRARY"
+            Write-Host "Tk:  $env:TK_LIBRARY"
+        }
+        else {
+            throw "Tkinter cannot find Tcl/Tk for '$Python'. Check '$tclRoot' for tcl8.x/init.tcl and tk8.x/tk.tcl. If missing, repair Python with the Tcl/Tk and IDLE component enabled."
+        }
+        & $Python -c "import tkinter; t = tkinter.Tcl(); t.eval('info library'); t.eval('package require Tk')" 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Tcl/Tk is still unavailable for '$Python'. Repair the Python installation, or run .\\compile.ps1 -Python <path-to-working-python.exe>."
+        }
     }
 
     $buildArguments = @(
