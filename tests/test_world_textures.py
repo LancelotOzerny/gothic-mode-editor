@@ -39,10 +39,11 @@ class WorldTextureQueueTests(unittest.TestCase):
         self.assertEqual(self.store.request('A.TGA').pixels, bytes((255, 0, 0, 255)))
 
     def test_prefetch_schedules_once_for_repeated_names(self):
-        self.store.prefetch(['A.TGA', 'A.TGA', 'A.TGA'])
-        self.assertEqual(list(self.store._pending), ['a.tga'])
-        # A separate request for the same material must reuse its pending job.
-        self.store.request('A.TGA')
+        unresolved = Future()
+        with patch.object(self.store._executor, 'submit', return_value=unresolved) as submit:
+            self.store.prefetch(['A.TGA', 'A.TGA', 'A.TGA'])
+            self.store.request('A.TGA')
+            submit.assert_called_once()
         self.assertEqual(list(self.store._pending), ['a.tga'])
 
     def test_decode_orientation_and_single_pixel(self):
