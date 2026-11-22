@@ -761,10 +761,15 @@ class EditorApp(tk.Tk):
             self.terminal.append('Торговля: сначала выберите NPC в редакторе.')
             return
         if not self.npcs.save():return
+        try:
+            self.trading_panel.show(self.npcs.current)
+        except (OSError,ValueError) as exc:
+            self.terminal.append('Торговля: '+str(exc))
+            self.show_terminal()
+            return
         self.trading_active=True
         self.editor_tab.set_selected(False)
         self.project_tab.set_selected(True)
-        self.trading_panel.show(self.npcs.current)
         self.viewer.pack_forget()
         self.media_viewer.pack_forget()
         self.editor_panes.paneconfigure(self.editor_middle,hide=False)
