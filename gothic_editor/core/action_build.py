@@ -78,7 +78,9 @@ def prepare_actions(store,content,tree,helpers,script_items=()):
         previous=fields.get('on_state[0]','').strip()
         handler='GE_ItemActions_'+data['instance']
         body=[]
-        if previous and previous!='0':
+        # Authored MD/TXT replaces the original visual read handler.
+        # Explicitly selected actions still run from the new document callback.
+        if previous and previous!='0' and not data.get('editor_metadata', {}).get('document_text'):
             if not re.fullmatch(r'[A-Za-z_]\w*',previous,re.ASCII):
                 raise ValueError(f'{file}: невозможно сохранить выражение on_state[0]: {previous}')
             location=tree.unique(previous,'func')
