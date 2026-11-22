@@ -49,6 +49,27 @@ class WorldMaterialsTests(unittest.TestCase):
         self.assertEqual(world.chunk_uvs[(0, 0)], geometry.triangle_uvs)
         self.assertEqual(world.chunk_textures[(0, 0)], ('GRASS.TGA',))
 
+    def test_gothic_one_16bit_vertex_and_32bit_feature_indices(self):
+        data = mesh()
+        position = data.index(struct.pack('<HI', 0xB050, 4 + 24 + 24))
+        # Gothic I stores a 16-bit vertex index and a 32-bit feature
+        # index per polygon corner, unlike Gothic II's two 32-bit indices.
+        payload = (struct.pack('<I', 1) +
+                   struct.pack('<Hhf3f', 0, -1, 0., 0., 0., 1.) +
+                   b'\\0' * 4 + b'\\x03' +
+                   b''.join(struct.pack('<HI', i, i) for i in range(3)))
+        original_chunk = chunk(0xB050, struct.pack('<I', 1) +
+                               struct.pack('<Hhf3fBhB', 0, -1, 0., 0., 0., 1., 0, 0, 3) +
+                               b''.join(struct.pack('<II', i, i) for i in range(3)))
+        header = chunk(0xB000, struct.pack('<H', 265))
+        gothic_one = (data.replace(header, chunk(0xB000, struct.pack('<H', 9)))
+                      .replace(original_chunk, chunk(0xB050, payload)))
+        gothic_one = gothic_one[:4] + struct.pack('<I', len(gothic_one) - 8) + gothic_one[8:]
+        geometry, _ = parse_mesh_and_bsp(BytesIO(gothic_one), len(gothic_one),
+                                         include_triangles=True)
+        self.assertEqual(geometry.triangles, ((0, 1, 2),))
+        self.assertEqual(geometry.triangle_uvs, (((0., 0.), (1., 0.), (0., 1.)),))
+
     def test_counts_mode_skips_texture_allocation(self):
         data = mesh()
         geometry, _ = parse_mesh_and_bsp(BytesIO(data), len(data))
