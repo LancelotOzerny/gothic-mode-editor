@@ -195,24 +195,41 @@ class WorldOpenGLFrame(OpenGLFrame):
             return
         faces = self.world.chunks[key]
         vertices = self.world.vertices
-        list_id = int(glGenLists(1))
-        if not list_id:
-            raise RuntimeError('Не удалось создать список полигонов OpenGL.')
-        glNewList(list_id, GL_COMPILE)
+        uvs = self.world.chunk_uvs.get(key, ())
+        names = self.world.chunk_textures.get(key, ())
+        batches = OrderedDict()
+        for i, face in enumerate(faces):
+            uv = uvs[i] if i < len(uvs) else None
+            name = names[i] if i < len(names) and uv else ''
+            batches.setdefault(name.casefold(), []).append((face, uv))
+        lists = []
         try:
-            glBegin(GL_TRIANGLES)
-            try:
-                for face in faces:
-                    color = face_color(vertices, face)
-                    glColor3f(*(int(color[i:i+2], 16) / 255.0
-                                for i in (1, 3, 5)))
-                    for index in face:
-                        glVertex3f(*vertices[index])
-            finally:
-                glEnd()
-        finally:
-            glEndList()
-        self._lists[key] = (list_id, len(faces))
+            for name, entries in batches.items():
+                list_id = int(glGenLists(1))
+                if not list_id:
+                    raise RuntimeError('Не удалось создать список полигонов OpenGL.')
+                lists.append((name, list_id))
+                glNewList(list_id, GL_COMPILE)
+                try:
+                    glBegin(GL_TRIANGLES)
+                    try:
+                        for face, uv in entries:
+                            color = face_color(vertices, face)
+                            glColor3f(*(int(color[j:j+2], 16) / 255.0
+                                        for j in (1, 3, 5)))
+                            for corner, index in enumerate(face):
+                                if uv is not None:
+                                    glTexCoord2f(*uv[corner])
+                                glVertex3f(*vertices[index])
+                    finally:
+                        glEnd()
+                finally:
+                    glEndList()
+        except Exception:
+            for _name, list_id in lists:
+                glDeleteLists(list_id, 1)
+            raise
+        self._lists[key] = (tuple(lists), len(faces))
         self._cached_triangles += len(faces)
 
     def _draw_vobs(self):
@@ -242,7 +259,7 @@ class WorldOpenGLFrame(OpenGLFrame):
                 continue
             break
 
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL if self.solid else GL_LINE)
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE if self.render_mode == 'wire' else GL_FILL)
         try:
             for key in nearby:
                 for index in scene.chunks[key]:
@@ -342,7 +359,8 @@ class WorldOpenGLFrame(OpenGLFrame):
                 cached = self._lists.get(key)
                 if cached is not None:
                     self._lists.move_to_end(key)
-                    glCallList(cached[0])
+                    for name, list_id in cached[0]:
+                        self._draw_group(name, list_id)
         finally:
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
 
@@ -352,6 +370,7 @@ class WorldOpenGLFrame(OpenGLFrame):
                 break
             if key in pinned:
                 continue
-            list_id, count = self._lists.pop(key)
-            glDeleteLists(list_id, 1)
+            lists, count = self._lists.pop(key)
+            for _name, list_id in lists:
+                glDeleteLists(list_id, 1)
             self._cached_triangles -= count
