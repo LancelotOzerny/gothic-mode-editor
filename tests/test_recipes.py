@@ -113,6 +113,27 @@ func void B_ENDPRODUCTIONDIALOG() {};
         self.assertEqual(text.count('var int Knows_Test;'), 1)
         self.assertIn('(Knows_Test != 0)', text)
 
+    def test_stock_knowledge_uses_existing_gothic_talent(self):
+        self.base.write_text(self.original +
+            '\nconst int POTION_Health_01 = 1;'
+            '\nvar int PLAYER_TALENT_ALCHEMY[100];'
+            '\nfunc int PC_Health_Stop_Condition() { return TRUE; };', 'utf-8')
+        data = dict(recipe(), category='health',
+                    availability={'type': 'stock_talent',
+                                  'talent': 'POTION_Health_01'})
+        self.store.save(data)
+        text = self.generate()
+        self.assertIn('PLAYER_TALENT_ALCHEMY[POTION_Health_01] == TRUE', text)
+        self.assertIn('PC_Health_Stop_Condition()', text)
+        self.assertNotIn('var int POTION_Health_01', text)
+
+    def test_stock_knowledge_requires_an_existing_gothic_talent(self):
+        data = dict(recipe(), availability={'type': 'stock_talent',
+                                            'talent': 'MISSING_TALENT'})
+        self.store.save(data)
+        with self.assertRaisesRegex(ValueError, 'MISSING_TALENT'):
+            self.generate()
+
     def test_existing_variable_not_redeclared(self):
         self.base.write_text(self.original + '\nvar int Knows_Test;', 'utf-8')
         data = recipe()
