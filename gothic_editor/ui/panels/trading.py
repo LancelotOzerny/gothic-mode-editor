@@ -4,12 +4,47 @@ from tkinter import messagebox
 
 from gothic_editor.core.trading import TradingStore
 from gothic_editor.ui.widgets import label, PANEL, INPUT, MUTED
+from gothic_editor.ui.widgets.theme import TXT, ACCENT, BORDER
 from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
 from gothic_editor.ui.widgets.form import create_field
 from gothic_editor.ui.widgets.buttons import PropertyButton
 from gothic_editor.ui.widgets.item_binding import ItemBindingTile
 from gothic_editor.ui.windows.value_choice import ValueChoiceWindow
 from gothic_editor.ui.windows.trading_import import TradingGoodsDialog
+
+
+class TradingCheckbox(tk.Canvas):
+    """Compact square checkbox; shares the form's colours without a long input."""
+    SIZE = 26
+
+    def __init__(self, parent, variable):
+        super().__init__(parent, width=self.SIZE, height=self.SIZE, bg=parent.cget('bg'),
+                         highlightthickness=0, bd=0, takefocus=True, cursor='hand2')
+        self.variable=variable
+        self.trace=variable.trace_add('write', lambda *_:self.paint())
+        self.bind('<Button-1>', lambda _:self.toggle())
+        self.bind('<space>', lambda _:self.toggle())
+        self.bind('<Return>', lambda _:self.toggle())
+        self.bind('<FocusIn>', lambda _:self.paint())
+        self.bind('<FocusOut>', lambda _:self.paint())
+        self.bind('<Destroy>',self.dispose,add='+')
+        self.paint()
+
+    def toggle(self):
+        self.variable.set(not self.variable.get())
+
+    def paint(self):
+        self.delete('all')
+        selected=bool(self.variable.get())
+        self.create_rectangle(3,3,23,23,fill=ACCENT if selected else INPUT,
+                              outline=ACCENT if selected or self.focus_get() is self else BORDER,width=2)
+        if selected:
+            self.create_line(8,13,11,17,19,9,fill=INPUT,width=3,
+                             joinstyle='round',capstyle='round')
+
+    def dispose(self,event):
+        if event.widget is self:
+            self.variable.trace_remove('write',self.trace)
 
 
 class TradingPanel(Panel):
@@ -49,11 +84,10 @@ class TradingPanel(Panel):
         self._control(general, 'Включить торговлю', 'boolean', self.enabled)
         self._control(general, 'Добавить торговый диалог', 'boolean', self.dialog)
         self.dialog_container = tk.Frame(general.body, bg=general.body.cget('bg'))
-        self.dialog_container.pack(fill='x')
-        self.dialog_label = label(self.dialog_container, 'Фраза торгового диалога')
-        self.dialog_label.pack(fill='x', padx=8)
-        self.dialog_entry = create_field(self.dialog_container, variable=self.dialog_text)
-        self.dialog_entry.pack(fill='x', padx=8, pady=(0,8))
+        self.dialog_container.pack(fill='x', padx=8)
+        self.dialog_text.trace_add('write', lambda *_:self.changed())
+        self.dialog_entry = self._row(self.dialog_container, 'Фраза торгового диалога',
+                                      'text', self.dialog_text)
         self._control(general, 'Заменить оригинальный ассортимент', 'boolean', self.replace)
         self._control(general, 'Доступно с главы', 'choice', self.chapter,
                       options=[(str(n), str(n)) for n in range(1,7)])
@@ -72,21 +106,30 @@ class TradingPanel(Panel):
         self.add_row(None, notify=False)
         self.status.config(text='Настройки загружены')
 
+    def _row(self, parent, title, kind, variable, **kwargs):
+        line = tk.Frame(parent, bg=parent.cget('bg'))
+        line.pack(fill='x', padx=8, pady=5)
+        label(line, title, bg=line.cget('bg'), anchor='w', wraplength=285,
+              justify='left').pack(side='left', fill='x', expand=True, padx=(0,12))
+        if kind == 'boolean':
+            field=TradingCheckbox(line,variable)
+            field.pack(side='right',padx=(8,2))
+        else:
+            field=create_field(line,kind,variable=variable,**kwargs)
+            field.pack(side='right')
+            field.surface.configure(width=190)
+        return line
+
     def _control(self, group, title, kind, variable, **kwargs):
-        label(group.body, title).pack(fill='x', padx=8, pady=(5,2))
-        field = create_field(group.body, kind, variable=variable, **kwargs)
-        field.pack(fill='x', padx=8)
+        field = self._row(group.body,title,kind,variable,**kwargs)
         variable.trace_add('write', lambda *_:self.changed())
         return field
 
     def _dialog_state(self):
-        enabled = self.dialog.get()
-        if enabled:
-            self.dialog_label.pack(fill='x', padx=8)
-            self.dialog_entry.pack(fill='x', padx=8, pady=(0,8))
+        if self.dialog.get():
+            self.dialog_container.pack(fill='x',padx=8)
         else:
-            self.dialog_label.pack_forget()
-            self.dialog_entry.pack_forget()
+            self.dialog_container.pack_forget()
 
     def changed(self):
         self._dirty = True
@@ -106,10 +149,11 @@ class TradingPanel(Panel):
             self.rows.append(record)
         tile = ItemBindingTile(container, instance, count, self.choose_item,
                                lambda r=record:self.remove_row(r), self.changed,
-                               lambda item:self.item_titles.get(item.casefold(), item))
+                               lambda item:self.item_titles.get(item.casefold(), item),
+                               close_size=30, name_position=.59)
         tile.pack(fill='x', side='top')
         line = tk.Frame(tile.surface, bg=INPUT)
-        line.place(relx=.5, y=42, anchor='n', width=180, height=32)
+        line.place(relx=.5, y=49, anchor='n', width=155, height=32)
         label(line, 'Глава').pack(side='left', padx=(4,8))
         selector = create_field(line,'choice',variable=chapter,
                                 options=[(str(n),str(n)) for n in range(1,7)],height=32)
@@ -135,7 +179,7 @@ class TradingPanel(Panel):
             # Convert the empty '+' square into an editable item and create the next square.
             if variable is self.rows[-1]['item']:
                 row=self.rows[-1]
-                row['chapter_line'].place(relx=.5, y=42, anchor='n', width=180, height=32)
+                row['chapter_line'].place(relx=.5, y=49, anchor='n', width=155, height=32)
                 self.add_row(None)
             self.changed()
         window=ValueChoiceWindow(self.controller.app,options,-1,'Выбрать товар',choose,
