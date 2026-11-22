@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from gothic_editor.core.item_actions import ActionCatalog
+from gothic_editor.core.item_actions import ActionCatalog, read_functions
 from gothic_editor.core.recipe_learning import (
     ACTION_ID, OUTPUT, prepare_recipe_learning, prioritize_learning,
     recipe_code, recipe_options,
@@ -53,6 +53,10 @@ class RecipeLearningTests(unittest.TestCase):
         self.assertIn('Knows_Health = TRUE;', script)
         self.assertIn('Knows_Mana = TRUE;', script)
         self.assertEqual(script.count('var int Knows_Health;'), 1)
+        function = next(item for item in read_functions(self.content / target, 'generated')
+                        if item.name == 'GE_LearnRecipe')
+        self.assertEqual((function.parameters[0].name, function.parameters[0].kind),
+                         ('recipe', 'int'))
 
     def test_existing_knowledge_variable_is_reused(self):
         (self.content / 'base.d').write_text('var int Knows_Health;', 'cp1251')
