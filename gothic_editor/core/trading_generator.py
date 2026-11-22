@@ -20,7 +20,7 @@ def _code(npc, config):
     lines.append(f'func void GE_TradeStock_{ident}(var C_Npc slf) {{')
     hours = config.get('refresh_hours', 0)
     if hours:
-        lines += ['    var int geHour;', '    var int geMinute;', '    var int geNow;']
+        lines += ['    var int geHour;', '    var int geNow;']
     for chapter in sorted({r['chapter'] for r in config['stock']}):
         lines.append(f'    if ((Kapitel >= {chapter}) && (GE_TradeChapter_{ident}_{chapter} == FALSE)) {{')
         for row in config['stock']:
@@ -30,8 +30,14 @@ def _code(npc, config):
         lines.append('    };')
     if hours:
         lines += [
-            '    Wld_GetTime(geHour, geMinute);',
-            '    geNow = (Wld_GetDay() * 24) + geHour + 1;',
+            '    geHour = 0;',
+            '    geNow = (Wld_GetDay() * 24) + 1;',
+            '    while (geHour < 24) {',
+            '        if (Wld_IsTime(geHour, 0, (geHour + 1) % 24, 0)) {',
+            '            geNow = geNow + geHour;',
+            '        };',
+            '        geHour = geHour + 1;',
+            '    };',
             f'    if ((GE_TradeLast_{ident} == 0) || ((geNow - GE_TradeLast_{ident}) >= {hours})) {{'
         ]
         # Target is the cumulative stock of all unlocked chapters, never an unlimited grant.
