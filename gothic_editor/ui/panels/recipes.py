@@ -98,6 +98,8 @@ class RecipeListPanel(HierarchyBrowser):
                     for key in ('edit', 'duplicate', 'delete')] if code else []
         if code:
             commands.append(('Создать подкатегорию', lambda: self.controller.category_action('create', code)))
+            commands.append(('Импорт всех рецептов',
+                             lambda: self.controller.import_category(code)))
         commands.append((tr('recipes.add_recipe'), lambda: self.controller.add(code)))
         self.popup(event, commands)
 
