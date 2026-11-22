@@ -276,7 +276,7 @@ class ResourcesPanel(Panel):
                 self.tiles[result].focus_set()
             else:
                 self.scroll_area.canvas.focus_set()
-            self.on_changed()
+            self.on_changed(source, result)
         except (OSError,ValueError) as exc:
             messagebox.showerror(tr('resources.title'),str(exc),parent=self.winfo_toplevel())
 
