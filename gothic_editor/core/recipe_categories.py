@@ -33,14 +33,36 @@ class RecipeCategories:
             name = row.get('name')
             if key in seen or not isinstance(name, str) or not name.strip() or any(c in name for c in '\r\n\x00'):
                 raise RecipeError('category', 'Повторяющийся код или пустое название категории.')
+            parent = row.get('parent') or ''
+            if parent:
+                identifier(parent, 'category')
+            if parent and parent.casefold() == key:
+                raise RecipeError('category', 'Категория не может быть собственной подкатегорией.')
             binding = stock_binding(row)
             if binding is not None:
+                if parent:
+                    raise RecipeError('category', 'Штатная категория Gothic не может быть подкатегорией.')
                 if binding not in STOCK or binding in bindings:
                     raise RecipeError('category', 'Некорректная или повторная привязка к Gothic.')
                 bindings.add(binding)
             try:name.encode('cp1251')
             except UnicodeEncodeError as exc:raise RecipeError('category', 'Название категории несовместимо с Windows-1251.') from exc
             seen.add(key)
+        index = {row['id'].casefold(): row for row in rows}
+        exact_ids = {row['id'] for row in rows}
+        for row in rows:
+            if row.get('parent') and row['parent'] not in exact_ids:
+                raise RecipeError('category',
+                                  f'{row["id"]}: родительская категория {row["parent"]} не найдена.')
+            parent = (row.get('parent') or '').casefold()
+            trail = {row['id'].casefold()}
+            while parent:
+                if parent not in index:
+                    raise RecipeError('category', f'{row["id"]}: родительская категория {parent} не найдена.')
+                if parent in trail:
+                    raise RecipeError('category', f'{row["id"]}: обнаружен цикл подкатегорий.')
+                trail.add(parent)
+                parent = (index[parent].get('parent') or '').casefold()
         return rows
 
     def save(self, rows):
@@ -80,11 +102,19 @@ class RecipeCategories:
         if previous is not None and old is None:raise RecipeError('category', 'Категория не найдена.')
         if replacement is not None:
             replacement = deepcopy(replacement)
-            if old is not None:replacement['binding'] = stock_binding(old)
+            if old is not None:
+                replacement['binding'] = stock_binding(old)
+                if 'parent' not in replacement:
+                    replacement['parent'] = old.get('parent', '')
             if any(row is not old and row['id'].casefold()==replacement['id'].casefold() for row in rows):
                 raise RecipeError('category', 'Код категории уже занят.')
         rows = [replacement if row is old else row for row in rows if row is not old or replacement is not None]
         if old is None and replacement is not None:rows.append(replacement)
+        if previous is not None:
+            for row in rows:
+                if row.get('parent', '').casefold() == previous.casefold():
+                    row['parent'] = (replacement['id'] if replacement is not None
+                                     else (old.get('parent') or ''))
         store = RecipeStore(self.path.parents[2])
         recipes = store.load()
         with tempfile.TemporaryDirectory(prefix='recipe-categories-') as temporary:
@@ -94,7 +124,7 @@ class RecipeCategories:
             pairs = [(candidate.path, self.path)]
             for index, recipe in enumerate(recipes):
                 if previous is None or recipe.get('category') != previous:continue
-                recipe['category'] = replacement['id'] if replacement else ''
+                recipe['category'] = replacement['id'] if replacement else (old.get('parent') or '')
                 source = stage / (str(index)+'.json')
                 source.write_text(json.dumps(recipe, ensure_ascii=False, indent=2), 'utf-8')
                 pairs.append((source, store.path(recipe['id'])))
@@ -102,6 +132,7 @@ class RecipeCategories:
 
     def duplicate(self, code):
         original = next(row for row in self.load() if row['id']==code)
-        copy = {'id': self.free_id(code+'_copy'), 'name': original['name'], 'binding': None}
+        copy = {'id': self.free_id(code+'_copy'), 'name': original['name'], 'binding': None,
+                'parent': original.get('parent', '')}
         self.change(None, copy)
         return copy

@@ -79,6 +79,22 @@ def apply_recipes(project, content, manifest):
     source('B_ENDPRODUCTIONDIALOG', 'func')
     declarations, bodies, generated = [], [], set()
     custom = {}
+    category_index = {row['id']: row for row in categories}
+    children = {row['id']: [] for row in categories}
+    for row in categories:
+        parent = row.get('parent') or ''
+        if parent:
+            children[parent].append(row['id'])
+
+    def menu_root(code):
+        """The first custom C_Info immediately under a stock or root menu."""
+        while category_index[code].get('parent'):
+            parent = category_index[code]['parent']
+            if bindings[parent] is not None:
+                break
+            code = parent
+        return code
+
     edits = {}
     for category in categories:
         key = category['id']
@@ -123,7 +139,7 @@ def apply_recipes(project, content, manifest):
             elif category:
                 menu_condition = 'FALSE'
                 custom[category].append((recipe, known))
-                clear_choices = 'Info_ClearChoices(GE_RecipeCategory_' + category + ');'
+                clear_choices = 'Info_ClearChoices(GE_RecipeCategory_' + menu_root(category) + ');'
             craft, cond, info = prefix + '_Craft', prefix + '_Condition', prefix + '_Info'
             limit = min(MAX_INT // n for n in [recipe['result_count']] + [r['count'] for r in recipe['ingredients']])
             checks = '\n'.join(f'if (Npc_HasItems(self, {r["instance"]}) < ({r["count"]} * portions)) {{ return FALSE; }};'
@@ -164,22 +180,57 @@ instance {prefix}(C_Info)
 }};''')
         except ValueError as exc:
             raise ValueError(f'Рецепт {recipe["id"]}: {exc}') from exc
+    # Generate a single C_Info holder for each top-level custom branch.
+    # Deeper nodes rebuild choices on that same holder, allowing an arbitrary
+    # category depth without requiring engine plugins or new NPC dialogs.
+    def known_for(code):
+        values = [known for _, known in custom.get(code, ())]
+        for child in children[code]:
+            values.extend(known_for(child))
+        return values
+
     for category in categories:
         key = category['id']
-        if key not in custom or not custom[key]:continue
+        if bindings[key] is not None or not known_for(key):
+            continue
         prefix = 'GE_RecipeCategory_' + key
-        choices = '\n'.join(f'if ({known}) {{ Info_AddChoice({prefix}, {literal(recipe["name"])}, GE_Recipe_{recipe["id"]}_Info); }};'
-                            for recipe, known in custom[key])
-        available = ' || '.join('(' + known + ')' for _, known in custom[key])
-        bodies.append(f'''func int {prefix}_Condition() {{
-    if (PC_PotionAlchemy_End_Condition()) && ({available}) {{ return TRUE; }};
-    return FALSE;
+        holder = 'GE_RecipeCategory_' + menu_root(key)
+        parent = category.get('parent') or ''
+        back = (f'GE_RecipeCategory_{parent}_Info();'
+                if parent and bindings[parent] is None
+                else f'Info_ClearChoices({holder});')
+        choices = '\n'.join(
+            f'if ({known}) {{ Info_AddChoice({holder}, {literal(recipe["name"])}, GE_Recipe_{recipe["id"]}_Info); }};'
+            for recipe, known in custom.get(key, ())
+        )
+        child_choices = '\n'.join(
+            f'if ({" || ".join("(" + k + ")" for k in known_for(child))}) '
+            f'{{ Info_AddChoice({holder}, {literal(category_index[child]["name"])}, GE_RecipeCategory_{child}_Info); }};'
+            for child in children[key] if known_for(child)
+        )
+        bodies.append(f'''func void {prefix}_Back() {{
+    {back}
 }};
-func void {prefix}_Back() {{ Info_ClearChoices({prefix}); }};
 func void {prefix}_Info() {{
-    Info_ClearChoices({prefix});
-    Info_AddChoice({prefix}, DIALOG_BACK, {prefix}_Back);
+    Info_ClearChoices({holder});
+    Info_AddChoice({holder}, DIALOG_BACK, {prefix}_Back);
     {choices}
+    {child_choices}
+}};''')
+        # Only a branch immediately below the root or a stock Gothic group
+        # needs its own C_Info instance. All descendants reuse that holder.
+        if holder != prefix:
+            continue
+        stock_parent = bindings[parent] if parent else None
+        if stock_parent:
+            condition = 'PC_' + STOCK[stock_parent] + '_Stop_Condition()'
+            source('PC_' + STOCK[stock_parent] + '_Stop_Condition', 'func')
+        else:
+            condition = 'PC_PotionAlchemy_End_Condition()'
+        available = ' || '.join('(' + known + ')' for known in known_for(key))
+        bodies.append(f'''func int {prefix}_Condition() {{
+    if ({condition}) && ({available}) {{ return TRUE; }};
+    return FALSE;
 }};
 instance {prefix}(C_Info) {{
     npc = PC_Hero;

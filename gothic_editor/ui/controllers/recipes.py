@@ -71,7 +71,12 @@ class RecipeController:
         self.persisted = persisted
         self.panel.show(self.current)
         self.app.recipe_list.select_category(None)
-        self.app.recipe_list.expanded[('project', self.current.get('category',''))] = True
+        from gothic_editor.core.recipe_categories import RecipeCategories
+        categories = {row['id']: row for row in RecipeCategories(self.app.repo.root).load()}
+        code = self.current.get('category', '')
+        while code:
+            self.app.recipe_list.expanded[('project', code)] = True
+            code = (categories.get(code) or {}).get('parent') or ''
         self.app.recipe_list.populate()
 
     def save(self):
@@ -154,6 +159,24 @@ class RecipeController:
             except (OSError, ValueError) as exc:
                 messagebox.showerror(tr('recipes.title'), str(exc), parent=self.app)
 
+    def import_category(self, category):
+        if self.error or not self.app._save_editors():
+            return
+        try:
+            from gothic_editor.core.recipe_import import import_category_recipes
+            imported, existing, unsupported = import_category_recipes(
+                self.app.repo.root, self.app.repo.game, category,
+                history=self.app.history)
+            self.load()
+            messagebox.showinfo(
+                tr('recipes.title'),
+                f'Импортировано рецептов: {imported}\n'
+                f'Уже импортировано: {existing}\n'
+                f'Не удалось распознать рецептов Gothic: {unsupported}',
+                parent=self.app)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror(tr('recipes.title'), str(exc), parent=self.app)
+
     def categories(self):
         if not self.app._save_editors():return
         from gothic_editor.ui.windows.recipe_categories import RecipeCategoriesWindow
@@ -181,7 +204,9 @@ class RecipeController:
         try:
             category = next((row for row in store.load() if row['id']==code), None)
             if action in ('create', 'edit'):
-                window = RecipeCategoryDialog(self.app, store, refresh, category)
+                window = RecipeCategoryDialog(self.app, store, refresh,
+                                              category if action == 'edit' else None,
+                                              parent=code if action == 'create' else None)
                 window.show_centered(modal=True)
             elif action == 'duplicate':
                 store.duplicate(code)

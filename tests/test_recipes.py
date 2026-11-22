@@ -157,6 +157,63 @@ func void B_ENDPRODUCTIONDIALOG() {};
         self.base.write_text('const int TEST=1;', 'utf-8')
         self.assertEqual(apply_recipes(self.project, self.content, self.manifest), [])
 
+    def test_nested_categories_under_stock_special_menu(self):
+        from gothic_editor.core.recipe_categories import RecipeCategories
+        categories = RecipeCategories(self.project)
+        categories.save(categories.load() + [
+            {'id': 'experience', 'name': 'Зелья опыта', 'parent': 'special'},
+            {'id': 'advanced_exp', 'name': 'Усиленные', 'parent': 'experience'},
+        ])
+        self.store.save(dict(recipe(), id='EXP_1', name='Эссенция опыта',
+                             category='experience'))
+        self.store.save(dict(recipe(), id='EXP_2', name='Эликсир опыта',
+                             category='advanced_exp'))
+        self.base.write_text(self.original +
+            'func int PC_Special_Stop_Condition() { return TRUE; };',
+            'utf-8')
+        text = self.generate()
+        self.assertIn('func int GE_RecipeCategory_experience_Condition()', text)
+        self.assertIn('PC_Special_Stop_Condition()', text)
+        self.assertIn('description = "Зелья опыта"', text)
+        self.assertIn('Info_AddChoice(GE_RecipeCategory_experience, "Усиленные", '
+                      'GE_RecipeCategory_advanced_exp_Info)', text)
+        self.assertIn('Info_AddChoice(GE_RecipeCategory_experience, "Эссенция опыта", '
+                      'GE_Recipe_EXP_1_Info)', text)
+        self.assertIn('Info_AddChoice(GE_RecipeCategory_experience, "Эликсир опыта", '
+                      'GE_Recipe_EXP_2_Info)', text)
+        self.assertIn('GE_RecipeCategory_experience_Info();', text)
+        self.assertNotIn('instance GE_RecipeCategory_advanced_exp(C_Info)', text)
+        self.assertIn('Info_ClearChoices(GE_RecipeCategory_experience)', text)
+
+    def test_category_tree_prevents_cycles_and_missing_parents(self):
+        from gothic_editor.core.recipe_categories import RecipeCategories
+        categories = RecipeCategories(self.project)
+        initial = categories.load()
+        with self.assertRaisesRegex(ValueError, 'родительская категория'):
+            categories.save(initial + [{'id': 'nested', 'name': 'Вложенная', 'parent': 'unknown'}])
+        with self.assertRaisesRegex(ValueError, 'цикл'):
+            categories.save(initial + [
+                {'id': 'first', 'name': 'Первая', 'parent': 'second'},
+                {'id': 'second', 'name': 'Вторая', 'parent': 'first'},
+            ])
+        with self.assertRaisesRegex(ValueError, 'Штатная категория'):
+            categories.save([dict(initial[0], parent='special')] + initial[1:])
+        self.assertEqual(categories.load(), initial)
+
+    def test_category_change_preserves_nested_links(self):
+        from gothic_editor.core.recipe_categories import RecipeCategories
+        categories = RecipeCategories(self.project)
+        categories.change(None, {'id': 'experience', 'name': 'Зелья опыта', 'parent': 'special'})
+        categories.change(None, {'id': 'advanced', 'name': 'Усиленные', 'parent': 'experience'})
+        data = dict(recipe(), category='advanced')
+        self.store.save(data)
+        categories.change('experience', {'id': 'experience_2', 'name': 'Опыт',
+                                         'parent': 'special'})
+        self.assertEqual(next(row for row in categories.load() if row['id'] == 'advanced')['parent'],
+                         'experience_2')
+        categories.change('advanced', None)
+        self.assertEqual(self.store.load()[0]['category'], 'experience_2')
+
     def test_custom_category_choices_and_unknown_category(self):
         from gothic_editor.core.recipe_categories import RecipeCategories
         categories = RecipeCategories(self.project)
