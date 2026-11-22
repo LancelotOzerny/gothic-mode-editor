@@ -51,7 +51,6 @@ class WorldMaterialsTests(unittest.TestCase):
 
     def test_gothic_one_16bit_vertex_and_32bit_feature_indices(self):
         data = mesh()
-        position = data.index(struct.pack('<HI', 0xB050, 4 + 24 + 24))
         # Gothic I stores a 16-bit vertex index and a 32-bit feature
         # index per polygon corner, unlike Gothic II's two 32-bit indices.
         payload = (struct.pack('<I', 1) +
