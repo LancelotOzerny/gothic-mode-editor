@@ -4,6 +4,7 @@ Decoding runs outside Tk/OpenGL. All graphics operations remain with the view.
 """
 from __future__ import annotations
 
+from array import array
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -58,7 +59,20 @@ class WorldTextures:
         size = source.size if hasattr(source, 'size') else source.stat().st_size
         if size > 64 * 1024 * 1024:
             raise ValueError('Текстура превышает 64 МБ.')
-        image = read_texture(source.read_bytes())
+        image = read_texture(source.read_bytes(), max_dimension=512)
+        # Uncompiled TGA and TEX without mip levels still need a bounded GPU
+        # preview. Downsample with C-level array slicing on a worker thread.
+        if max(image.width, image.height) > 512:
+            step = max(1, (max(image.width, image.height) + 511) // 512)
+            new_width = (image.width + step - 1) // step
+            new_height = (image.height + step - 1) // step
+            pixels = array('I')
+            pixels.frombytes(image.pixels)
+            compact = array('I')
+            for y in range(0, image.height, step):
+                start = y * image.width
+                compact.extend(pixels[start:start + image.width:step])
+            image = Texture(new_width, new_height, compact.tobytes())
         # Gothic's UV space uses a top-left image origin (Direct3D);
         # OpenGL expects bottom-left pixel rows. Flip off the UI thread.
         stride = image.width * 4
