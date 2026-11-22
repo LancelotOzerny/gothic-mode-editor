@@ -117,7 +117,7 @@ class ResourcesPanel(Panel):
 
     def _children(self, path):
         return sorted((child for child in path.iterdir()
-                       if (child.is_dir() or child.suffix.lower() == '.d')
+                       if (child.is_dir() or child.suffix.lower() in ('.d', '.md'))
                        and self.assets in child.resolve().parents),
                       key=lambda child: (not child.is_dir(), child.name.casefold()))
 
@@ -334,12 +334,31 @@ class ResourcesPanel(Panel):
         except (OSError,ValueError) as exc:
             messagebox.showerror(tr('resources.title'),str(exc),parent=self.winfo_toplevel())
 
-    def create_resource(self,script=False):
+    def create_resource(self,script=False,*,markdown=False):
         if self.folder is None:return
-        dialog=ResourceNameDialog(self,script)
+        dialog=ResourceNameDialog(self,script,markdown=markdown)
         self.wait_window(dialog)
         if dialog.result is not None:
-            self._operation(lambda files:files.create(self.folder,dialog.result,script))
+            self._operation(lambda files:files.create(self.folder,dialog.result,script,markdown=markdown))
+
+    def _can_create_markdown(self, folder):
+        if self.assets is None or folder is None:return False
+        texts=self.assets/'Texts'
+        return folder == texts or texts in folder.parents
+
+    def _add_create_commands(self,menu,folder):
+        menu.add_command(label=tr('resources.create_directory'),command=self.create_resource)
+        scripts=menu.__class__(menu,tearoff=False,bg=INPUT,fg=TXT,
+                              activebackground=PANEL,activeforeground=TXT)
+        scripts.add_command(label='Создать скрипт (.d)',command=lambda:self.create_resource(True))
+        menu.add_cascade(label=tr('resources.scripts'),menu=scripts)
+        if self._can_create_markdown(folder):
+            menu.add_command(label='Создать Markdown-документ (.md)',
+                             command=lambda:self.create_resource(markdown=True))
+
+    def create_in_folder(self, folder, *, markdown=False):
+        self.open_folder(folder)
+        self.create_resource(markdown=markdown)
 
     def rename_selected(self, path=None):
         path = self._selected if path is None else path
@@ -518,10 +537,7 @@ class ResourcesPanel(Panel):
         self.menu=menu(self)
         path=self._selected
         if path is None:
-            self.menu.add_command(label=tr('resources.create_directory'),command=self.create_resource)
-            scripts=menu(self.menu)
-            scripts.add_command(label=tr('resources.empty_script'),command=lambda:self.create_resource(True))
-            self.menu.add_cascade(label=tr('resources.scripts'),menu=scripts)
+            self._add_create_commands(self.menu,self.folder)
         elif path.is_dir():
             mutable='disabled' if path==self.assets else 'normal'
             self.menu.add_command(label=tr('resources.delete'),command=self.delete_selected,state=mutable)
@@ -531,6 +547,10 @@ class ResourcesPanel(Panel):
             paths.add_command(label=tr('resources.absolute_path'),command=lambda:self.copy_path(True))
             self.menu.add_cascade(label=tr('resources.copy_path'),menu=paths)
             self.menu.add_command(label=tr('resources.open'),command=self.open_selected)
+            # Folder context menu creates new files directly in that folder.
+            if self._can_create_markdown(path):
+                self.menu.add_command(label='Создать Markdown-документ (.md)',
+                                      command=lambda folder=path:self.create_in_folder(folder,markdown=True))
         else:
             self.menu.add_command(label=tr('resources.duplicate'),command=self.duplicate_selected)
             self.menu.add_command(label=tr('resources.reveal'),command=self.reveal_selected)
