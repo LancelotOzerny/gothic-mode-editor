@@ -157,12 +157,18 @@ class ProjectTools:
         if self.source.is_dir():
             self._files(self.source)  # Validate paths before reading overlay files.
             project_files = merge_project_scripts(content,self.source)
+        from .recipe_learning import prepare_recipe_learning, prioritize_learning
+        learning_script = prepare_recipe_learning(self.project, content)
+        if learning_script is not None:
+            project_files.append(learning_script)
         for generated in apply_potions(self.project,content):
             if generated not in project_files:project_files.append(generated)
         from .npcs import apply_npc_overrides
         for changed in apply_npc_overrides(self.project,content):
             if changed not in project_files:project_files.append(changed)
         manifest = self._include_project_scripts(content, project_files)
+        if learning_script is not None:
+            prioritize_learning(manifest)
         from .recipe_build import apply_recipes
         project_files.extend(apply_recipes(self.project, content, manifest))
         return content, manifest, project_files
