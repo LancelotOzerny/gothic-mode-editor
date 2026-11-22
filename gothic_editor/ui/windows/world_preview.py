@@ -407,7 +407,16 @@ class WorldPreviewPanel(tk.Frame):
         self._fly_mouse = None
         self.end_drag(event)
 
+    def _drain_texture_errors(self):
+        if self._textures is None:
+            return
+        for error in self._textures.get_errors():
+            if error not in self._texture_reported:
+                self._texture_reported.add(error)
+                self._log_message(error, error=True)
+
     def _tick(self):
+        self._drain_texture_errors()
         self._tick_id = None
         if self._closed:
             return
@@ -614,11 +623,7 @@ class WorldPreviewPanel(tk.Frame):
             view.solid = self._solid
             view.render_mode = self._render_mode
             view.textures = self._textures
-            if self._textures is not None:
-                for error in self._textures.get_errors():
-                    if error not in self._texture_reported:
-                        self._texture_reported.add(error)
-                        self._log_message(error, error=True)
+            self._drain_texture_errors()
             return
         self.canvas.delete('scene')
         w = max(2, self.canvas.winfo_width())
