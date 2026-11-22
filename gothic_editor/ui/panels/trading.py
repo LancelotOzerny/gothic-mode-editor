@@ -79,9 +79,12 @@ class TradingPanel(Panel):
 
     def _dialog_state(self):
         enabled = self.dialog.get()
-        self.dialog_label.pack(fill='x', padx=8, before=self.dialog_entry.surface) if enabled else self.dialog_label.pack_forget()
-        if enabled:self.dialog_entry.pack(fill='x', padx=8, pady=(0,8))
-        else:self.dialog_entry.pack_forget()
+        if enabled:
+            self.dialog_label.pack(fill='x', padx=8)
+            self.dialog_entry.pack(fill='x', padx=8, pady=(0,8))
+        else:
+            self.dialog_label.pack_forget()
+            self.dialog_entry.pack_forget()
 
     def changed(self):
         self._dirty = True
@@ -106,10 +109,10 @@ class TradingPanel(Panel):
         selector = create_field(line,'choice',variable=chapter,
                                 options=[(str(n),str(n)) for n in range(1,7)],height=32)
         selector.pack(side='left', fill='x', expand=True)
+        record['chapter_line'] = line
         if row is None:
             line.pack_forget()
-        else:
-            chapter.trace_add('write', lambda *_:self.changed())
+        chapter.trace_add('write', lambda *_:self.changed())
         instance.trace_add('write', lambda *_:self.changed())
         count.trace_add('write', lambda *_:self.changed())
         self.reflow()
@@ -127,9 +130,7 @@ class TradingPanel(Panel):
             # Convert the empty '+' square into an editable item and create the next square.
             if variable is self.rows[-1]['item']:
                 row=self.rows[-1]
-                for child in row['frame'].winfo_children():
-                    if isinstance(child,tk.Frame):
-                        child.pack(fill='x')
+                row['chapter_line'].pack(fill='x')
                 self.add_row(None)
             self.changed()
         window=ValueChoiceWindow(self.controller.app,options,-1,'Выбрать товар',choose,
