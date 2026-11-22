@@ -11,11 +11,12 @@ class ItemBindingTile(tk.Frame):
     SIZE = 224
 
     def __init__(self, parent, variable, count, on_choose, on_remove, on_change,
-                 title=''):
+                 title='', close_size=40, name_position=.43):
         super().__init__(parent, bg=PANEL, width=self.SIZE, height=self.SIZE)
         self.variable, self.count = variable, count
         self.on_choose, self.on_remove, self.on_change = on_choose, on_remove, on_change
         self._title = title
+        self.name_position = name_position
         self.pack_propagate(False)
         self.surface = tk.Frame(self, bg=INPUT, highlightthickness=1,
                                 highlightbackground=BORDER, cursor='hand2')
@@ -24,11 +25,11 @@ class ItemBindingTile(tk.Frame):
         self.icons = IconImages.shared(self)
         self.close = RoundedIconButton(self.surface, self.icons, 'close.png', 'x',
                                        'Удалить привязку', self.remove, background=INPUT,
-                                       size=40, padding=11)
+                                       size=close_size, padding=max(5, round(close_size * .275)))
         self.close.place(relx=1, x=-8, y=8, anchor='ne')
         self.name = tk.Label(self.surface, bg=INPUT, fg=TXT, justify='center',
                              wraplength=self.SIZE - 34, cursor='hand2')
-        self.name.place(relx=.5, rely=.43, anchor='center')
+        self.name.place(relx=.5, rely=self.name_position, anchor='center')
         self.name.bind('<Button-1>', lambda _: self.on_choose(self.variable))
         self.create_icon = RoundedIconButton(
             self.surface, self.icons, 'create.png', '+',
