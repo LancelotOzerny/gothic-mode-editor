@@ -50,6 +50,14 @@ class DocumentPagesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Недоступный'):
             load_document(self.project, '../secret.md')
 
+    def test_document_schema_exposes_markdown_picker(self):
+        from gothic_editor.core.properties_schema import schema_for
+        schema = schema_for('documents')
+        fields = [field for section in schema.sections for field in section.fields]
+        selected = next(field for field in fields if field.key == 'document_text')
+        self.assertEqual(selected.source, 'editor_metadata')
+        self.assertEqual(selected.options_source, 'document_texts')
+
     def test_title_and_paragraph_generate_document(self):
         script = render_document('ITWR_RECIPE', '# Рецепт\n\nСмешайте траву и воду.', book=True)
         self.assertIn('Doc_SetPages(doc, 1);', script)
