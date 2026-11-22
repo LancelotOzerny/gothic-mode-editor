@@ -3,6 +3,7 @@ import json
 import tkinter as tk
 from .choice_list import ChoiceList
 from .inputs import PropertyEntry
+from .choice_field import ExpressionChoiceField
 from .field_label import FieldLabel
 from .theme import COMPACT_FIELD_HEIGHT, COMPACT_FIELD_PADDING, PANEL, ERROR, FIELD_HEIGHT, label
 from gothic_editor.core.item_actions import assignments,argument_literal
@@ -76,12 +77,21 @@ class FunctionActionList(ChoiceList):
                 values.setdefault(parameter.name,parameter.default)
                 FieldLabel(self.parameter_holder,f'[{function.label}] {parameter.label}').pack(fill='x',padx=8,pady=(2,0))
                 variable=tk.StringVar(self,value=values[parameter.name])
-                field=PropertyEntry(self.parameter_holder,textvariable=variable,
-                                    height=None if self.height == COMPACT_FIELD_HEIGHT else self.height,
-                                    state='normal' if self.editable else 'readonly')
+                if parameter.options:
+                    field=ExpressionChoiceField(
+                        self.parameter_holder, parameter.options,
+                        height=None if self.height == COMPACT_FIELD_HEIGHT else self.height,
+                        state='readonly' if self.editable else 'disabled',
+                        caption=parameter.label)
+                    field.set_expression(values[parameter.name])
+                    variable=field.variable
+                else:
+                    field=PropertyEntry(self.parameter_holder,textvariable=variable,
+                                        height=None if self.height == COMPACT_FIELD_HEIGHT else self.height,
+                                        state='normal' if self.editable else 'readonly')
                 field.pack(fill='x',padx=8,pady=COMPACT_FIELD_PADDING if self.height == COMPACT_FIELD_HEIGHT else 0)
-                def change(*_,v=variable,values=values,name=parameter.name):
-                    values[name]=v.get()
+                def change(*_,control=field,values=values,name=parameter.name):
+                    values[name]=control.get()
                     self._sync()
                 trace=variable.trace_add('write',change)
                 field.bind('<Destroy>',lambda _,v=variable,t=trace:v.trace_remove('write',t),add='+')
@@ -91,8 +101,13 @@ class FunctionActionList(ChoiceList):
             if not entry.get():continue
             function=self.catalog_provider().resolve(entry.get())
             for parameter in function.parameters:
-                try:argument_literal(parameter,self.arguments.get(frame,{}).get(parameter.name,parameter.default))
-                except ValueError as exc:raise ValueError(f'Действие {index}, [{function.label}] {parameter.label}: {exc}') from exc
+                try:
+                    value = self.arguments.get(frame,{}).get(parameter.name,parameter.default)
+                    if parameter.options and value not in {option for _, option in parameter.options}:
+                        raise ValueError('Выберите значение из списка.')
+                    argument_literal(parameter,value)
+                except ValueError as exc:
+                    raise ValueError(f'Действие {index}, [{function.label}] {parameter.label}: {exc}') from exc
 
     def remove_row(self,frame):
         if not self.editable:return
