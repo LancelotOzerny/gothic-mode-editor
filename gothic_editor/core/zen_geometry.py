@@ -80,7 +80,7 @@ def parse_mesh_and_bsp(stream, limit, *, include_triangles=False):
                     if not 0 <= count <= 65535:
                         count = 0
                     from .mesh_materials import mrm_materials
-                    texture_names = tuple(texture for _, texture in mrm_materials(data, count))
+                    texture_names = tuple(texture for _, texture in mrm_materials(data, count, embedded_count=True))
                 except (ValueError, struct.error, UnicodeError):
                     texture_names = ()
         elif kind == 0xB040:
