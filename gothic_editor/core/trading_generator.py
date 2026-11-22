@@ -62,6 +62,7 @@ def _code(npc, config):
     stock = '\n'.join(lines)
     lines = []
     if config.get('dialog', False):
+        phrase=config.get('dialog_text','Покажи товары').replace('\\','\\\\').replace('"','\\"')
         lines += [
             f'func int GE_TradeCondition_{ident}() {{',
             f"    if (Kapitel >= {config.get('min_chapter', 1)}) {{ return TRUE; }};",
@@ -73,7 +74,7 @@ def _code(npc, config):
             f'    npc = {npc};', '    nr = 999;',
             f'    condition = GE_TradeCondition_{ident};',
             f'    information = GE_TradeInfo_{ident};',
-            '    permanent = TRUE;', '    description = "Покажи мне свои товары";',
+            '    permanent = TRUE;', f'    description = "{phrase}";',
             '    trade = TRUE;', '};'
         ]
     return stock, '\n'.join(lines)
