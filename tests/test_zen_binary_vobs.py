@@ -67,8 +67,8 @@ class BinaryVobTests(unittest.TestCase):
                    struct.pack('<i', 0))
         mesh = obj('MeshAndBsp', '%', struct.pack('<I', 0x2090000))
         world = obj('%', 'oCWorld:zCWorld', mesh + tree)
-        header = (b'ZenGin Archive\\nver 1\\nzCArchiverGeneric\\nBINARY\\n'
-                  b'saveGame 0\\nEND\\nobjects 3\\nEND\\n')
+        header = (b'ZenGin Archive\nver 1\nzCArchiverGeneric\nBINARY\n'
+                  b'saveGame 0\nEND\nobjects 3\nEND\n')
         with TemporaryDirectory() as temp:
             path = Path(temp) / 'OLDWORLD.ZEN'
             path.write_bytes(header + world)
