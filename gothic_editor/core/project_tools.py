@@ -169,9 +169,15 @@ class ProjectTools:
         from .npcs import apply_npc_overrides
         for changed in apply_npc_overrides(self.project,content):
             if changed not in project_files:project_files.append(changed)
+        from .trading_generator import prepare_trading, prioritize_trading
+        trading_script = prepare_trading(self.project, content)
+        if trading_script is not None:
+            project_files.append(trading_script)
         manifest = self._include_project_scripts(content, project_files)
         if learning_script is not None:
             prioritize_learning(manifest)
+        if trading_script is not None:
+            prioritize_trading(manifest)
         from .recipe_build import apply_recipes
         project_files.extend(apply_recipes(self.project, content, manifest))
         return content, manifest, project_files
