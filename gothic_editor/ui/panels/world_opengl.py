@@ -55,6 +55,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._invalid_gpu = set()
         self._gpu_texture_budget = 128 * 1024 * 1024
         self._visible_gpu = set()
+        self._visible_gpu_key = None
         self.animate = True
         self._failed = False
         self.world = None
@@ -152,6 +153,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._gpu_textures.clear()
         self._gpu_texture_bytes = 0
         self._invalid_gpu.clear()
+        self._visible_gpu_key = None
 
     def _canonical_texture(self, name):
         from gothic_editor.core.texture_names import texture_candidates
@@ -160,9 +162,16 @@ class WorldOpenGLFrame(OpenGLFrame):
 
     def _pin_visible_textures(self):
         """Avoid evicting textures still needed by this frame's world/VOBs."""
-        self._visible_gpu.clear()
         if self.textures is None or self.render_mode != 'textures' or self.focus is None:
+            self._visible_gpu.clear()
+            self._visible_gpu_key = None
             return
+        key = (id(self.world), id(self.vobs), id(self.textures),
+               self.focus, self.radius, self.triangle_limit, len(self.textures.sources))
+        if key == self._visible_gpu_key:
+            return
+        self._visible_gpu_key = key
+        self._visible_gpu.clear()
         if self.world is not self._cached_world:
             self._chunk_names.clear()
         keys = self.world.visible_chunk_keys(self.focus, self.radius, self.triangle_limit)
