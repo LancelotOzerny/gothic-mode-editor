@@ -38,12 +38,37 @@ class RecipeListPanel(HierarchyBrowser):
         if current is not None and not self.controller.persisted and not any(r['id']==current['id'] for r in self.controller.items):
             items = self.controller.items + [current]
         else:items = self.controller.items
+        indexed = {row['id']: row for row in categories}
+        nested = {row['id']: [] for row in categories}
+        roots = []
         for category in categories:
-            matches = [r for r in items if r.get('category','') == category['id'] and
-                       (query in category['name'].casefold() or query in (r['id']+' '+r['name']).casefold())]
-            if query and not matches and query not in category['name'].casefold():continue
-            self.grouped[category['id']] = matches
-            CategoryRow(self, self.area.content, HierarchyCategory(category['id'], category['name']), 0)
+            parent = category.get('parent') or ''
+            if parent and parent in nested:
+                nested[parent].append(category['id'])
+            else:
+                roots.append(category['id'])
+
+        def ancestors(code):
+            while code and code in indexed:
+                yield indexed[code]['name']
+                code = indexed[code].get('parent') or ''
+
+        for category in categories:
+            code = category['id']
+            title_match = any(query in title.casefold() for title in ancestors(code))
+            self.grouped[code] = [recipe for recipe in items
+                if recipe.get('category', '') == code and
+                (not query or title_match or query in (recipe['id'] + ' ' + recipe['name']).casefold())]
+
+        def node(code):
+            category = indexed[code]
+            return HierarchyCategory(code, category['name'],
+                                     tuple(node(child) for child in nested[code]))
+
+        for code in roots:
+            category = node(code)
+            if not query or self.count(category) or query in category.title.casefold():
+                CategoryRow(self, self.area.content, category, 0)
         self.area.canvas.yview_moveto(position[0] if position else 0)
 
     def bind_category(self, row, category):
@@ -51,7 +76,8 @@ class RecipeListPanel(HierarchyBrowser):
         row.header.bind_row('<Button-3>', lambda event: self.category_context(event, category.key))
 
     def count(self, category):
-        return len(self.grouped.get(category.key, []))
+        return len(self.grouped.get(category.key, [])) + sum(
+            self.count(child) for child in category.children)
 
     def select_category(self, key):
         super().select_category(key)
@@ -70,6 +96,8 @@ class RecipeListPanel(HierarchyBrowser):
     def category_context(self, event, code):
         commands = [(tr('recipes.' + key), lambda action=key: self.controller.category_action(action, code))
                     for key in ('edit', 'duplicate', 'delete')] if code else []
+        if code:
+            commands.append(('Создать подкатегорию', lambda: self.controller.category_action('create', code)))
         commands.append((tr('recipes.add_recipe'), lambda: self.controller.add(code)))
         self.popup(event, commands)
 
