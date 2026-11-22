@@ -137,8 +137,7 @@ class ActionCatalog:
     def groups(self):
         from .localization import tr
         if self._group_options is not None:
-            return [(tr('item_actions.project'),self._group_options[0]),
-                    (tr('item_actions.standard'),self._group_options[1])]
+            return self._group_options
         groups=[]
         roots=[(tr('item_actions.project'),project_scripts(self.project),'project:',self.project),
                (tr('item_actions.standard'),self.game_content,'game:Content/',self.game_content)]
@@ -155,7 +154,7 @@ class ActionCatalog:
         if recipe_action:
             groups.insert(0, ('Алхимия', [('Изучить рецепт — GE_LearnRecipe', recipe_action.identifier)]))
             self.functions[recipe_action.identifier.casefold()] = recipe_action
-        self._group_options=[options for _,options in groups]
+        self._group_options=groups
         return groups
 
     def resolve(self,identifier):
