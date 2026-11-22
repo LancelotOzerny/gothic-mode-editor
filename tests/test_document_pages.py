@@ -164,7 +164,7 @@ class DocumentPagesTests(unittest.TestCase):
         changed = apply_documents(self.project, self.content)
         generated = (self.content / changed[0]).read_text('cp1251')
         dispatcher = generated[generated.index('func void GE_ShowDocument_ITWR_RECIPE()'):]
-        self.assertIn('GE_ItemActions_ITWR_RECIPE();', dispatcher)
+        self.assertIn('if (GE_DocSpread_ITWR_RECIPE == 0) { GE_ItemActions_ITWR_RECIPE(); };', dispatcher)
         self.assertEqual(generated.count('GE_ItemActions_ITWR_RECIPE();'), 1)
         self.assertIn('GE_ShowDocument_ITWR_RECIPE_Part_1();', dispatcher)
 
