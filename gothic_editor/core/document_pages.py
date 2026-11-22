@@ -85,7 +85,7 @@ def paginate(raw):
                               break_on_hyphens=False) or ['']
         while lines:
             if pages[-1]:
-                if used == MAX_LINES:
+                if used + 1 >= MAX_LINES:
                     pages.append([])
                     used = 0
                 else:
