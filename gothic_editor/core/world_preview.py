@@ -5,7 +5,7 @@ triangle samples are passed to the interactive preview. No extra dependencies.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import cos, sin, isfinite, floor
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -118,6 +118,8 @@ class ChunkedWorld:
     total_triangles: int
     discarded_triangles: int
     origin: tuple[int, int]
+    chunk_uvs: dict = field(default_factory=dict)
+    chunk_textures: dict = field(default_factory=dict)
 
     def visible_triangle_count(self, focus=None, radius=1):
         focus = self.origin if focus is None else focus
@@ -206,9 +208,12 @@ def build_world_chunks(geometry, chunk_size=6000):
     vertices = geometry.vertices
     safe = tuple(len(v) == 3 and all(isfinite(x) and abs(x) <= 1e8 for x in v)
                  for v in vertices)
-    groups = {}
+    groups, uv_groups, texture_groups = {}, {}, {}
     discarded = 0
-    for face in geometry.triangles:
+    uvs = getattr(geometry, 'triangle_uvs', ())
+    materials = getattr(geometry, 'materials', ())
+    textures = getattr(geometry, 'texture_names', ())
+    for face_index, face in enumerate(geometry.triangles):
         if (len(face) != 3 or not all(
                 isinstance(i, int) and 0 <= i < len(vertices) and safe[i] for i in face)):
             discarded += 1
@@ -217,6 +222,10 @@ def build_world_chunks(geometry, chunk_size=6000):
         z = sum(vertices[i][2] for i in face) / 3
         key = (floor(x / chunk_size), floor(z / chunk_size))
         groups.setdefault(key, []).append(tuple(face))
+        uv_groups.setdefault(key, []).append(uvs[face_index] if face_index < len(uvs) else None)
+        material = materials[face_index] if face_index < len(materials) else -1
+        texture_groups.setdefault(key, []).append(
+            textures[material] if 0 <= material < len(textures) else '')
     if groups:
         lo_x, hi_x = min(x for x, _ in groups), max(x for x, _ in groups)
         lo_z, hi_z = min(z for _, z in groups), max(z for _, z in groups)
@@ -227,7 +236,9 @@ def build_world_chunks(geometry, chunk_size=6000):
     return ChunkedWorld(tuple(vertices),
                         {key: tuple(faces) for key, faces in groups.items()},
                         chunk_size, geometry.vertex_count, geometry.triangle_count,
-                        discarded, center)
+                        discarded, center,
+                        {key: tuple(values) for key, values in uv_groups.items()},
+                        {key: tuple(values) for key, values in texture_groups.items()})
 
 
 def load_world_wireframe(path: str | Path | VdfEntry, chunk_size=6000):
