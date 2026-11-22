@@ -96,7 +96,7 @@ class TradingPanel(Panel):
         chapter = tk.StringVar(self, value=str(row['chapter']) if row else '1')
         container = tk.Frame(self.tiles_frame, bg=PANEL, width=ItemBindingTile.SIZE)
         container.grid_propagate(False)
-        container.configure(height=ItemBindingTile.SIZE+58)
+        container.configure(height=ItemBindingTile.SIZE)
         record = dict(frame=container, item=instance, count=count, chapter=chapter)
         if row is not None and self.rows and not self.rows[-1]['item'].get().strip():
             self.rows.insert(len(self.rows)-1, record)
@@ -106,15 +106,15 @@ class TradingPanel(Panel):
                                lambda r=record:self.remove_row(r), self.changed,
                                lambda item:self.item_titles.get(item.casefold(), item))
         tile.pack(fill='x', side='top')
-        line = tk.Frame(container, bg=PANEL)
-        line.pack(fill='x')
+        line = tk.Frame(tile.surface, bg=INPUT)
+        line.place(relx=.5, y=42, anchor='n', width=180, height=32)
         label(line, 'Глава').pack(side='left', padx=(4,8))
         selector = create_field(line,'choice',variable=chapter,
                                 options=[(str(n),str(n)) for n in range(1,7)],height=32)
         selector.pack(side='left', fill='x', expand=True)
         record['chapter_line'] = line
         if row is None:
-            line.pack_forget()
+            line.place_forget()
         chapter.trace_add('write', lambda *_:self.changed())
         instance.trace_add('write', lambda *_:self.changed())
         count.trace_add('write', lambda *_:self.changed())
@@ -133,7 +133,7 @@ class TradingPanel(Panel):
             # Convert the empty '+' square into an editable item and create the next square.
             if variable is self.rows[-1]['item']:
                 row=self.rows[-1]
-                row['chapter_line'].pack(fill='x')
+                row['chapter_line'].place(relx=.5, y=42, anchor='n', width=180, height=32)
                 self.add_row(None)
             self.changed()
         window=ValueChoiceWindow(self.controller.app,options,-1,'Выбрать товар',choose,
