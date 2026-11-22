@@ -11,7 +11,7 @@ def mrm_textures(data, count):
     return [texture for _,texture in mrm_materials(data,count)]
 
 
-def mrm_materials(data, count):
+def mrm_materials(data, count, *, embedded_count=False):
     result = [('', '')] * count
     if not data.startswith(b'ZenGin Archive'):
         return result
@@ -19,12 +19,16 @@ def mrm_materials(data, count):
     if header is None:
         return result
     position = header.end()
-    if position + 4 > len(data):
-        return result
-    declared = struct.unpack_from('<i', data, position)[0]
-    if declared < 0 or declared > 65535:
-        return result
-    position += 4
+    # MSH's material chunk stores a 32-bit list length immediately after
+    # the archive header; MRM embeds an archive without that extra integer.
+    if embedded_count:
+        if position + 4 > len(data):
+            return result
+        declared = struct.unpack_from('<I', data, position)[0]
+        if declared > 65535:
+            return result
+        position += 4
+        count = min(count, declared)
 
     def string(limit):
         nonlocal position
@@ -35,7 +39,7 @@ def mrm_materials(data, count):
         position = end + 1
         return value
 
-    for index in range(min(count, declared)):
+    for index in range(count):
         try:
             string(len(data))  # external material name
             start = position
