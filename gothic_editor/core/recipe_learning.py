@@ -65,12 +65,12 @@ def prepare_recipe_learning(project, content):
             else:
                 declarations.append(f'var int {variable};')
             variables.add(key)
-        constant = 'GE_RECIPE_' + recipe['id']
+        constant = 'GE_LEARN_ID_' + recipe['id']
         if tree.unique(constant):
             raise ValueError('Конфликт константы изучения: ' + constant)
         declarations.append(f'const int {constant} = {recipe_code(recipe["id"])};')
     cases = '\n'.join(
-        '    if (recipe == GE_RECIPE_' + recipe['id'] + ') { ' +
+        '    if (recipe == GE_LEARN_ID_' + recipe['id'] + ') { ' +
         recipe['availability']['variable'] + ' = TRUE; };'
         for recipe in recipes)
     body = ('// @INFO NAME="Изучить рецепт"\n'
