@@ -48,8 +48,8 @@ class RecipeLearningTests(unittest.TestCase):
         self.assertEqual(target, OUTPUT)
         script = (self.content / target).read_text('cp1251')
         self.assertIn('func void GE_LearnRecipe(var int recipe)', script)
-        self.assertIn('const int GE_RECIPE_HEALTH = ', script)
-        self.assertIn('const int GE_RECIPE_MANA = ', script)
+        self.assertIn('const int GE_LEARN_ID_HEALTH = ', script)
+        self.assertIn('const int GE_LEARN_ID_MANA = ', script)
         self.assertIn('Knows_Health = TRUE;', script)
         self.assertIn('Knows_Mana = TRUE;', script)
         self.assertEqual(script.count('var int Knows_Health;'), 1)
@@ -57,6 +57,21 @@ class RecipeLearningTests(unittest.TestCase):
                         if item.name == 'GE_LearnRecipe')
         self.assertEqual((function.parameters[0].name, function.parameters[0].kind),
                          ('recipe', 'int'))
+
+    def test_learning_ids_do_not_clash_with_generated_recipe_dialogs(self):
+        self.store.save(recipe('RECIPE_EXP_100', 'Knows_Exp100'))
+        prepare_recipe_learning(self.project, self.content)
+        from gothic_editor.core.daedalus_merge import definitions
+        script = (self.content / OUTPUT).read_text('cp1251')
+        self.assertIn('GE_LEARN_ID_RECIPE_EXP_100', script)
+        self.assertNotIn('GE_RECIPE_RECIPE_EXP_100', script.upper())
+        # The recipe compiler generates GE_Recipe_<ID> (case-insensitive).
+        generated = 'instance GE_Recipe_RECIPE_EXP_100(C_Info) {};'
+        symbols = {name.casefold() for definition in definitions(script) for name in definition.names}
+        for definition in definitions(generated):
+            for name in definition.names:
+                self.assertNotIn(name.casefold(), symbols)
+        self.assertIn('ge_learn_id_recipe_exp_100', symbols)
 
     def test_existing_knowledge_variable_is_reused(self):
         (self.content / 'base.d').write_text('var int Knows_Health;', 'cp1251')
