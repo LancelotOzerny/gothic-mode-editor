@@ -128,6 +128,11 @@ def apply_recipes(project, content, manifest):
                     declarations.append(f'var int {variable};')
                     generated.add(variable.casefold())
                 known = f'({variable} != 0)'
+            elif availability['type'] == 'stock_talent':
+                talent = availability['talent']
+                if tree.unique(talent) is None:
+                    raise ValueError(f'Не найден стандартный навык алхимии Gothic: {talent}')
+                known = f'(PLAYER_TALENT_ALCHEMY[{talent}] == TRUE)'
             prefix = 'GE_Recipe_' + recipe['id']
             category = recipe.get('category', '')
             menu_condition = 'PC_PotionAlchemy_End_Condition()'
