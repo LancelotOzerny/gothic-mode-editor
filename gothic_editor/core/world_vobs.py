@@ -66,6 +66,20 @@ def _rotation(value: str):
     return _numbers(stripped, 9)
 
 
+def _unpack_vob(raw_hex):
+    """Decode ZenGin packed dataRaw (Gothic I: 74, Gothic II: 83 bytes)."""
+    raw = bytes.fromhex(raw_hex)
+    if len(raw) not in (74, 83):
+        raise ValueError('Неизвестный формат упакованного VOB.')
+    floats = struct.unpack_from('<18f', raw)
+    position, rotation = floats[6:9], floats[9:18]
+    if not all(isfinite(x) and abs(x) < 1e8 for x in position):
+        raise ValueError('Повреждённая позиция VOB.')
+    if not all(isfinite(x) and abs(x) <= 2 for x in rotation):
+        raise ValueError('Повреждённый поворот VOB.')
+    return position, rotation, bool(raw[72] & 1)
+
+
 def static_vobs(info, chunk_size: int):
     """Extract static model references and world-space transforms."""
     if not info.details_available:
@@ -77,16 +91,22 @@ def static_vobs(info, chunk_size: int):
         visual = props.get('visual', '').replace('\\', '/').rsplit('/', 1)[-1]
         if Path(visual).suffix.lower() not in ('.3ds', '.mrm'):
             continue
-        if props.get('showVisual', '1').strip().lower() in ('0', 'false'):
-            continue
         if len(objects) >= _MAX_VOBS:
             skipped += 1
             continue
         try:
-            position = _numbers(props.get('trafoOSToWSPos', ''), 3)
-            rotation = _rotation(props.get('trafoOSToWSRot', ''))
-        except ValueError:
+            if props.get('dataRaw'):
+                position, rotation, visible = _unpack_vob(props['dataRaw'])
+            else:
+                position = _numbers(props.get('trafoOSToWSPos', ''), 3)
+                rotation = _rotation(props.get('trafoOSToWSRot', ''))
+                visible = True
+            if props.get('showVisual', '1').strip().lower() in ('0', 'false'):
+                visible = False
+        except (ValueError, struct.error):
             skipped += 1
+            continue
+        if not visible:
             continue
         name = props.get('vobName', entry.name)
         key = (floor(position[0] / chunk_size), floor(position[2] / chunk_size))
