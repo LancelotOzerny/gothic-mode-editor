@@ -168,12 +168,22 @@ class RecipePropertiesPanel(Panel):
         self.add_row({'instance': '', 'count': 1}, notify=False)
         availability = self.add_group(tr('recipes.availability'), parent=self.area.content)
         self.field(availability, 'availability', data['availability']['type'], kind='choice',
-                   options=[(tr('recipes.always'), 'always'), (tr('recipes.global_variable'), 'global_variable')])
-        variable = self.field(availability, 'variable', data['availability'].get('variable', ''))
+                   options=[(tr('recipes.always'), 'always'),
+                            (tr('recipes.global_variable'), 'global_variable'),
+                            ('Навык алхимии Gothic', 'stock_talent')])
+        self.field(availability, 'variable', data['availability'].get('variable', ''))
+        group_talent = tk.StringVar(self, value=data['availability'].get('talent', ''))
+        self.talent_field = availability.add_field('Навык Gothic', variable=group_talent)
+        self.controller.watch(group_talent)
+        self.fields['talent'] = self.talent_field
         self.variable_field = self.fields['variable']
-        self.variable_field.configure(state='normal' if data['availability']['type'] == 'global_variable' else 'disabled')
-        self.fields['availability'].bind('<<ComboboxSelected>>', lambda _: self.variable_field.configure(
-            state='normal' if self.fields['availability'].get() == 'global_variable' else 'disabled'))
+        self.talent_field = self.fields['talent']
+        def update_availability_fields(_event=None):
+            value = self.fields['availability'].get()
+            self.variable_field.configure(state='normal' if value == 'global_variable' else 'disabled')
+            self.talent_field.configure(state='normal' if value == 'stock_talent' else 'disabled')
+        self.fields['availability'].bind('<<ComboboxSelected>>', update_availability_fields)
+        update_availability_fields()
         self.status.config(text=tr('recipes.saved') if self.controller.persisted else tr('recipes.dirty'))
 
     def add_row(self, row=None, notify=True):
