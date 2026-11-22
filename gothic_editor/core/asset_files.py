@@ -48,17 +48,17 @@ class AssetFiles:
         target = self.checked(folder / name)
         if script:
             template = (
-                f'// @INFO NAME="{stem}"\\n\\n'
-                f'func void {stem}()\\n'
-                '{\\n'
-                '    // your script code\\n'
-                '};\\n'
+                f'// @INFO NAME="{stem}"\n\n'
+                f'func void {stem}()\n'
+                '{\n'
+                '    // your script code\n'
+                '};\n'
             )
             with target.open('x', encoding='utf-8') as output:
                 output.write(template)
         elif markdown:
             with target.open('x', encoding='utf-8') as output:
-                output.write('# Название\\n\\n')
+                output.write('# Название\n\n')
         else:
             target.mkdir()
         return target
