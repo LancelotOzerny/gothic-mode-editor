@@ -25,7 +25,8 @@ class BinSafeVob:
 
 
 _WANTED = frozenset(('vobName', 'visual', 'trafoOSToWSPos',
-                     'trafoOSToWSRot', 'showVisual', 'presetName', 'itemInstance'))
+                     'trafoOSToWSRot', 'showVisual', 'dataRaw',
+                     'presetName', 'itemInstance'))
 _MAX_NAMES = 100_000
 _MAX_OBJECTS = 1_000_000
 _MAX_DEPTH = 512
