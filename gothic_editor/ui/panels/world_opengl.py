@@ -173,15 +173,21 @@ class WorldOpenGLFrame(OpenGLFrame):
                 self._chunk_names[key] = unique
             self._visible_gpu.update(self._canonical_texture(name) for name in unique)
         if self.vobs is not None:
+            if self.vobs is not self._cached_vobs:
+                self._vob_names.clear()
             for key, indices in self.vobs.chunks.items():
                 if abs(key[0] - self.focus[0]) > self.radius or abs(key[1] - self.focus[1]) > self.radius:
                     continue
                 for index in indices:
                     visual = self.vobs.objects[index].visual
-                    mesh = self.vobs.models[visual]
-                    for uv, name in zip(mesh.uvs, mesh.texture_names):
-                        if uv is not None and name:
-                            self._visible_gpu.add(self._canonical_texture(name))
+                    names = self._vob_names.get(visual)
+                    if names is None:
+                        mesh = self.vobs.models[visual]
+                        names = tuple(dict.fromkeys(
+                            name for uv, name in zip(mesh.uvs, mesh.texture_names)
+                            if uv is not None and name))
+                        self._vob_names[visual] = names
+                    self._visible_gpu.update(self._canonical_texture(name) for name in names)
 
     def _texture_id(self, name):
         if self.render_mode != 'textures' or self.textures is None or not name:
@@ -202,6 +208,12 @@ class WorldOpenGLFrame(OpenGLFrame):
         size = len(texture.pixels) * 4 // 3 + 16
         if size > self._gpu_texture_budget:
             return 0
+        if self._gpu_texture_bytes + size > self._gpu_texture_budget:
+            reclaimable = sum(old_size for key, (_id, old_size) in self._gpu_textures.items()
+                              if key not in self._visible_gpu)
+            if self._gpu_texture_bytes + size - reclaimable > self._gpu_texture_budget:
+                # Insufficient free space without evicting a visible material.
+                return 0
         tex_id = 0
         try:
             tex_id = int(glGenTextures(1))
