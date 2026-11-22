@@ -677,6 +677,8 @@ class WorldPreviewPanel(tk.Frame):
 
     def destroy(self):
         if self._textures is not None:
+            if self._gl_view is not None:
+                self._gl_view.textures = None
             self._textures.close()
             self._textures = None
         if self._closed:
