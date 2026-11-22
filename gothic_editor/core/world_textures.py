@@ -91,6 +91,12 @@ class WorldTextures:
             self._bytes -= len(discarded.pixels)
         return texture
 
+    def report_error(self, name, error):
+        key = name.casefold()
+        if key not in self._missing:
+            self._missing.add(key)
+            self._errors.append(f'[ZEN] Текстура {name}: {error}')
+
     def get_errors(self):
         errors, self._errors = self._errors, []
         return errors
