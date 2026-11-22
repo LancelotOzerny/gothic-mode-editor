@@ -12,13 +12,14 @@ def chunk(kind, data=b''):
     return struct.pack('<HI', kind, len(data)) + data
 
 
-def materials():
+def materials(*, embedded_count=False):
     header = (b'ZenGin Archive\nver 1\nzCArchiverGeneric\nBINARY\n'
               b'saveGame 0\ndate 1.1.2002\nuser test\nEND\nobjects 1\nEND\n')
     fields = b'GRASS\0' + bytes([4]) + bytes((255, 255, 255, 255)) + struct.pack('<f', 0.)
     fields += b'GRASS.TGA\0'
     object_body = struct.pack('<HI', 17408, 0) + b'%\0zCMaterial\0' + fields
-    return header + struct.pack('<I', 1) + b'GRASS\0' + struct.pack('<I', len(object_body) + 4) + object_body
+    return (header + (struct.pack('<I', 1) if embedded_count else b'') +
+            b'GRASS\0' + struct.pack('<I', len(object_body) + 4) + object_body)
 
 
 def mesh():
@@ -28,7 +29,7 @@ def mesh():
                          for u, v in ((0., 0.), (1., 0.), (0., 1.))))
     polygon = (struct.pack('<Hhf3fBhB', 0, -1, 0., 0., 0., 1., 0, 0, 3)
                + b''.join(struct.pack('<II', i, i) for i in range(3)))
-    body = (chunk(0xB000, struct.pack('<H', 265)) + chunk(0xB020, materials())
+    body = (chunk(0xB000, struct.pack('<H', 265)) + chunk(0xB020, materials(embedded_count=True))
             + chunk(0xB030, points) + chunk(0xB040, features)
             + chunk(0xB050, struct.pack('<I', 1) + polygon) + chunk(0xB060))
     return struct.pack('<II', 0, len(body)) + body
@@ -37,6 +38,11 @@ def mesh():
 class WorldMaterialsTests(unittest.TestCase):
     def test_binary_material_archive_contains_original_texture(self):
         self.assertEqual(mrm_materials(materials(), 1), [('GRASS', 'GRASS.TGA')])
+
+    def test_mesh_material_list_contains_extra_count(self):
+        self.assertEqual(mrm_materials(materials(embedded_count=True), 1,
+                                       embedded_count=True),
+                         [('GRASS', 'GRASS.TGA')])
 
     def test_world_uvs_and_textures_remain_aligned_with_chunk_faces(self):
         data = mesh()
