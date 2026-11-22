@@ -121,7 +121,15 @@ def load_vob_scene(path, sources, chunk_size):
     sources maps lowercase model basenames to Path or VdfEntry.
     """
     info = inspect_zen(path, include_objects=True)
-    objects, status, skipped = static_vobs(info, chunk_size)
+    if info.encoding == 'BINARY':
+        from .zen_binary_vobs import read_binary_vobs
+        entries, status = read_binary_vobs(path)
+        info = type(info)(info.source, info.encoding, info.archiver,
+                          info.version, info.is_save, info.object_count,
+                          entries, info.has_world_mesh, True, True)
+        objects, _parsed, skipped = static_vobs(info, chunk_size)
+    else:
+        objects, status, skipped = static_vobs(info, chunk_size)
     if not objects:
         return VobScene((), {}, {}, status, skipped)
     models = {}
