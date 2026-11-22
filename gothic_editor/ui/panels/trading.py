@@ -98,7 +98,10 @@ class TradingPanel(Panel):
         container.grid_propagate(False)
         container.configure(height=ItemBindingTile.SIZE+58)
         record = dict(frame=container, item=instance, count=count, chapter=chapter)
-        self.rows.append(record)
+        if row is not None and self.rows and not self.rows[-1]['item'].get().strip():
+            self.rows.insert(len(self.rows)-1, record)
+        else:
+            self.rows.append(record)
         tile = ItemBindingTile(container, instance, count, self.choose_item,
                                lambda r=record:self.remove_row(r), self.changed,
                                lambda item:self.item_titles.get(item.casefold(), item))
