@@ -23,7 +23,7 @@ class RecipeCategoryDialog(EditorDialog):
             'Родительская категория', kind='choice',
             value=(category.get('parent') or '') if category else (parent or ''),
             options=[('Без родителя', '')] + [(row['name'], row['id']) for row in available],
-            readonly=bool(category and category.get('binding', category['id'] if category['id'] in STOCK else None)))
+            enabled=not bool(category and category.get('binding', category['id'] if category['id'] in STOCK else None)))
         group.add_button(tr('settings.save'), self.save)
         group.add_button(tr('settings.cancel'), self.destroy)
         self.bind('<Escape>', lambda _:self.destroy())
@@ -64,7 +64,7 @@ class RecipeCategoriesWindow(EditorDialog):
                                  value=data.get('parent') or '',
                                  options=[('Без родителя', '')] + [(r['name'], r['id']) for r in self.store.load()
                                                                    if r['id'] != data['id']],
-                                 readonly=data['id'] in STOCK)
+                                 enabled=data['id'] not in STOCK)
         row = (group, code, name, parent)
         self.rows.append(row)
         if data['id'] not in STOCK:
