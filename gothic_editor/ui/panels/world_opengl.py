@@ -60,7 +60,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._texture_switches = 0
         self._gpu_texture_bytes = 0
         self._invalid_gpu = set()
-        self._gpu_texture_budget = 128 * 1024 * 1024
+        self._gpu_texture_budget = 256 * 1024 * 1024
         self._visible_gpu = set()
         self._visible_gpu_key = None
         self._visible_vob_names = ()
@@ -208,7 +208,8 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._draw_vobs()
         self._profile_times['vobs'] += perf_counter() - timestamp
         timestamp = perf_counter()
-        self._warm_gpu_textures()
+        # Avoid speculative GPU uploads while visible surfaces are rendering.
+        # In dense worlds these evicted needed textures and triggered stalls.
         self._profile_times['warm'] += perf_counter() - timestamp
         glDisable(GL_TEXTURE_2D)
         glDisable(GL_ALPHA_TEST)
@@ -367,6 +368,8 @@ class WorldOpenGLFrame(OpenGLFrame):
             self._texture_alpha.pop(old_id, None)
             glDeleteTextures([old_id])
             self._gpu_texture_bytes -= old_size
+        # glTexImage2D changes the actual GL binding behind the state cache.
+        self._bound_texture = None
         self._gpu_textures[identifier] = (tex_id, size)
         self._texture_alpha[tex_id] = self.textures.has_alpha(name)
         self._gpu_texture_bytes += size
@@ -393,8 +396,7 @@ class WorldOpenGLFrame(OpenGLFrame):
             if self._texture_id(name):
                 break
 
-    def _draw_group(self, name, list_id):
-        tex_id = self._texture_id(name)
+    def _bind_texture(self, tex_id):
         if tex_id != self._bound_texture:
             if tex_id:
                 if not self._bound_texture:
@@ -404,8 +406,6 @@ class WorldOpenGLFrame(OpenGLFrame):
                 glDisable(GL_TEXTURE_2D)
             self._bound_texture = tex_id
             self._texture_switches += 1
-        # Most terrain textures are fully opaque. Alpha testing every world
-        # polygon puts some drivers on a slow compatibility rendering path.
         wants_alpha = bool(tex_id and self._texture_alpha.get(tex_id, False))
         if wants_alpha != self._alpha_enabled:
             if wants_alpha:
@@ -414,6 +414,9 @@ class WorldOpenGLFrame(OpenGLFrame):
             else:
                 glDisable(GL_ALPHA_TEST)
             self._alpha_enabled = wants_alpha
+
+    def _draw_group(self, name, list_id):
+        self._bind_texture(self._texture_id(name))
         glCallList(list_id)
         self._draw_calls += 1
 
@@ -496,27 +499,34 @@ class WorldOpenGLFrame(OpenGLFrame):
                 continue
             break
 
+        # Group by material instead of binding the same texture per instance.
+        # GL_ALPHA_TEST + depth testing makes these cutouts order-independent.
+        grouped = OrderedDict()
+        for key in nearby:
+            for index in scene.chunks[key]:
+                vob = scene.objects[index]
+                lists = self._vob_lists.get(vob.visual)
+                if lists is None:
+                    continue
+                rot = vob.rotation
+                px, py, pz = vob.position
+                matrix = (rot[0], rot[3], rot[6], 0.,
+                          rot[1], rot[4], rot[7], 0.,
+                          rot[2], rot[5], rot[8], 0.,
+                          px, py, pz, 1.)
+                for texture, list_id in lists:
+                    grouped.setdefault(texture, []).append((list_id, matrix))
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE if self.render_mode == 'wire' else GL_FILL)
         try:
-            for key in nearby:
-                for index in scene.chunks[key]:
-                    vob = scene.objects[index]
-                    lists = self._vob_lists.get(vob.visual)
-                    if lists is None:
-                        continue
-                    rot = vob.rotation
-                    px, py, pz = vob.position
-                    # ZenGin 3x3 rotation in row-major order; OpenGL expects
-                    # column-major 4x4. Translation is world-space.
-                    matrix = (rot[0], rot[3], rot[6], 0.,
-                              rot[1], rot[4], rot[7], 0.,
-                              rot[2], rot[5], rot[8], 0.,
-                              px, py, pz, 1.)
+            for texture, instances in grouped.items():
+                tex_id = self._texture_id(texture)
+                self._bind_texture(tex_id)
+                for list_id, matrix in instances:
                     glPushMatrix()
                     try:
                         glMultMatrixf(matrix)
-                        for texture, list_id in lists:
-                            self._draw_group(texture, list_id)
+                        glCallList(list_id)
+                        self._draw_calls += 1
                     finally:
                         glPopMatrix()
         finally:
