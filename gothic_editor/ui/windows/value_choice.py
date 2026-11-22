@@ -2,7 +2,7 @@
 import tkinter as tk
 
 from gothic_editor.core.localization import tr
-from gothic_editor.ui.widgets import PANEL
+from gothic_editor.ui.widgets import PANEL, make_entry
 from gothic_editor.ui.widgets.buttons import PropertyButton
 from gothic_editor.ui.widgets.theme import OPTION_BG
 from gothic_editor.ui.widgets.panel import ScrollableArea
@@ -10,7 +10,7 @@ from .dialog import EditorDialog
 
 
 class ValueChoiceWindow(EditorDialog):
-    def __init__(self, owner, options, current, title, on_choose, on_cancel):
+    def __init__(self, owner, options, current, title, on_choose, on_cancel, searchable=False):
         super().__init__(owner, bg=PANEL)
         self.withdraw()
         self.options = options
@@ -39,6 +39,12 @@ class ValueChoiceWindow(EditorDialog):
         self.scroll_area.pack(fill='both',expand=True)
         self.canvas,body=self.scroll_area.canvas,self.scroll_area.content
         self.option_buttons = []
+        self.searchable = searchable
+        self.query = tk.StringVar(self)
+        if searchable:
+            search = make_entry(table, textvariable=self.query)
+            search.pack(fill='x', pady=(0,8), before=self.scroll_area)
+            self.query.trace_add('write', lambda *_:self.filter_options())
         for index,(name,_) in enumerate(options):
             button = PropertyButton(body, lambda i=index:self.focus_option(i), text=name,
                                     background=OPTION_BG, align='left')
@@ -46,6 +52,8 @@ class ValueChoiceWindow(EditorDialog):
             self.option_buttons.append(button)
             button.bind('<Down>', lambda _,i=index:self.focus_option(i+1))
             button.bind('<Up>', lambda _,i=index:self.focus_option(i-1))
+        if searchable:
+            search.bind('<Down>', lambda _:self.focus_option(self._first_visible()))
         self.bind('<Escape>', lambda _:on_cancel())
         self.bind('<Return>', lambda _:self.apply())
 
@@ -53,16 +61,35 @@ class ValueChoiceWindow(EditorDialog):
         self.show_centered()
         self.lift()
         self.focus_option(max(0,self.current))
+        if self.searchable:
+            self.query.set('')
+
+    def _first_visible(self):
+        return next((i for i, button in enumerate(self.option_buttons) if button.winfo_manager()), 0)
+
+    def filter_options(self):
+        query=self.query.get().strip().casefold()
+        for index,button in enumerate(self.option_buttons):
+            if query in (self.options[index][0]+' '+str(self.options[index][1])).casefold():
+                button.pack(fill='x')
+            else:
+                button.pack_forget()
+        visible=[index for index,button in enumerate(self.option_buttons) if button.winfo_manager()]
+        self.choose_button.config(state='normal' if visible else 'disabled')
+        if visible:self.focus_option(visible[0])
 
     def focus_option(self, index):
         if not self.option_buttons:return
+        if not self.option_buttons[index].winfo_manager():
+            index=self._first_visible()
         self.current = max(0,min(index,len(self.option_buttons)-1))
         for i,button in enumerate(self.option_buttons):button.set_selected(i==self.current)
         self.option_buttons[self.current].focus_set()
         self.canvas.yview_moveto(self.current/max(1,len(self.option_buttons)))
 
     def apply(self, index=None):
-        if self.options:self.on_choose(self.current if index is None else index)
+        if self.options and self.option_buttons and self.option_buttons[self.current].winfo_manager():
+            self.on_choose(self.current if index is None else index)
 
     def scroll(self, event):
         return self.scroll_area.wheel(event)
