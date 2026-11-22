@@ -9,7 +9,7 @@ from .dialog import EditorDialog
 
 
 class RecipeCategoryDialog(EditorDialog):
-    def __init__(self, owner, store, on_saved, category=None):
+    def __init__(self, owner, store, on_saved, category=None, *, parent=None):
         super().__init__(owner)
         self.store, self.on_saved, self.category = store, on_saved, category
         self.title(tr('recipes.edit_category' if category else 'recipes.add_category'))
@@ -21,7 +21,7 @@ class RecipeCategoryDialog(EditorDialog):
         available = [row for row in self.store.load() if category is None or row['id'] != category['id']]
         self.parent = group.add_field(
             'Родительская категория', kind='choice',
-            value=(category.get('parent') or '') if category else '',
+            value=(category.get('parent') or '') if category else (parent or ''),
             options=[('Без родителя', '')] + [(row['name'], row['id']) for row in available],
             readonly=bool(category and category.get('binding', category['id'] if category['id'] in STOCK else None)))
         group.add_button(tr('settings.save'), self.save)
