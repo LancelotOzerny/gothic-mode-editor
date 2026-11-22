@@ -14,7 +14,7 @@ from .textures import Texture, read_texture
 
 
 class WorldTextures:
-    def __init__(self, sources, *, loose_roots=(), max_ready_bytes=96 * 1024 * 1024):
+    def __init__(self, sources, *, loose_roots=(), max_ready_bytes=256 * 1024 * 1024):
         self.sources = {Path(name.replace('\\', '/')).name.casefold(): source
                         for name, source in sources.items()}
         self._executor = ThreadPoolExecutor(max_workers=2)
