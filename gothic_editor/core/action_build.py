@@ -25,8 +25,12 @@ def prepare_actions(store,content,tree,helpers,script_items=()):
                 function=catalog.resolve(row['id'])
                 unknown=set(row['values'])-{parameter.name for parameter in function.parameters}
                 if unknown:raise ValueError('Неизвестные параметры: '+', '.join(sorted(unknown)))
-                arguments=[argument_literal(parameter,row['values'].get(parameter.name,parameter.default))
-                           for parameter in function.parameters]
+                arguments=[]
+                for parameter in function.parameters:
+                    value = row['values'].get(parameter.name,parameter.default)
+                    if parameter.options and value not in {option for _, option in parameter.options}:
+                        raise ValueError(f'{parameter.label}: выберите значение из списка.')
+                    arguments.append(argument_literal(parameter,value))
                 calls.append((function,arguments))
             except (OSError,ValueError) as exc:raise ValueError(f'{file}: {exc}') from exc
         if calls:scheduled.append((file,data,calls,fields))
