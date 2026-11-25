@@ -13,12 +13,41 @@ $buildPath = Join-Path $projectRoot 'build\pyinstaller'
 $iconPath = Join-Path $projectRoot 'icon.ico'
 $exePath = Join-Path $distPath 'GothicEditor.exe'
 
+# Use Tkinter's native initializer: Tcl's "package require Tk" can search for
+# tk86t.dll under bin/ even when Python ships the DLL under DLLs/.
+# Catch the probe error in Python so PowerShell 5.1's Stop preference does not
+# turn redirected native stderr into a terminating error before our fallback.
+$tkProbe = @'
+import sys
+try:
+    import tkinter
+    root = tkinter.Tk()
+    root.withdraw()
+    root.update_idletasks()
+    root.destroy()
+except Exception as exc:
+    print(f'{type(exc).__name__}: {exc}')
+    sys.exit(1)
+'@
+
 try {
     if (-not (Test-Path -LiteralPath $entryPoint -PathType Leaf)) {
         throw "Entry point not found: $entryPoint"
     }
     if (-not (Test-Path -LiteralPath $assetsPath -PathType Container)) {
         throw "Assets directory not found: $assetsPath"
+    }
+    # Windows cannot replace an executable that is still running. Detect this
+    # before spending time on packaging, without terminating the user's editor.
+    if (Test-Path -LiteralPath $exePath -PathType Leaf) {
+        try {
+            $outputHandle = [System.IO.File]::Open($exePath, [System.IO.FileMode]::Open,
+                [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+            $outputHandle.Dispose()
+        }
+        catch {
+            throw "Cannot replace '$exePath'. Save your work and close all GothicEditor windows, then run compile.ps1 again. If the editor is closed, check file permissions or another process locking the EXE. Details: $($_.Exception.Message)"
+        }
     }
 
     if (-not $Python) {
@@ -55,8 +84,8 @@ try {
         }
     }
 
-    # Check Tcl and Tk separately and without opening a GUI window.
-    & $Python -c "import tkinter; t = tkinter.Tcl(); t.eval('info library'); t.eval('package require Tk')" 2>&1 | Out-Null
+    # Initialize both Tcl and Tk, withdrawing and disposing the test window.
+    $tkDiagnostic = & $Python -c $tkProbe
     if ($LASTEXITCODE -ne 0) {
         # Explicitly locate the standard Windows python.org Tcl directory.
         # Some Python setups do not find it when run from another environment.
@@ -75,11 +104,11 @@ try {
             Write-Host "Tk:  $env:TK_LIBRARY"
         }
         else {
-            throw "Tkinter cannot find Tcl/Tk for '$Python'. Check '$tclRoot' for tcl8.x/init.tcl and tk8.x/tk.tcl. If missing, repair Python with the Tcl/Tk and IDLE component enabled."
+            throw "Tkinter cannot find Tcl/Tk for '$Python'. Check '$tclRoot' for tcl8.x/init.tcl and tk8.x/tk.tcl. If missing, repair Python with the Tcl/Tk and IDLE component enabled. Probe: $($tkDiagnostic -join [Environment]::NewLine)"
         }
-        & $Python -c "import tkinter; t = tkinter.Tcl(); t.eval('info library'); t.eval('package require Tk')" 2>&1 | Out-Null
+        $tkDiagnostic = & $Python -c $tkProbe
         if ($LASTEXITCODE -ne 0) {
-            throw "Tcl/Tk is still unavailable for '$Python'. Repair the Python installation, or run .\compile.ps1 -Python <path-to-working-python.exe>."
+            throw "Tcl/Tk is still unavailable for '$Python'. Repair the Python installation, or run .\compile.ps1 -Python <path-to-working-python.exe>. Probe: $($tkDiagnostic -join [Environment]::NewLine)"
         }
     }
 
