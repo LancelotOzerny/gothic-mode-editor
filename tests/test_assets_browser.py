@@ -34,7 +34,8 @@ class AssetsLayoutTests(unittest.TestCase):
         project=self.repo.root
         self.assertTrue((project/'Assets/Models').is_dir())
         folder=self.add_item()
-        self.assertEqual(folder,project/'Assets/Items/Potions/ItPo_Test')
+        self.assertEqual(folder,project/'Assets/Items/Potions/ItPo_Test.json')
+        self.assertTrue(folder.is_file())
         item=self.repo.project_items[0]
         self.repo.edit(item,{'name':'"Changed"'})
         reopened=ProjectRepository()
@@ -70,6 +71,10 @@ class AssetsLayoutTests(unittest.TestCase):
         (project/'Assets/Items').mkdir(parents=True)
         (project/'Assets/Scripts').mkdir()
         self.assertEqual(ItemLayout(project).items,project/'Assets/Items')
+        # Existing legacy Content scripts retain precedence until the new
+        # Assets/Scripts/Content tree is actually present.
+        self.assertEqual(project_scripts(project),project/'Scripts')
+        (project/'Assets/Scripts/Content').mkdir()
         self.assertEqual(project_scripts(project),project/'Assets/Scripts')
 
 
@@ -332,7 +337,7 @@ class AssetFileOperationsTests(unittest.TestCase):
     def test_empty_script_extension_and_no_overwrite(self):
         script=self.files.create(self.root,'Script',True)
         self.assertEqual(script.name,'Script.d')
-        self.assertEqual(script.read_bytes(),b'')
+        self.assertIn(b'func void Script()',script.read_bytes())
         script.write_bytes(b'original')
         with self.assertRaises(FileExistsError):self.files.create(self.root,'Script.d',True)
         copy=self.files.copy(script,self.root)
