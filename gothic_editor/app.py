@@ -7,6 +7,7 @@ from tkinter import filedialog,messagebox,ttk
 from . import __version__
 from .core.project import ProjectRepository
 from .core.edit_history import EditHistory
+from .ui.events import EventBus
 from .ui.widgets import BG,PANEL,TXT,MUTED,label,Tooltip
 from .ui.widgets.form import create_field
 from gothic_editor.ui.panels.hierarchy import HierarchyPanel
@@ -51,6 +52,9 @@ class EditorApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.withdraw()
+        self.events=EventBus()
+        self.events.subscribe('resources.changed',self._on_resource_event)
+        self.events.subscribe('items.changed',self._on_item_event)
         self.settings_store=SettingsStore()
         self.settings=self.settings_store.load()
         self.recent_projects=RecentProjects(self.settings_store.path.with_name('recent_projects.json'))
@@ -69,7 +73,8 @@ class EditorApp(tk.Tk):
         self.register_bottom_tab('terminal','terminal.title',lambda parent:TerminalPanel(parent,self.hide_terminal))
         self.register_bottom_tab('resources','resources.title',lambda parent:ResourcesPanel(
             parent,lambda:self.repo.resource_editor_path,lambda:self.hide_bottom_tab('resources'),
-            on_changed=self._resource_files_changed,before_change=lambda:self._save_editors(),
+            on_changed=lambda source,result:self.events.publish('resources.changed',(source,result)),
+            before_change=lambda:self._save_editors(),
             history=lambda:self.history))
         self.terminal_visible=self._bottom_tab_variables['terminal']
         self.resources_visible=self._bottom_tab_variables['resources']
@@ -617,6 +622,13 @@ class EditorApp(tk.Tk):
                     self.viewer.draw()
         elif showing_welcome:self.show_welcome()
 
+    def _on_resource_event(self,event):
+        self._resource_files_changed(*event.payload)
+
+    def _on_item_event(self,event):
+        previous,updated,inserted=event.payload
+        self.update_hierarchy(previous=previous,updated=updated,inserted=inserted)
+
     def _resource_files_changed(self, source=None, result=None):
         """Avoid rescanning Gothic and rebuilding the item hierarchy for plain assets.
 
@@ -1142,7 +1154,8 @@ class EditorApp(tk.Tk):
             result=method(*args,**kwargs)
             self._history_record(saved,result)
             inserted=result if result is not None and self.hierarchy.item_key(result) not in before else None
-            self.update_hierarchy(inserted=inserted)
+            previous=target if target is not None and result is not None and inserted is None else None
+            self.events.publish('items.changed',(previous,result if previous is not None else None,inserted))
             if result is not None:
                 self.hierarchy.choose(result);self.select(result)
             return result
@@ -1187,7 +1200,7 @@ class EditorApp(tk.Tk):
         self._history_record(saved,result)
         self.current=result
         self.hierarchy.selected=self.hierarchy.item_key(result)
-        self.update_hierarchy(previous=item,updated=result)
+        self.events.publish('items.changed',(item,result,None))
         if result.path!=item.path:self.resources.set_item(self.repo.root,result)
         else:self.resources.item=result
         if result.visual!=item.visual:

@@ -12,6 +12,7 @@ from gothic_editor.ui.widgets.file_tile import FileTile
 from gothic_editor.ui.widgets.drag_preview import DragPreview
 from gothic_editor.ui.widgets.icons import IconImages
 from gothic_editor.ui.widgets.dock import TAB_ACTION_HEIGHT
+from gothic_editor.ui.actions import ActionRegistry
 
 
 class ResourcesPanel(Panel):
@@ -349,12 +350,9 @@ class ResourcesPanel(Panel):
 
     def _add_create_commands(self,menu,folder):
         if folder is None:return
-        menu.add_command(label=tr('resources.create_directory'),
-                         command=lambda:self.create_resource(folder=folder))
-        menu.add_command(label='Создать скрипт (.d)',
-                         command=lambda:self.create_resource(True,folder=folder))
-        menu.add_command(label='Создать Markdown-документ (.md)',
-                         command=lambda:self.create_resource(markdown=True,folder=folder))
+        actions=self._actions(folder)
+        for name in ('create_folder','create_script','create_text'):
+            actions.add_to_menu(menu,name)
 
     def create_in_folder(self, folder, *, markdown=False):
         self.create_resource(markdown=markdown,folder=folder)
@@ -518,7 +516,7 @@ class ResourcesPanel(Panel):
     def _delete_shortcut(self,event):
         path=(self._tree_paths.get(self.tree.focus()) if event.widget==self.tree
               else getattr(event.widget,'path',None) or self._selected)
-        self.delete_selected(path)
+        self._actions(self.folder).invoke('delete') if path==self._selected else self.delete_selected(path)
         return 'break'
 
     def copy_path(self,absolute=False):
@@ -532,10 +530,43 @@ class ResourcesPanel(Panel):
         key=event.keysym.lower()
         if self.tk.call('tk','windowingsystem')=='win32':
             key={67:'c',86:'v'}.get(event.keycode,key)
-        if key=='c':self.copy_selected()
-        elif key=='v':self.paste()
+        actions=self._actions(self.folder)
+        if key=='c':actions.invoke('copy')
+        elif key=='v':actions.invoke('paste')
         else:return
         return 'break'
+
+    def _actions(self,folder=None):
+        """Single definition of resource operations for menus and hotkeys."""
+        folder=self.folder if folder is None else folder
+        path=self._selected
+        actions=ActionRegistry()
+        actions.register('create_folder',tr('resources.create_directory'),
+                         lambda:self.create_resource(folder=folder),
+                         enabled=lambda:folder is not None and folder.is_dir())
+        actions.register('create_script','Создать скрипт (.d)',
+                         lambda:self.create_resource(True,folder=folder),
+                         enabled=lambda:folder is not None and folder.is_dir())
+        actions.register('create_text','Создать Markdown-документ (.md)',
+                         lambda:self.create_resource(markdown=True,folder=folder),
+                         enabled=lambda:folder is not None and folder.is_dir())
+        actions.register('delete',tr('resources.delete'),self.delete_selected,
+                         enabled=lambda:path is not None and path!=self.assets,
+                         accelerator='Delete')
+        actions.register('duplicate',tr('resources.duplicate'),self.duplicate_selected,
+                         enabled=lambda:path is not None and path!=self.assets)
+        actions.register('open',tr('resources.open'),self.open_selected,
+                         enabled=lambda:path is not None)
+        actions.register('reveal',tr('resources.reveal'),self.reveal_selected,
+                         enabled=lambda:path is not None and path.is_file())
+        actions.register('rename',tr('resources.rename'),self.rename_selected,
+                         enabled=lambda:path is not None and path!=self.assets,
+                         accelerator='F2')
+        actions.register('copy','Копировать',self.copy_selected,
+                         enabled=lambda:path is not None and path!=self.assets)
+        actions.register('paste','Вставить',self.paste,
+                         enabled=lambda:self._copied is not None and folder is not None)
+        return actions
 
     def context(self,event):
         if self.project is None:return
@@ -544,27 +575,21 @@ class ResourcesPanel(Panel):
                                         activebackground=PANEL,activeforeground=TXT)
         self.menu=menu(self)
         path=self._selected
-        target = path if path is not None and path.is_dir() else (path.parent if path is not None else self.folder)
+        target=path if path is not None and path.is_dir() else (path.parent if path is not None else self.folder)
+        actions=self._actions(target)
         self._add_create_commands(self.menu,target)
-        if path is not None:self.menu.add_separator()
-        if path is None:
-            pass
-        elif path.is_dir():
-            mutable='disabled' if path==self.assets else 'normal'
-            self.menu.add_command(label=tr('resources.delete'),command=self.delete_selected,state=mutable)
-            self.menu.add_command(label=tr('resources.duplicate'),command=self.duplicate_selected,state=mutable)
-            paths=menu(self.menu)
-            paths.add_command(label=tr('resources.project_path'),command=self.copy_path)
-            paths.add_command(label=tr('resources.absolute_path'),command=lambda:self.copy_path(True))
-            self.menu.add_cascade(label=tr('resources.copy_path'),menu=paths)
-            self.menu.add_command(label=tr('resources.open'),command=self.open_selected)
-        else:
-            self.menu.add_command(label=tr('resources.duplicate'),command=self.duplicate_selected)
-            self.menu.add_command(label=tr('resources.reveal'),command=self.reveal_selected)
-            self.menu.add_command(label=tr('resources.delete'),command=self.delete_selected)
-            self.menu.add_command(label=tr('resources.open'),command=self.open_selected)
         if path is not None:
-            self.menu.add_command(label=tr('resources.rename'),command=self.rename_selected,accelerator='F2',
-                                  state='disabled' if path == self.assets else 'normal')
+            self.menu.add_separator()
+            if path.is_dir():
+                for key in ('delete','duplicate','open'):
+                    actions.add_to_menu(self.menu,key)
+                paths=menu(self.menu)
+                paths.add_command(label=tr('resources.project_path'),command=self.copy_path)
+                paths.add_command(label=tr('resources.absolute_path'),command=lambda:self.copy_path(True))
+                self.menu.add_cascade(label=tr('resources.copy_path'),menu=paths)
+            else:
+                for key in ('duplicate','reveal','delete','open'):
+                    actions.add_to_menu(self.menu,key)
+            actions.add_to_menu(self.menu,'rename')
         try:self.menu.tk_popup(event.x_root,event.y_root)
         finally:self.menu.grab_release()

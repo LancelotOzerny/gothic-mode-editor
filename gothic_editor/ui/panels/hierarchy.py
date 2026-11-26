@@ -8,6 +8,7 @@ from time import monotonic
 from gothic_editor.core.categories import CATEGORIES, Category, classify, EDITABLE_CATEGORIES
 from gothic_editor.core.item_hierarchy import HierarchyNode
 from gothic_editor.core.localization import tr
+from gothic_editor.ui.actions import ActionRegistry
 from gothic_editor.ui.widgets.icons import IconImages
 from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
 from gothic_editor.ui.widgets.theme import FIELD_HEIGHT
@@ -422,11 +423,12 @@ class HierarchyPanel(HierarchyBrowser):
             if action in self.common_actions():self.on_batch(action,self.selected_values())
             return 'break' if action else None
         item=next((item for item in self.items if self.item_key(item)==self.selected),None)
-        if item is None or item.origin!='project' or classify(item) not in EDITABLE_CATEGORIES:return
-        if event.keysym=='Delete':self.on_delete(item)
+        if item is None:return
+        actions=self._item_actions(item)
+        if event.keysym=='Delete':actions.invoke('delete')
         elif (event.keysym.lower() in ('d','cyrillic_ve') or
               (event.keycode==68 and self.tk.call('tk','windowingsystem')=='win32')):
-            self.on_duplicate(item)
+            actions.invoke('duplicate')
         else:return
         return 'break'
 
@@ -561,6 +563,17 @@ class HierarchyPanel(HierarchyBrowser):
         entry.bind('<Return>', commit)
         entry.bind('<Escape>', cancel)
 
+    def _item_actions(self, item):
+        editable=classify(item) in EDITABLE_CATEGORIES
+        actions=ActionRegistry()
+        actions.register('duplicate',tr('hierarchy.duplicate'),lambda:self.on_duplicate(item),
+                         enabled=lambda:editable and item.origin=='project',accelerator='Ctrl+D')
+        actions.register('delete',tr('hierarchy.delete'),lambda:self.on_delete(item),
+                         enabled=lambda:editable and item.origin=='project',accelerator='Delete')
+        actions.register('copy',tr('hierarchy.copy_to_project'),lambda:self.on_copy(item),
+                         enabled=lambda:editable and item.origin!='project')
+        return actions
+
     def context(self, event, item):
         if self.multi_context(event,item):return
         if self.multiple and self.select(item) is False:return
@@ -570,12 +583,12 @@ class HierarchyPanel(HierarchyBrowser):
         self.selected=self.item_key(item)
         self.paint_selection()
         menu = self.new_menu()
-        state='normal' if classify(item) in EDITABLE_CATEGORIES else 'disabled'
+        actions=self._item_actions(item)
         if item.origin == 'project':
-            menu.add_command(label=tr('hierarchy.duplicate'), accelerator='Ctrl+D',state=state, command=lambda: self.on_duplicate(item))
-            menu.add_command(label=tr('hierarchy.delete'), accelerator='Delete',state=state, command=lambda: self.on_delete(item))
+            actions.add_to_menu(menu,'duplicate')
+            actions.add_to_menu(menu,'delete')
         else:
-            menu.add_command(label=tr('hierarchy.copy_to_project'), state=state, command=lambda: self.on_copy(item))
+            actions.add_to_menu(menu,'copy')
         if self.store is not None and self.on_move is not None:
             move = self.new_menu(menu)
             move.add_command(label='В исходную категорию', command=lambda:self.on_move(item,''))
