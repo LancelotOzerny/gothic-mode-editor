@@ -62,6 +62,13 @@ class AddItemTests(unittest.TestCase):
         self.assertAlmostEqual(dialog.winfo_y(), y, delta=3)
         dialog.destroy()
 
+    def test_multi_selection_returns_all_originals(self):
+        dialog=AddItemDialog(self.app,'potions',self.app.repo.game_items)
+        dialog.projects.selection_set('0','1','2')
+        dialog.copy()
+        self.assertEqual(dialog.result[0],'copy')
+        self.assertEqual(len(dialog.result[1]),3)
+
     def test_modal_copy_keeps_original_and_adds_only_one_project_item(self):
         before = self.source.read_bytes()
         def choose(dialog):

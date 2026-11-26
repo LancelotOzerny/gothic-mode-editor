@@ -10,6 +10,16 @@ from gothic_editor.ui.windows.value_choice import ValueChoiceWindow
 from gothic_editor.ui.controllers.npc import NpcController
 
 
+class ProjectSelectionTests(unittest.TestCase):
+    def test_add_many_deduplicates_and_preserves_previous_selection(self):
+        from gothic_editor.core.project_selection import ProjectSelection
+        with tempfile.TemporaryDirectory() as folder:
+            selection=ProjectSelection(Path(folder),'NPC')
+            selection.add('NPC_OLD')
+            selection.add_many(['NPC_A','npc_b','Npc_A'])
+            self.assertEqual(selection.read(),{'npc_old','npc_a','npc_b'})
+
+
 class MultiSelectTests(unittest.TestCase):
     def setUp(self):
         try:

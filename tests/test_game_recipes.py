@@ -41,6 +41,22 @@ class GameRecipeTests(unittest.TestCase):
             _, diagnostic = game_recipes(game, diagnostics=True)
             self.assertIn('Дополнительная логика', diagnostic[0])
 
+    def test_symbolic_quantities_and_strict_greater_than_are_recognized(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            game=Path(temporary)
+            path=game/'_work/Data/Scripts/Content/Potion_Alchemy.d'
+            path.parent.mkdir(parents=True)
+            source='const int HERB_COUNT = 2;\n' + SOURCE
+            source=source.replace('Npc_HasItems(hero, HERB)>=2',
+                                  'Npc_HasItems(hero, HERB)>1')
+            source=source.replace('Npc_RemoveInvItems(hero, HERB,2)',
+                                  'Npc_RemoveInvItems(hero, HERB, HERB_COUNT)')
+            path.write_text(source,'cp1251')
+            rows,skipped=game_recipes(game)
+            self.assertFalse(skipped)
+            self.assertEqual(rows[0]['ingredients'][0],
+                             {'instance':'HERB','count':2})
+
     def test_missing_knowledge_is_not_imported_as_always_available(self):
         with tempfile.TemporaryDirectory() as temporary:
             game = Path(temporary)

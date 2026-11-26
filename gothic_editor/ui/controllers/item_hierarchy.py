@@ -99,6 +99,10 @@ class ItemHierarchyController:
         try:
             for item in originals:
                 imported.append(app.repo.copy_to_project(item))
+        except (OSError, ValueError, UnicodeError) as exc:
+            messagebox.showerror('Импорт предметов',
+                str(exc) + f'\nИмпортировано до ошибки: {len(imported)}.',
+                parent=app)
         finally:
             app.history.record(saved)
             app.update_hierarchy()

@@ -60,7 +60,7 @@ class WorldController:
             selected=[options[index] for index in indices]
             if not selected:return
             selection=ProjectSelection(self.app.repo.root,'Worlds')
-            self._remember((selection.path,),lambda:[selection.add(item.name) for item in selected])
+            self._remember((selection.path,),lambda:selection.add_many(item.name for item in selected))
             window.destroy()
             self.app.events.publish('world.changed',('selection',selected[-1]))
             self.select(selected[-1])

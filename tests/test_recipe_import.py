@@ -1,5 +1,6 @@
 """Batch Gothic recipe import respects stock categories and nested destinations."""
 import tempfile
+import json
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -42,6 +43,19 @@ class RecipeImportTests(unittest.TestCase):
                            return_value=(self.templates, ['unrecognized']))
         self.patch.start()
         self.addCleanup(self.patch.stop)
+
+    def test_legacy_categories_gain_potions_root_without_overwriting_file(self):
+        old=[dict(row) for row in self.categories.load() if row['id']!='potions']
+        for row in old:
+            if row['id'] in ('health','mana','special','booze','tabak'):
+                row.pop('parent',None)
+        raw=json.dumps({'schema_version':1,'categories':old})
+        self.categories.path.write_text(raw,encoding='utf-8')
+        restored=self.categories.load()
+        self.assertEqual(restored[0]['id'],'potions')
+        self.assertEqual(next(row for row in restored if row['id']=='health')['parent'],
+                         'potions')
+        self.assertEqual(self.categories.path.read_text('utf-8'),raw)
 
     def test_potions_root_imports_every_stock_category(self):
         imported, existing, unsupported = import_category_recipes(self.root, None, 'potions')

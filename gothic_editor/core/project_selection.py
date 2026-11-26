@@ -18,7 +18,11 @@ class ProjectSelection:
         return {value.casefold() for value in data}
 
     def add(self,name):
-        values=self.read()|{name.casefold()}
+        self.add_many((name,))
+
+    def add_many(self,names):
+        """Apply the entire selection in one atomic catalog write."""
+        values=self.read()|{name.casefold() for name in names}
         self._save(values)
 
     def remove(self,name):

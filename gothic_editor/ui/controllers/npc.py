@@ -49,7 +49,7 @@ class NpcController:
             if not selected:return
             selection=ProjectSelection(self.app.repo.root,'NPC')
             saved=self.app.history.capture((selection.path,))
-            for npc in selected:selection.add(npc.instance)
+            selection.add_many(npc.instance for npc in selected)
             self.app.history.record(saved)
             window.destroy()
             self.app.events.publish('npc.changed',(selected[-1],True))
