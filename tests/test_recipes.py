@@ -269,7 +269,7 @@ instance PC_Test(C_Info)
         self.assertIn('Info_ClearChoices(GE_RecipeCategory_experience)', text)
         with self.assertRaises(ValueError):self.store.save(dict(recipe(), category='missing'), 'TEST')
         with self.assertRaises(ValueError):categories.save(rows + [{'id': 'HEALTH', 'name': 'Дубль'}])
-        categories.save(rows[1:])
+        categories.save([row for row in rows if row['id'] != 'health'])
         self.assertNotIn('health', [r['id'] for r in categories.load()])
 
 
