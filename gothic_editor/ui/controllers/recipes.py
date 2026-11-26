@@ -146,14 +146,24 @@ class RecipeController:
         elif dialog.result == 'game':
             try:
                 from gothic_editor.core.game_recipes import game_recipes
-                recipes, skipped = game_recipes(self.app.repo.game)
+                recipes, skipped = game_recipes(self.app.repo.game, diagnostics=True)
                 # The destination category is determined by the '+' the user chose.
                 picker = GameRecipeDialog(self.app, recipes, skipped)
                 picker.show_centered(modal=True)
                 self.app.wait_window(picker)
                 if picker.result is None:return
                 data = deepcopy(picker.result)
-                data['id'] = self.store.free_id(data['id'])
+                # Import the existing Gothic C_Info in place. A second
+                # independent copy would duplicate the stock alchemy dialog.
+                source_code = data.get('source_info')
+                if source_code and any(row.get('source_info', '').casefold() ==
+                                       source_code.casefold() for row in self.items):
+                    messagebox.showinfo(tr('recipes.title'),
+                                        'Этот оригинальный рецепт Gothic уже импортирован.',
+                                        parent=self.app)
+                    return
+                if not source_code:
+                    data['id'] = self.store.free_id(data['id'])
                 data['category'] = category
                 saved=self.app.history.capture((self.store.path(data['id']),))
                 self.store.save(data)
@@ -172,11 +182,18 @@ class RecipeController:
                 self.app.repo.root, self.app.repo.game, category,
                 history=self.app.history)
             self.load()
+            details = ''
+            if unsupported:
+                from gothic_editor.core.game_recipes import game_recipes
+                _, failures = game_recipes(self.app.repo.game, diagnostics=True)
+                if failures:
+                    details = '\nПричины пропуска:\n' + '\n'.join(failures[:8])
+                    if len(failures) > 8:details += f'\n… ещё {len(failures)-8}'
             messagebox.showinfo(
                 tr('recipes.title'),
                 f'Импортировано рецептов: {imported}\n'
                 f'Уже импортировано: {existing}\n'
-                f'Не удалось распознать рецептов Gothic: {unsupported}',
+                f'Не удалось распознать рецептов Gothic: {unsupported}' + details,
                 parent=self.app)
         except (OSError, ValueError) as exc:
             messagebox.showerror(tr('recipes.title'), str(exc), parent=self.app)

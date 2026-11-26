@@ -35,7 +35,7 @@ class AddItemTests(unittest.TestCase):
     def test_search_limits_results_and_uses_only_selected_category(self):
         dialog = AddItemDialog(self.app, 'potions', self.app.repo.game_items)
         self.addCleanup(lambda: dialog.destroy() if dialog.winfo_exists() else None)
-        self.assertEqual(len(dialog.matches), 10)
+        self.assertEqual(len(dialog.matches), 15)
         dialog.search.set('itpo_14')
         self.assertEqual([item.instance for item in dialog.matches], ['ITPO_14'])
         dialog.search.set('pOtIoN 13')

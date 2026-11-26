@@ -27,6 +27,8 @@ class GameRecipeTests(unittest.TestCase):
             rows, skipped = game_recipes(game)
             self.assertFalse(skipped)
             self.assertEqual(rows[0]['category'], 'health')
+            self.assertEqual(rows[0]['id'], 'PC_TEST')
+            self.assertEqual(rows[0]['source_info'], 'PC_TEST')
             self.assertEqual(rows[0]['availability'],
                              {'type': 'stock_talent', 'talent': 'POTION_Health_01'})
             self.assertEqual(rows[0]['result'], 'POTION')
@@ -36,6 +38,8 @@ class GameRecipeTests(unittest.TestCase):
             rows, skipped = game_recipes(game)
             self.assertFalse(rows)
             self.assertEqual(skipped, ['pc_test'])
+            _, diagnostic = game_recipes(game, diagnostics=True)
+            self.assertIn('Дополнительная логика', diagnostic[0])
 
     def test_missing_knowledge_is_not_imported_as_always_available(self):
         with tempfile.TemporaryDirectory() as temporary:

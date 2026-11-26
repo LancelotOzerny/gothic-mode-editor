@@ -84,9 +84,10 @@ class ValueChoiceWindow(EditorDialog):
 
     def focus_option(self, index, toggle=False):
         if not self.option_buttons:return
+        index = max(0,min(index,len(self.option_buttons)-1))
         if not self.option_buttons[index].winfo_manager():
             index=self._first_visible()
-        self.current = max(0,min(index,len(self.option_buttons)-1))
+        self.current = index
         if self.multiple and toggle:
             if self.current in self.chosen:self.chosen.remove(self.current)
             else:self.chosen.add(self.current)

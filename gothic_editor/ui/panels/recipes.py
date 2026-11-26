@@ -13,6 +13,7 @@ class RecipeListPanel(HierarchyBrowser):
         super().__init__(parent)
         self.controller = controller
         self.owner, self.origin = self, 'project'
+        self.expanded[('project','potions')] = True
         self.category_rows, self.grouped = {}, {}
         self.selected_recipe_row = None
         self.recipe_rows = {}

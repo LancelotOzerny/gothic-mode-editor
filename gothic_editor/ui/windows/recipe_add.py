@@ -1,6 +1,6 @@
 """Two-step category recipe creation or searchable Gothic template selection."""
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from .dialog import EditorDialog
 from gothic_editor.core.localization import tr
 from gothic_editor.ui.widgets import make_entry, label, MUTED
@@ -31,7 +31,12 @@ class GameRecipeDialog(EditorDialog):
         self.geometry('640x480')
         self.query = tk.StringVar(self)
         make_entry(self, textvariable=self.query).pack(fill='x', padx=12, pady=12)
-        label(self, tr('recipes.template_note', count=len(skipped)), fg=MUTED, wraplength=600).pack(fill='x', padx=12)
+        notice = tr('recipes.template_note', count=len(skipped))
+        label(self, notice, fg=MUTED, wraplength=600).pack(fill='x', padx=12)
+        if skipped:
+            self.add_button(self, 'Почему некоторые рецепты пропущены?',
+                lambda: messagebox.showinfo('Диагностика импорта Gothic',
+                    '\n'.join(skipped),parent=self)).pack(fill='x', padx=12, pady=4)
         footer = tk.Frame(self, bg=self.cget('bg'))
         footer.pack(side='bottom', fill='x', padx=12, pady=12)
         self.add_button(footer, tr('settings.cancel'), self.destroy).pack(side='right')

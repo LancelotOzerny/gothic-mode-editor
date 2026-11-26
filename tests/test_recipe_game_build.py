@@ -31,7 +31,7 @@ class RecipeGameBuildTests(unittest.TestCase):
             from gothic_editor.core.recipe_categories import RecipeCategories
             categories = RecipeCategories(project)
             rows = categories.load()
-            rows[0]['name'] = 'Здоровье (тест)'
+            next(row for row in rows if row['id']=='health')['name'] = 'Здоровье (тест)'
             categories.save(rows + [{'id': 'experience', 'name': 'Зелья опыта'}])
             categories.change('health', {'id':'healing', 'name':'Лечение'})
             for code, availability in [('TEST_ALWAYS', {'type': 'always'}),

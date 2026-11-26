@@ -169,6 +169,12 @@ def apply_recipes(project, content, manifest):
                                              count=1, flags=re.I)
                     if count != 1:
                         raise ValueError(f'{original_info}: не найдено поле {field}')
+                description_pattern = r'\bdescription\s*=\s*"(?:\\.|[^"\\])*"\s*;'
+                patched, count = re.subn(description_pattern,
+                    lambda _: 'description = ' + literal(recipe['name']) + ';',
+                    patched, count=1, flags=re.I)
+                if count != 1:
+                    raise ValueError(f'{original_info}: не найдено название исходного рецепта')
                 edits.setdefault(original_path, []).append(
                     (definition.start, definition.end, patched))
             else:
@@ -213,7 +219,10 @@ func void {info}()
     def known_for(code):
         values = [known for _, known in custom.get(code, ())]
         for child in children[code]:
-            values.extend(known_for(child))
+            # Stock Gothic categories already have their own native menus.
+            # Do not also expose their nested custom recipes under "Зелья".
+            if bindings[child] is None:
+                values.extend(known_for(child))
         return values
 
     for category in categories:

@@ -9,7 +9,7 @@ from .recipes import validate_recipe
 def game_recipes(game, *, diagnostics=False):
     if game is None:raise ValueError('Укажите папку Gothic в настройках проекта.')
     content = game / '_work/Data/Scripts/Content'
-    path = next((p for p in content.rglob('*.d') if p.name.casefold()=='potion_alchemy.d'), None)
+    path = next((p for p in content.rglob('*') if p.is_file() and p.name.casefold()=='potion_alchemy.d'), None)
     if path is None:raise ValueError('Не найден исходный скрипт Potion_Alchemy.d в Gothic.')
     text = mask_comments(load_text(path)[0])
     blocks = {name.casefold(): (definition.kind, text[definition.start:definition.end])

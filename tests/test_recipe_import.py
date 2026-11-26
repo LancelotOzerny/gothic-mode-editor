@@ -43,6 +43,15 @@ class RecipeImportTests(unittest.TestCase):
         self.patch.start()
         self.addCleanup(self.patch.stop)
 
+    def test_potions_root_imports_every_stock_category(self):
+        imported, existing, unsupported = import_category_recipes(self.root, None, 'potions')
+        self.assertEqual((imported, existing, unsupported), (4, 0, 1))
+        self.assertEqual({row['category'] for row in self.store.load()},
+                         {'health', 'special', 'mana'})
+        self.assertEqual(self.categories.load()[0]['id'], 'potions')
+        self.assertEqual(next(row for row in self.categories.load() if row['id']=='health')['parent'],
+                         'potions')
+
     def test_only_matching_stock_category_is_imported(self):
         imported, existing, unsupported = import_category_recipes(
             self.root, None, 'health')

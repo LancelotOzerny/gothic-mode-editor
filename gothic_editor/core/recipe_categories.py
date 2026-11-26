@@ -66,12 +66,12 @@ class RecipeCategories:
                 parent = (index[parent].get('parent') or '').casefold()
         # Migrate existing category files lazily in memory: older projects
         # stored stock potion groups directly at the root.
+        rows = deepcopy(rows)
         if not any(row['id'] == 'potions' for row in rows):
-            rows = deepcopy(rows)
             rows.insert(0, {'id': 'potions', 'name': 'Зелья'})
-            for row in rows:
-                if stock_binding(row) is not None and not row.get('parent'):
-                    row['parent'] = 'potions'
+        for row in rows:
+            if stock_binding(row) is not None and not row.get('parent'):
+                row['parent'] = 'potions'
         return rows
 
     def save(self, rows):

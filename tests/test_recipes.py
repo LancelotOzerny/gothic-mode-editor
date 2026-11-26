@@ -104,6 +104,28 @@ func void B_ENDPRODUCTIONDIALOG() {};
         self.assertTrue(self.manifest.read_text('utf-8').endswith('GE_Recipes\\Alchemy.d\n'))
         self.assertEqual(BuildAssetService(self.project).collect(), {})
 
+    def test_original_recipe_replaces_existing_gothic_dialog_in_staging(self):
+        self.base.write_text(self.original + '''
+func int PC_Test_Condition() { return TRUE; };
+func void PC_Test_Info() {};
+instance PC_Test(C_Info)
+{
+    condition = PC_Test_Condition;
+    information = PC_Test_Info;
+    description = "Оригинальное зелье";
+};''', 'utf-8')
+        original=self.base.read_bytes()
+        self.store.save(dict(recipe(), id='PC_TEST', source_info='PC_TEST',
+                             name='Изменённый рецепт'))
+        code=self.generate()
+        self.assertNotIn('instance GE_Recipe_PC_TEST(C_Info)', code)
+        self.assertIn('GE_Recipe_PC_TEST_Craft',code)
+        staged=self.base.read_text('utf-8')
+        self.assertIn('condition = GE_Recipe_PC_TEST_Condition;',staged)
+        self.assertIn('information = GE_Recipe_PC_TEST_Info;',staged)
+        self.assertIn('description = "Изменённый рецепт";',staged)
+        self.assertNotEqual(staged.encode('utf-8'),original)
+
     def test_global_variable_created_once(self):
         data = recipe()
         data['availability'] = {'type': 'global_variable', 'variable': 'Knows_Test'}

@@ -19,7 +19,7 @@ class CategoryActionTests(unittest.TestCase):
     def test_rename_duplicate_delete_preserve_recipes_and_binding(self):
         self.categories.change('health', {'id':'healing', 'name':'Лечение'})
         self.assertEqual(self.recipes.load()[0]['category'], 'healing')
-        self.assertEqual(stock_binding(self.categories.load()[0]), 'health')
+        self.assertEqual(stock_binding(next(row for row in self.categories.load() if row['id']=='health')), 'health')
         copy = self.categories.duplicate('healing')
         self.assertEqual(copy['id'], 'healing_copy')
         self.assertEqual(copy['name'], 'Лечение')
