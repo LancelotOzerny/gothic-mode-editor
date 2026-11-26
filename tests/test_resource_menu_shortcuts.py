@@ -43,7 +43,7 @@ class ResourceFileTests(unittest.TestCase):
                 data=path.read_bytes()
                 self.assertNotIn(b'\r\r\n',data)
                 self.assertNotIn(b'\n\n\n',data)
-                self.assertEqual(data.count(b'\r\n'),6)
+                self.assertEqual(data.count(b'\r\n'),7)
             self.assertIn('Второе изменение',path.read_bytes().decode('cp1251'))
             self.assertEqual(len(parse_items(path,'project')),1)
 

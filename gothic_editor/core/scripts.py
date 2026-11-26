@@ -133,7 +133,11 @@ def with_item_metadata(block, metadata):
     if re.search(pattern,block):return re.sub(pattern,lambda _:line,block,count=1)
     opening=mask_comments(block).find('{')
     if opening<0:raise ValueError('Незавершённый INSTANCE для сохранения метаданных')
-    return block[:opening+1]+'\n'+line+'\n'+block[opening+1:]
+    newline='\r\n' if '\r\n' in block else '\n'
+    following=block[opening+1:]
+    if following.startswith('\r\n'):following=following[2:]
+    elif following.startswith('\n'):following=following[1:]
+    return block[:opening+1]+newline+line+newline+following
 
 
 def write_modified_item(item:Item, destination:Path, updates:dict[str,str], instance=None,metadata=None):
