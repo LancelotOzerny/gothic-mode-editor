@@ -77,6 +77,7 @@ class ModelLibrary:
                         for name in texture_candidates(reference) if name in available))
         # Old item models had a unique generated visual; retain that name forever.
         for file in store.files():
+            if file.name != 'item.json':continue  # Modern flat items use shared models.
             model = ModelResolver.custom_model(file.parent)
             if not model.is_file():continue
             store.layout.checked(model)

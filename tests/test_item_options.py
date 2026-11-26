@@ -38,8 +38,9 @@ class ItemOptionsTests(unittest.TestCase):
             before=source.read_bytes()
             original=parse_items(source,'game')[0]
             store=PotionComponents(root/'project')
-            folder=store.import_item(original)
-            saved=json.loads((folder/'item.json').read_text('utf-8'))
+            file=store.import_item(original)
+            saved=json.loads(file.read_text('utf-8'))
+            self.assertEqual(file.name,'ItPo_Imported.json')
             self.assertEqual(saved['fields']['scemename'],'"POTION"')
             self.assertEqual(saved['fields']['custom'],'KEEP + 3')
             self.assertEqual(saved['fields']['on_state[0]'],'Consume')

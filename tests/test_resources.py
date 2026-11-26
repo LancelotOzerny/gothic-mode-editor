@@ -115,7 +115,7 @@ class ResourceDockTests(unittest.TestCase):
     def test_double_click_and_context_menu_open_editor_and_folder(self):
         resources = self.app.resources
         resources.open_folder(self.item.path.parent)
-        path = next(path for path in resources.paths.values() if path.name=='item.json')
+        path = next(path for path in resources.paths.values() if path==self.item.path)
         event = SimpleNamespace(y=1,x_root=0,y_root=0)
         resources.select_file(path)
         with patch('gothic_editor.ui.panels.resources.open_in_editor') as launch:

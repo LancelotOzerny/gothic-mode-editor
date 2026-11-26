@@ -57,6 +57,7 @@ class BuildAssetService:
         for model in shared.values():add_model(model,library.name(model))
 
         for file in self.store.files():
+            if file.name != 'item.json':continue  # Flat items have no local assets.
             data = self.store._read(file)
             assets = file.parent / 'assets'
             model = ModelResolver.custom_model(file.parent)

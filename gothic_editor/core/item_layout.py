@@ -25,32 +25,36 @@ class ItemLayout:
             raise ValueError('Неверный идентификатор Daedalus: ' + instance)
         return self.checked(self.root / instance)
 
+    def path_for(self, instance):
+        return self.checked(self.root / (self.folder(instance).name + '.json'))
+
     def legacy_files(self):
-        return sorted(self.items.glob('*/item.json'))
+        roots = (self.items, self.root, self.project / 'Items')
+        return sorted({path for root in roots for path in root.glob('*/item.json')})
 
     def files(self):
-        paths = sorted(self.root.glob('*/item.json')) + self.legacy_files()
+        paths = sorted(self.root.glob('*.json')) + self.legacy_files()
         seen = {}
         for path in paths:
             self.checked(path)
-            key = path.parent.name.casefold()
+            key = (path.parent.name if path.name == 'item.json' else path.stem).casefold()
             if key in seen:
-                raise ValueError(f'Конфликт папок предмета: {seen[key]} / {path}')
+                raise ValueError(f'Конфликт идентификаторов предмета: {seen[key]} / {path}')
             seen[key] = path
         return paths
 
     def owns(self, path):
         path = Path(path)
-        return (path.name == 'item.json' and path.parent.parent in (self.root, self.items)
-                and self.checked(path) == path)
+        return ((path.parent == self.root and path.suffix.lower() == '.json') or
+                (path.name == 'item.json' and path.parent.parent in (self.root, self.items, self.project / 'Items'))) and self.checked(path) == path
 
     def find_folder(self, instance):
         target = self.folder(instance)
-        for folder in (target, self.items / instance):
+        for folder in (target, self.items / instance, self.project / 'Items' / instance):
             if (folder / 'item.json').is_file():
                 return self.checked(folder)
         # On case-sensitive filesystems preserve Daedalus' case-insensitive IDs.
-        for parent in (self.root, self.items):
+        for parent in (self.root, self.items, self.project / 'Items'):
             if not parent.is_dir():continue
             for folder in parent.iterdir():
                 if folder.name.casefold() == instance.casefold() and (folder/'item.json').is_file():

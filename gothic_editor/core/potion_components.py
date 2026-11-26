@@ -1,7 +1,7 @@
 """JSON-backed potion components. Never modify original Daedalus scripts.
 
-A component owns one INSTANCE only; existing scripts provide all shared helpers.
-Custom helper code can be placed in functions.d; variables in params.json.
+Each INSTANCE is saved as Assets/Items/Potions/<INSTANCE>.json.
+Legacy folders are supported for reading until explicitly migrated.
 """
 from __future__ import annotations
 import json
@@ -31,7 +31,11 @@ class PotionComponents:
         return value
 
     def folder(self, instance):
+        """Legacy folder location, retained for old projects."""
         return self.layout.folder(self._safe_id(instance))
+
+    def item_path(self, instance):
+        return self.layout.path_for(self._safe_id(instance))
 
     def _atomic_json(self, target, data):
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -62,8 +66,9 @@ class PotionComponents:
 
     def import_item(self, item:Item, instance=None, as_override=False):
         target=self._safe_id(instance or item.instance)
-        folder=self.folder(target)
-        if folder.exists() or (self.layout.find_folder(target)/'item.json').is_file():
+        destination=self.item_path(target)
+        if (any(path.stem.casefold()==target.casefold() for path in self.layout.root.glob('*.json'))
+                or (self.layout.find_folder(target)/'item.json').is_file()):
             raise ValueError('Предмет уже существует: '+target)
         source=replace_instance(item.text,item.instance,target) if target!=item.instance else item.text
         original=self._read(item.path) if self.owns(item.path) else None
@@ -75,25 +80,8 @@ class PotionComponents:
               'source_file':self._relative_game_file(item) if target==item.instance and item.origin=='game' else None,
               'fields':fields,'template':source}
         if item.editor_metadata:data['editor_metadata']=dict(item.editor_metadata)
-        folder.mkdir(parents=True,exist_ok=False)
-        try:
-            self._atomic_json(folder/'item.json',data)
-            if not original:
-                self._atomic_json(folder/'params.json',{'variables':[], 'source_constants':self._related_constants(item)})
-                self._atomic_json(folder/'functions.json', {'source_functions':self._related_functions(item)})
-                (folder/'functions.d').write_text('// Дополнительные функции именно этого зелья.\n// Не копируйте сюда уже определённые в Gothic функции.\n',encoding='utf-8')
-            if original:
-                import shutil
-                for path in item.path.parent.iterdir():
-                    self.layout.checked(path)
-                    if path.name=='item.json':continue
-                    if path.is_dir():shutil.copytree(path,folder/path.name)
-                    else:shutil.copy2(path,folder/path.name)
-        except Exception:
-            import shutil
-            shutil.rmtree(folder)
-            raise
-        return folder
+        self._atomic_json(destination,data)
+        return destination
 
     @staticmethod
     def _related_functions(item):
@@ -137,9 +125,11 @@ class PotionComponents:
     def edit(self,item,updates,instance=None,metadata=None):
         data=self._read(item.path)
         target=self._safe_id(instance) if instance is not None else data['instance']
-        destination=item.path.parent if target==data['instance'] else item.path.parent.with_name(target)
+        legacy = item.path.name == 'item.json'
+        destination = (item.path if target==data['instance'] else
+                       (item.path.parent.with_name(target)/'item.json' if legacy else self.item_path(target)))
         self.layout.checked(destination)
-        if destination!=item.path.parent and destination.exists():
+        if destination!=item.path and destination.exists():
             raise ValueError('Предмет уже существует: '+target)
         if target!=data['instance']:
             renamed=target.casefold()!=data['instance'].casefold()
@@ -153,19 +143,21 @@ class PotionComponents:
         if metadata is not None:data.setdefault('editor_metadata',{}).update(metadata)
         # Validate encoding to avoid broken Russian strings when building CP1251 Gothic data.
         self.render_instance(data).encode('cp1251')
-        moved=destination.name!=item.path.parent.name
-        if moved:item.path.parent.rename(destination)
-        try:self._atomic_json(destination/'item.json',data)
-        except Exception:
-            if moved:destination.rename(item.path.parent)
-            raise
-        return self.read_item(destination/'item.json')
+        if legacy and destination!=item.path:
+            item.path.parent.rename(destination.parent)
+        elif destination!=item.path:
+            self._atomic_json(destination,data)
+            item.path.unlink()
+            return self.read_item(destination)
+        self._atomic_json(destination,data)
+        return self.read_item(destination)
 
     def delete(self,item):
         import shutil
         if not self.owns(item.path):
             raise ValueError('Это не компонент проекта')
-        shutil.rmtree(item.path.parent)
+        if item.path.name == 'item.json':shutil.rmtree(item.path.parent)
+        else:item.path.unlink()
 
     @staticmethod
     def render_instance(data,folder=None):
@@ -196,6 +188,7 @@ class PotionComponents:
                 replacements[data['instance'].casefold()]=block
             else:
                 additions.append(block)
+            if file.name != 'item.json':continue  # Flat JSON items have no sidecar files.
             folder=file.parent
             params=folder/'params.json'
             if params.exists():

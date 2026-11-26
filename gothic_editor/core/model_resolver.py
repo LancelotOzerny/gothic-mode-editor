@@ -21,6 +21,7 @@ class ModelResolver:
     def index(cls, store):
         result = {}
         for file in store.files():
+            if file.name != 'item.json':continue
             model = cls.custom_model(file.parent)
             if model.is_file():
                 data = store._read(file)

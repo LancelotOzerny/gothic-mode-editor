@@ -42,15 +42,14 @@ class ItemAssetsTests(unittest.TestCase):
     def legacy(self, item=None):
         item=item or self.item
         old=self.repo.root/'Items'/item.instance
-        item.path.parent.rename(old)
+        old.mkdir(parents=True)
+        item.path.rename(old/'item.json')
         return old
 
     def test_migration_confirmation_backup_and_idempotence(self):
         old=self.legacy()
-        (old/'assets').mkdir()
-        (old/'assets/model.3ds').write_bytes(model())
         (old/'extra.d').write_text('// Preserve',encoding='utf-8')
-        before={p.relative_to(old):p.read_bytes() for p in old.rglob('*') if p.is_file()}
+        original=(old/'item.json').read_bytes()
         with patch('builtins.input',side_effect=AssertionError('No console prompts')):
             self.repo.open(self.repo.root,confirm_migration=lambda count:False)
         self.assertTrue(old.exists())
@@ -59,30 +58,32 @@ class ItemAssetsTests(unittest.TestCase):
         self.repo.open(self.repo.root,confirm_migration=lambda count:confirmed.append(count) or True)
         self.assertEqual(confirmed,[1])
         self.assertFalse(old.exists())
-        folder=self.repo.project_items[0].path.parent
-        self.assertEqual(folder,self.repo.root/'Items/Potions'/self.item.instance)
-        self.assertEqual({p.relative_to(folder):p.read_bytes() for p in folder.rglob('*') if p.is_file()},before)
+        file=self.repo.project_items[0].path
+        self.assertEqual(file,self.repo.root/'Assets/Items/Potions'/f'{self.item.instance}.json')
+        self.assertEqual(file.read_bytes(),original)
         backup=next((self.repo.root/'backups').glob('item-migration-*'))/'Items'/self.item.instance
-        self.assertEqual({p.relative_to(backup):p.read_bytes() for p in backup.rglob('*') if p.is_file()},before)
+        self.assertEqual((backup/'item.json').read_bytes(),original)
+        self.assertEqual((backup/'extra.d').read_text('utf-8'),'// Preserve')
         self.repo.open(self.repo.root,confirm_migration=lambda _:self.fail('Migration repeated'))
         self.assertEqual(len(self.repo.project_items),1)
 
     def test_migration_collision_never_overwrites_and_failure_rolls_back(self):
         old=self.legacy()
-        destination=self.repo.components.root/self.item.instance
-        destination.mkdir()
-        (destination/'keep').write_bytes(b'keep')
-        with self.assertRaisesRegex(ValueError,'уже существует'):ItemMigrationService(self.repo.root).migrate()
+        destination=self.repo.components.item_path(self.item.instance)
+        destination.write_bytes(b'keep')
+        with self.assertRaisesRegex(ValueError,'уже существует'):
+            ItemMigrationService(self.repo.root).migrate()
         self.assertTrue(old.is_dir())
-        self.assertEqual((destination/'keep').read_bytes(),b'keep')
-        shutil.rmtree(destination)
+        self.assertEqual(destination.read_bytes(),b'keep')
+        destination.unlink()
         other=self.repo.create_item('potions')
         second=self.legacy(other)
-        rename=Path.rename
-        def fail(path,target):
-            if path==second:raise OSError('Failed move')
-            return rename(path,target)
-        with patch.object(Path,'rename',fail),self.assertRaisesRegex(OSError,'Failed move'):
+        original_copy=shutil.copy2
+        def fail(source,target,*args,**kwargs):
+            if Path(source)==second/'item.json':raise OSError('Failed copy')
+            return original_copy(source,target,*args,**kwargs)
+        with patch('gothic_editor.core.item_migration.shutil.copy2',side_effect=fail), \
+                self.assertRaisesRegex(OSError,'Failed copy'):
             ItemMigrationService(self.repo.root).migrate()
         self.assertTrue(old.is_dir())
         self.assertTrue(second.is_dir())

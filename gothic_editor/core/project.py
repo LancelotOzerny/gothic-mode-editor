@@ -60,8 +60,7 @@ class ProjectRepository:
             if field.scope=='project':validate_value(field,project_settings.get(field_key(field),field.default))
         migration=ItemMigrationService(root)
         pending=migration.pending()
-        if pending and confirm_migration is not None and confirm_migration(len(pending)):
-            migration.migrate()
+        migrate_items = bool(pending and confirm_migration is not None and confirm_migration(len(pending)))
         self.name=data.get('name',root.name)
         resources=data if self.shared_resources is None else {**data,**self.shared_resources}
         raw=project_settings.get('resources.gothic.game_path',data.get('game_path') or resources.get('game_path',''))
@@ -72,6 +71,7 @@ class ProjectRepository:
         self.components=PotionComponents(root)
         self.item_hierarchy=ItemHierarchy(root)
         ModelLibrary(root).migrate(self.components)
+        if migrate_items:migration.migrate()
         self.game=game
         self.compiler_path=resources.get('compiler_path','')
         self.resource_editor_path=resources.get('resource_editor_path','')
@@ -225,10 +225,10 @@ class ProjectRepository:
         return candidate
 
     def _import_component(self,item,instance=None,as_override=False):
-        folder=self.components.import_item(item,instance,as_override)
-        updated=self.components.read_item(folder/'item.json')
+        destination=self.components.import_item(item,instance,as_override)
+        updated=self.components.read_item(destination)
         self._replace_project_file(updated.path,[updated])
-        model=ModelResolver.custom_model(folder)
+        model=ModelResolver.custom_model(destination.parent)
         if model.is_file():self.mesh_index[ModelResolver.generated_name(updated.instance).casefold()]=model
         return updated
 

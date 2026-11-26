@@ -69,6 +69,7 @@ def apply_potions(project: Path, content: Path):
 
     # Metadata overrides are opt-in; informational references never emit symbols.
     for file in store.files():
+        if file.name != 'item.json':continue  # Sidecars only exist in legacy projects.
         for metadata, array, kind in (
             ('functions.json', 'source_functions', 'func'),
             ('params.json', 'source_constants', 'const'),

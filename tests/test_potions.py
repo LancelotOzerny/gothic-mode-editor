@@ -63,9 +63,9 @@ class PotionTests(unittest.TestCase):
         self.assertEqual(reopened.text,expected)
         self.assertNotIn('flags',reopened.fields)
         self.assertNotIn('visual',reopened.fields)
-        functions=(reopened.path.parent/'functions.json').read_bytes()
+        self.assertEqual(reopened.path,self.repo.root/'Assets/Items/Potions/ItPo_Original.json')
+        self.assertEqual(sorted(p.name for p in reopened.path.parent.iterdir()),['ItPo_Original.json'])
         self.repo.edit(reopened,{'value':'PRICE + 7'})
-        self.assertEqual((reopened.path.parent/'functions.json').read_bytes(),functions)
         with tempfile.TemporaryDirectory() as temporary:
             staged,_,_=ProjectTools(self.repo.root,self.repo.game)._prepare(Path(temporary),lambda _:None)
             self.assertEqual((staged/'Items/IT_Test.d').read_text('utf-8-sig'),

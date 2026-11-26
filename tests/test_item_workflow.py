@@ -43,21 +43,19 @@ class FastRepositoryTests(unittest.TestCase):
                 self.assertIs(schema_for('potions'),second)
                 self.assertEqual(load.call_count,2)
 
-    def test_duplicate_keeps_helpers_unknown_fields_and_assets_without_refresh(self):
+    def test_duplicate_keeps_unknown_fields_without_creating_item_folders(self):
         with tempfile.TemporaryDirectory() as temporary:
             repo=ProjectRepository()
             repo.create(Path(temporary)/'project','Test')
             item=temporary_item(repo)
-            (item.path.parent/'functions.d').write_text('func void Helper() {};',encoding='utf-8')
-            (item.path.parent/'assets').mkdir()
-            (item.path.parent/'assets/texture.tga').write_bytes(tga())
             with patch.object(repo,'refresh',side_effect=AssertionError('Unexpected full scan')):
                 copied=repo.duplicate(item)
                 edited=repo.edit(copied,{'name':'"Changed"'})
                 other=repo._write_new('ItSc_Test','INSTANCE ItSc_Test(C_Item) {mainflag=ITEM_KAT_RUNE;};')
             self.assertEqual(edited.fields['custom'],'BASE+2')
-            self.assertEqual((copied.path.parent/'functions.d').read_text('utf-8'),'func void Helper() {};')
-            self.assertEqual((copied.path.parent/'assets/texture.tga').read_bytes(),tga())
+            self.assertEqual(copied.path.parent,item.path.parent)
+            self.assertEqual(set(path.name for path in item.path.parent.iterdir()),
+                             {item.path.name,copied.path.name})
             self.assertEqual(item.fields['name'],'"Before"')
             self.assertIn(other,repo.items)
             self.assertEqual(len(repo.project_items),3)
