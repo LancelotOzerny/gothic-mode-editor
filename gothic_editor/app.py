@@ -56,6 +56,7 @@ class EditorApp(tk.Tk):
         self.recent_projects=RecentProjects(self.settings_store.path.with_name('recent_projects.json'))
         self.welcome=None
         self._welcome_map_after=None
+        self._welcome_taskbar_ready=False
         self.bind('<Map>',self._welcome_mapped,add='+')
         localization.set_language(self.settings.get_value('interface.general.language'))
         self.settings_window=None
@@ -296,6 +297,7 @@ class EditorApp(tk.Tk):
         self._update_recent_menu()
 
     def show_welcome(self):
+        self._welcome_taskbar_ready=False
         if self.welcome is None:
             if self.repo.root is not None:self._editor_geometry=self.geometry()
         self.attributes('-fullscreen',False)
@@ -321,8 +323,9 @@ class EditorApp(tk.Tk):
 
     def _activate_welcome(self):
         self._welcome_map_after=None
-        if self.welcome is None or not self.winfo_viewable():return
+        if self.welcome is None or not self.winfo_viewable() or self._welcome_taskbar_ready:return
         from gothic_editor.ui.platform import show_in_taskbar
+        self._welcome_taskbar_ready=True
         try:show_in_taskbar(self)
         except OSError as exc:self.terminal.append(str(exc))
         self.lift()

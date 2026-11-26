@@ -252,7 +252,7 @@ class WelcomeTests(unittest.TestCase):
         self.assertEqual(str(self.app.cget('menu')),str(self.app.main_menu))
         self.assertEqual(self.app.minsize(),(870,540))
 
-    def test_missing_directory_disables_opening_and_removes_without_confirmation(self):
+    def test_missing_directory_offers_confirmed_removal(self):
         entry=self.app.recent_projects.entries[0]
         (entry.path/'project.json').unlink()
         entry.path.rmdir()
@@ -262,12 +262,35 @@ class WelcomeTests(unittest.TestCase):
         self.assertFalse(row.available)
         self.assertIn('overstrike',str(row.name_label.cget('font')))
         self.assertEqual(len(buttons),1)
-        with patch.object(screen,'on_open') as opened, patch.object(screen,'wait_window') as modal:
+        with patch.object(screen,'on_open') as opened, patch.object(screen,'wait_window',
+                side_effect=lambda dialog:dialog.destroy()) as modal:
             screen.open_entry(entry)
-            screen.remove_recent(entry)
         opened.assert_not_called()
-        modal.assert_not_called()
+        modal.assert_called_once()
+        self.assertIn(entry,self.app.recent_projects.entries)
+        with patch.object(screen,'wait_window',side_effect=lambda dialog:dialog.confirm()):
+            screen.open_entry(entry)
         self.assertNotIn(entry,self.app.recent_projects.entries)
+
+    def test_existing_folder_without_project_json_is_invalid(self):
+        screen=self.app.welcome
+        entry=screen.entries[0]
+        (entry.path/'project.json').unlink()
+        screen.render_projects()
+        self.assertFalse(screen.rows[0][1].available)
+        with patch.object(screen,'on_open') as opened, patch.object(screen,'wait_window',
+                side_effect=lambda dialog:dialog.confirm()):
+            screen.open_entry(entry)
+        opened.assert_not_called()
+        self.assertNotIn(entry,self.app.recent_projects.entries)
+
+    def test_drag_allows_negative_monitor_coordinates(self):
+        screen=self.app.welcome
+        from types import SimpleNamespace
+        screen._drag_origin=(100,100,10,10)
+        with patch('gothic_editor.ui.platform.move_window') as move:
+            screen.drag(SimpleNamespace(x_root=-100,y_root=80))
+        move.assert_called_once_with(self.app,-190,-10)
 
     def test_action_buttons_are_40_pixels_and_use_their_actual_background(self):
         screen=self.app.welcome

@@ -88,7 +88,7 @@ class WelcomeScreen(Panel):
         self.entries = list(self.history.entries)
         query = self.query.get().strip().casefold()
         visible = [entry for entry in self.entries if query in f'{entry.name} {entry.path}'.casefold()]
-        self.selected = next((entry for entry in visible if entry.path.is_dir()),None)
+        self.selected = next((entry for entry in visible if self.valid_project(entry)),None)
         for entry in visible:self.add_row(entry)
         if not visible:
             label(self.projects, tr('welcome.no_matches' if query else 'welcome.empty'),
@@ -96,7 +96,7 @@ class WelcomeScreen(Panel):
         self.canvas.yview_moveto(0)
 
     def add_row(self, entry):
-        available=entry.path.is_dir()
+        available=self.valid_project(entry)
         row = tk.Frame(self.projects, bg=PANEL, padx=12, pady=10, takefocus=available)
         row.available=available
         row.animation=None
@@ -162,7 +162,6 @@ class WelcomeScreen(Panel):
         row.bind('<Destroy>',cancel_animation)
 
         def select(_=None):
-            if not available:return
             self.selected = entry
             row.focus_set()
 
@@ -175,8 +174,8 @@ class WelcomeScreen(Panel):
             widget.bind('<Leave>', hover, add='+')
         for widget in (row,badge,name,path):
             widget.bind('<Button-1>', select)
-            if available:widget.bind('<ButtonRelease-1>', lambda _, current=entry:self.open_entry(current))
-        if available:row.bind('<Return>', lambda _:self.open_entry(entry))
+            widget.bind('<ButtonRelease-1>', lambda _, current=entry:self.open_entry(current))
+        row.bind('<Return>', lambda _:self.open_entry(entry))
         row.bind('<Configure>', resize)
         self.rows.append((entry,row,buttons))
 
@@ -202,9 +201,10 @@ class WelcomeScreen(Panel):
     def drag(self,event):
         if self._drag_origin is None:return
         mouse_x,mouse_y,window_x,window_y=self._drag_origin
-        x=max(0,window_x+event.x_root-mouse_x)
-        y=max(0,window_y+event.y_root-mouse_y)
-        self.winfo_toplevel().geometry(f'+{x}+{y}')
+        x=window_x+event.x_root-mouse_x
+        y=window_y+event.y_root-mouse_y
+        from gothic_editor.ui.platform import move_window
+        move_window(self.winfo_toplevel(),x,y)
 
     def stop_drag(self,event):
         self._drag_origin=None
@@ -218,8 +218,8 @@ class WelcomeScreen(Panel):
 
     def open_entry(self,entry):
         if self._opening_dialog:return
-        if not entry.path.is_dir():
-            self.render_projects()
+        if not self.valid_project(entry):
+            self.remove_recent(entry)
             return
         self._opening_dialog=True
         try:
@@ -227,7 +227,7 @@ class WelcomeScreen(Panel):
             self.wait_window(dialog)
         finally:self._opening_dialog=False
         if dialog.result:
-            if entry.path.is_dir():self.on_open(entry.path)
+            if self.valid_project(entry):self.on_open(entry.path)
             else:self.render_projects()
 
     def open_folder(self, entry):
@@ -239,13 +239,16 @@ class WelcomeScreen(Panel):
             messagebox.showerror(tr('app.error'), str(exc), parent=self.winfo_toplevel())
 
     def remove_recent(self, entry):
-        if entry.path.is_dir():
-            dialog = ProjectConfirmationDialog(self, entry, 'remove')
-            self.wait_window(dialog)
-            if not dialog.result:return
+        dialog = ProjectConfirmationDialog(self, entry, 'remove')
+        self.wait_window(dialog)
+        if not dialog.result:return
         try:self.history.forget(entry.path)
         except OSError as exc:
             messagebox.showerror(tr('app.error'), tr('welcome.save_error',error=str(exc)), parent=self.winfo_toplevel())
             return
         self.on_history_change()
         self.render_projects()
+
+    @staticmethod
+    def valid_project(entry):
+        return entry.path.is_dir() and (entry.path/'project.json').is_file()
