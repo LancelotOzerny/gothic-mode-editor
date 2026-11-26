@@ -701,6 +701,10 @@ class HierarchyPanel(HierarchyBrowser):
         menu = self.new_menu()
         values = self.selected_values()
         actions = self.common_actions()
+        # Mixed selections may only share the drag-and-drop move operation.
+        # Do not open an empty menu when there are no contextual commands.
+        if not actions.intersection({'duplicate', 'delete', 'copy'}):
+            return True
         for action,title in [('duplicate','Дублировать'),('delete','Удалить'),('copy','Копировать в проект')]:
             if action in actions:
                 menu.add_command(label=title,command=lambda a=action:self.on_batch(a,values))

@@ -95,6 +95,12 @@ class ItemHierarchyController:
         try:
             originals = [item for item in app.repo.game_items
                          if store.accepts(node.key, item)]
+            if not originals:
+                messagebox.showinfo('Импорт из Gothic',
+                                    'Исходные предметы для этой категории не найдены. '
+                                    'Проверьте путь к установленной Gothic и её скриптам.',
+                                    parent=app)
+                return
             existing = {item.instance.casefold() for item in app.repo.project_items}
             pending = [item for item in originals if item.instance.casefold() not in existing]
             if not pending:
