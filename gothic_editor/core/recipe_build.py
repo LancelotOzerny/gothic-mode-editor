@@ -262,5 +262,7 @@ instance {prefix}(C_Info) {{
     tree.apply(edits)
     # Last include: item, knowledge-variable and mobsi dependencies precede recipes.
     original, codec = load_text(manifest)
-    manifest.write_text(original.rstrip() + '\nGE_Recipes\\Alchemy.d\n', encoding=codec)
+    newline = '\r\n' if '\r\n' in original else '\n'
+    with manifest.open('w', encoding=codec, newline='') as output:
+        output.write(original.rstrip() + newline + 'GE_Recipes\\Alchemy.d' + newline)
     return [relative]

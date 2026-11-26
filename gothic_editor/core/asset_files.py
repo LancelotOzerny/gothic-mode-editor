@@ -42,9 +42,6 @@ class AssetFiles:
         if markdown:
             if not name.lower().endswith('.md'):
                 name += '.md'
-            texts = self.root / 'Texts'
-            if folder != texts and texts not in folder.parents:
-                raise ValueError('Markdown-документы создаются в Assets/Texts.')
         target = self.checked(folder / name)
         if script:
             template = (
@@ -54,10 +51,10 @@ class AssetFiles:
                 '    // your script code\n'
                 '};\n'
             )
-            with target.open('x', encoding='utf-8') as output:
+            with target.open('x', encoding='utf-8', newline='\n') as output:
                 output.write(template)
         elif markdown:
-            with target.open('x', encoding='utf-8') as output:
+            with target.open('x', encoding='utf-8', newline='\n') as output:
                 output.write('# Название\n\n')
         else:
             target.mkdir()

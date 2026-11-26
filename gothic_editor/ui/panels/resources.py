@@ -50,6 +50,7 @@ class ResourcesPanel(Panel):
         self.tree.bind('<Double-Button-1>', self._tree_open_file, add='+')
         self.tree.bind('<Control-KeyPress>',self.shortcut)
         self.tree.bind('<F2>', self._tree_rename)
+        self.tree.bind('<Delete>', self._delete_shortcut)
         self._bind_drag(self.tree)
         body.add(sidebar,minsize=100,width=180)
         self.scroll_area=ScrollableArea(body,bg=PANEL)
@@ -62,6 +63,7 @@ class ResourcesPanel(Panel):
             widget.bind('<Button-1>',lambda event:(self.select_file(None),event.widget.focus_set()))
             widget.bind('<Control-KeyPress>',self.shortcut)
             widget.bind('<Escape>',self.cancel_drag)
+            widget.bind('<Delete>',self._delete_shortcut)
 
     def build_tab_actions(self, parent):
         self.add_button(tr('resources.refresh'), self.refresh, parent=parent,
@@ -212,6 +214,7 @@ class ResourcesPanel(Panel):
         self.tiles[path] = tile
         tile.bind('<Control-KeyPress>',self.shortcut)
         tile.bind('<F2>',self._tile_rename)
+        tile.bind('<Delete>',self._delete_shortcut)
         tile.bind('<Button-1>', lambda event, resource=path: self.start_drag(event, resource), add='+')
         self._bind_drag(tile)
         return tile
@@ -315,11 +318,13 @@ class ResourcesPanel(Panel):
         else:
             self.scroll_area.canvas.focus_set()
 
-    def _operation(self,operation,*,source=None):
+    def _operation(self,operation,*,source=None,requires_undo=False):
         try:
             if not self.before_change():return
             history=self.history() if self.history is not None else None
             snapshot=history.capture((source,)) if history is not None and source is not None else {}
+            if requires_undo and history is not None and snapshot is None:
+                raise ValueError('Удаление отменено: ресурс слишком велик для истории изменений.')
             result=operation(AssetFiles(self.project))
             if history is not None:history.record(snapshot,(result,) if result is not None else ())
             if source is not None:
@@ -334,31 +339,25 @@ class ResourcesPanel(Panel):
         except (OSError,ValueError) as exc:
             messagebox.showerror(tr('resources.title'),str(exc),parent=self.winfo_toplevel())
 
-    def create_resource(self,script=False,*,markdown=False):
-        if self.folder is None:return
+    def create_resource(self,script=False,*,markdown=False,folder=None):
+        folder=self.folder if folder is None else folder
+        if folder is None:return
         dialog=ResourceNameDialog(self,script,markdown=markdown)
         self.wait_window(dialog)
         if dialog.result is not None:
-            self._operation(lambda files:files.create(self.folder,dialog.result,script,markdown=markdown))
-
-    def _can_create_markdown(self, folder):
-        if self.assets is None or folder is None:return False
-        texts=self.assets/'Texts'
-        return folder == texts or texts in folder.parents
+            self._operation(lambda files:files.create(folder,dialog.result,script,markdown=markdown))
 
     def _add_create_commands(self,menu,folder):
-        menu.add_command(label=tr('resources.create_directory'),command=self.create_resource)
-        scripts=menu.__class__(menu,tearoff=False,bg=INPUT,fg=TXT,
-                              activebackground=PANEL,activeforeground=TXT)
-        scripts.add_command(label='Создать скрипт (.d)',command=lambda:self.create_resource(True))
-        menu.add_cascade(label=tr('resources.scripts'),menu=scripts)
-        if self._can_create_markdown(folder):
-            menu.add_command(label='Создать Markdown-документ (.md)',
-                             command=lambda:self.create_resource(markdown=True))
+        if folder is None:return
+        menu.add_command(label=tr('resources.create_directory'),
+                         command=lambda:self.create_resource(folder=folder))
+        menu.add_command(label='Создать скрипт (.d)',
+                         command=lambda:self.create_resource(True,folder=folder))
+        menu.add_command(label='Создать Markdown-документ (.md)',
+                         command=lambda:self.create_resource(markdown=True,folder=folder))
 
     def create_in_folder(self, folder, *, markdown=False):
-        self.open_folder(folder)
-        self.create_resource(markdown=markdown)
+        self.create_resource(markdown=markdown,folder=folder)
 
     def rename_selected(self, path=None):
         path = self._selected if path is None else path
@@ -505,13 +504,22 @@ class ResourcesPanel(Panel):
         if path is not None and path!=self.assets:
             self._operation(lambda files:files.copy(path,path.parent))
 
-    def delete_selected(self):
-        path=self._selected
+    def delete_selected(self,path=None):
+        if path is None:
+            path=self._selected
+            if self.focus_get()==self.tree:
+                path=self._tree_paths.get(self.tree.focus()) or path
         if path is None or path==self.assets:return
         if messagebox.askyesno(tr('resources.delete_title'),
                 tr('resources.delete_question',name=path.name)+ ('\n'+tr('resources.delete_contents') if path.is_dir() else ''),
                 parent=self.winfo_toplevel()):
-            self._operation(lambda files:files.delete(path),source=path)
+            self._operation(lambda files:files.delete(path),source=path,requires_undo=True)
+
+    def _delete_shortcut(self,event):
+        path=(self._tree_paths.get(self.tree.focus()) if event.widget==self.tree
+              else getattr(event.widget,'path',None) or self._selected)
+        self.delete_selected(path)
+        return 'break'
 
     def copy_path(self,absolute=False):
         if self._selected is None:return
@@ -536,8 +544,11 @@ class ResourcesPanel(Panel):
                                         activebackground=PANEL,activeforeground=TXT)
         self.menu=menu(self)
         path=self._selected
+        target = path if path is not None and path.is_dir() else (path.parent if path is not None else self.folder)
+        self._add_create_commands(self.menu,target)
+        if path is not None:self.menu.add_separator()
         if path is None:
-            self._add_create_commands(self.menu,self.folder)
+            pass
         elif path.is_dir():
             mutable='disabled' if path==self.assets else 'normal'
             self.menu.add_command(label=tr('resources.delete'),command=self.delete_selected,state=mutable)
@@ -547,10 +558,6 @@ class ResourcesPanel(Panel):
             paths.add_command(label=tr('resources.absolute_path'),command=lambda:self.copy_path(True))
             self.menu.add_cascade(label=tr('resources.copy_path'),menu=paths)
             self.menu.add_command(label=tr('resources.open'),command=self.open_selected)
-            # Folder context menu creates new files directly in that folder.
-            if self._can_create_markdown(path):
-                self.menu.add_command(label='Создать Markdown-документ (.md)',
-                                      command=lambda folder=path:self.create_in_folder(folder,markdown=True))
         else:
             self.menu.add_command(label=tr('resources.duplicate'),command=self.duplicate_selected)
             self.menu.add_command(label=tr('resources.reveal'),command=self.reveal_selected)

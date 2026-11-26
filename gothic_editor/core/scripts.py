@@ -14,6 +14,8 @@ ITEM_OVERRIDES_HEADER = '// Gothic Editor: item overrides'
 
 def load_text(path: Path):
     raw = path.read_bytes()
+    # Repair CRCRLF produced by text-mode writes of already-CRLF scripts.
+    raw = raw.replace(b'\r\r\n', b'\r\n')
     for codec in ('utf-8-sig', 'cp1251', 'cp1252'):
         try: return raw.decode(codec), codec
         except UnicodeDecodeError: pass
@@ -144,6 +146,9 @@ def write_modified_item(item:Item, destination:Path, updates:dict[str,str], inst
     for k,v in updates.items():part=replace_field(part,k,v)
     if instance is not None:part=replace_instance(part,item.instance,instance)
     if metadata is not None:part=with_item_metadata(part,{**target.editor_metadata,**metadata})
+    newline='\r\n' if '\r\n' in source else '\n'
+    # Match the source convention; avoid mixed/doubled line endings on Windows.
+    part=part.replace('\r\n','\n').replace('\r','\n').replace('\n',newline)
     source=source[:target.begin]+part+source[target.end:]
     destination.parent.mkdir(parents=True,exist_ok=True)
     # Source scripts from Gothic are commonly ANSI/CP1251; retain the encoding.
