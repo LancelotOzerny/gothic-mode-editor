@@ -6,7 +6,8 @@ from .recipes import identifier, RecipeError
 from .asset_files import AssetFiles
 
 STOCK = {'health': 'Health', 'mana': 'Mana', 'special': 'Special', 'booze': 'Booze', 'tabak': 'Tabak'}
-DEFAULTS = [{'id': key, 'name': name} for key, name in zip(STOCK,
+DEFAULTS = [{'id': 'potions', 'name': 'Зелья'}] + [
+    {'id': key, 'name': name, 'parent': 'potions'} for key, name in zip(STOCK,
     ('Зелья здоровья', 'Зелья маны', 'Особые зелья', 'Алкоголь', 'Табак'))]
 
 
@@ -40,8 +41,8 @@ class RecipeCategories:
                 raise RecipeError('category', 'Категория не может быть собственной подкатегорией.')
             binding = stock_binding(row)
             if binding is not None:
-                if parent:
-                    raise RecipeError('category', 'Штатная категория Gothic не может быть подкатегорией.')
+                if parent and parent != 'potions':
+                    raise RecipeError('category', 'Штатная категория Gothic может быть вложена только в «Зелья».')
                 if binding not in STOCK or binding in bindings:
                     raise RecipeError('category', 'Некорректная или повторная привязка к Gothic.')
                 bindings.add(binding)
@@ -63,6 +64,14 @@ class RecipeCategories:
                     raise RecipeError('category', f'{row["id"]}: обнаружен цикл подкатегорий.')
                 trail.add(parent)
                 parent = (index[parent].get('parent') or '').casefold()
+        # Migrate existing category files lazily in memory: older projects
+        # stored stock potion groups directly at the root.
+        if not any(row['id'] == 'potions' for row in rows):
+            rows = deepcopy(rows)
+            rows.insert(0, {'id': 'potions', 'name': 'Зелья'})
+            for row in rows:
+                if stock_binding(row) is not None and not row.get('parent'):
+                    row['parent'] = 'potions'
         return rows
 
     def save(self, rows):

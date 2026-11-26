@@ -39,7 +39,7 @@ class AddItemDialog(EditorDialog):
         self.search_entry.pack(fill='x', pady=6)
         table=tk.Frame(content,bg=BG)
         table.pack(fill='both',expand=True)
-        self.projects = ttk.Treeview(table, columns=('item',), show='', selectmode='browse', height=10)
+        self.projects = ttk.Treeview(table, columns=('item',), show='', selectmode='extended', height=10)
         self.scrollbar=attach_scrollbar(table,self.projects)
         self.projects.column('item', width=600)
         self.projects.pack(fill='both', expand=True)
@@ -68,7 +68,7 @@ class AddItemDialog(EditorDialog):
         query = self.search.get().strip().casefold()
         matches = [item for item in self.originals
                    if query in item.title.casefold() or query in item.instance.casefold()]
-        self.matches = matches[:10]
+        self.matches = matches
         for index, item in enumerate(self.matches):
             self.projects.insert('', 'end', iid=str(index), values=(f'{item.title} ({item.instance})',))
         self.status.set(tr('items.matches', shown=len(self.matches), total=len(matches)))
@@ -83,7 +83,8 @@ class AddItemDialog(EditorDialog):
     def copy(self):
         selection = self.projects.selection()
         if self.editable and selection:
-            self.result = ('copy', self.matches[int(selection[0])])
+            chosen = [self.matches[int(key)] for key in selection]
+            self.result = ('copy', chosen if len(chosen) > 1 else chosen[0])
             self.destroy()
 
     def double_click(self, event):

@@ -77,10 +77,33 @@ class ItemHierarchyController:
                 return
             elif action == 'add':
                 result = app.create_item(node.source)
-                if result is not None:self.move(result,key)
+                if isinstance(result,list):
+                    self._remember_hierarchy(lambda:store.assign_many(result,key))
+                    app.update_hierarchy()
+                elif result is not None:self.move(result,key)
                 return
             self.refresh(key)
         except (ValueError,OSError) as exc:messagebox.showerror('Иерархия',str(exc),parent=app)
+
+    def import_items(self, originals):
+        """Import multiple original items as a single undoable operation."""
+        app=self.app
+        if not originals or not app._save_editors():return []
+        paths={app.repo.item_hierarchy.path}
+        from gothic_editor.core.categories import classify
+        for item in originals:
+            paths.add(app.repo.components.item_path(item.instance) if classify(item)=='potions'
+                      else app.repo._destination_for(item))
+        saved=app.history.capture(paths)
+        imported=[]
+        try:
+            for item in originals:
+                imported.append(app.repo.copy_to_project(item))
+        finally:
+            app.history.record(saved)
+            app.update_hierarchy()
+        if imported:app.select(imported[-1])
+        return imported
 
     def import_category(self, node):
         """Import original items from this category (including its subcategories).

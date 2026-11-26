@@ -24,17 +24,18 @@ def import_category_recipes(project, game, category, *, history=None):
     origin = category
     while origin and stock_binding(categories[origin]) is None:
         origin = categories[origin].get('parent') or ''
-    if not origin:
+    # The new "Зелья" root imports all five built-in Gothic groups.
+    if not origin and category != 'potions':
         raise RecipeError('category', 'У категории нет исходного раздела Gothic для импорта.')
-    binding = stock_binding(categories[origin])
+    binding = stock_binding(categories[origin]) if origin else None
     templates, skipped = game_recipes(game)
-    matching = [row for row in templates if row['category'] == binding]
+    matching = [row for row in templates if binding is None or row['category'] == binding]
     store = RecipeStore(project)
     existing_rows = {row['id'].casefold(): row for row in store.load()}
     existing_ids = set(existing_rows)
     imported, upgrades, already = [], [], 0
     for template in matching:
-        # The stock parser assigns a stable COPY_... ID per Gothic C_Info.
+        # Original C_Info names become stable IDs, not separate COPY_* dialogs.
         if template['id'].casefold() in existing_ids:
             already += 1
             saved = existing_rows[template['id'].casefold()]
@@ -45,7 +46,7 @@ def import_category_recipes(project, game, category, *, history=None):
                 upgrades.append((upgraded, store.path(saved['id'])))
             continue
         data = deepcopy(template)
-        data['category'] = category
+        data['category'] = template['category'] if category == 'potions' else category
         category_store.validate(data)
         destination = store.path(data['id'])
         if destination.exists():

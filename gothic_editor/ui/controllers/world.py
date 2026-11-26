@@ -56,15 +56,17 @@ class WorldController:
     def add(self):
         self.refresh()
         options=self.catalog
-        def choose(index):
-            resource=options[index]
+        def choose(indices):
+            selected=[options[index] for index in indices]
+            if not selected:return
             selection=ProjectSelection(self.app.repo.root,'Worlds')
-            self._remember((selection.path,),lambda:selection.add(resource.name))
+            self._remember((selection.path,),lambda:[selection.add(item.name) for item in selected])
             window.destroy()
-            self.app.events.publish('world.changed',('selection',resource))
-            self.select(resource)
+            self.app.events.publish('world.changed',('selection',selected[-1]))
+            self.select(selected[-1])
         window=ValueChoiceWindow(self.app,[(value.title,value.name) for value in options],-1,
-                                 'Добавить объект из Gothic',choose,lambda:window.destroy())
+                                 'Добавить объекты из Gothic',choose,lambda:window.destroy(),
+                                 searchable=True,multiple=True)
         window.show()
 
     def select(self, resource, camera=None):

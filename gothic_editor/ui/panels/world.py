@@ -47,7 +47,8 @@ class WorldPanel(HierarchyBrowser):
         for category, title in WORLD_CATEGORIES.items():
             matches = {
                 'model:' + resource.name.casefold(): resource for resource in self.resources
-                if resource.category == category and (query in resource.title.casefold() or query in title.casefold())
+                if resource.category == category and (query in resource.title.casefold()
+                    or query in resource.name.casefold() or query in title.casefold())
             }
             if matches:
                 self.entries.update(matches)
@@ -55,13 +56,16 @@ class WorldPanel(HierarchyBrowser):
                 CategoryRow(self, self.area.content, HierarchyCategory(category, title), 0)
         self.npc_entries = {
             'npc:' + npc.instance.casefold(): npc for npc in self.npcs
-            if query in npc.title.casefold() or query in npc.instance.casefold() or query in 'npc'
+            if (query in npc.title.casefold() or query in npc.instance.casefold()
+                or query in (npc.body or '').casefold() or query in (npc.head or '').casefold()
+                or query in 'npc')
         }
         if self.npc_entries:
             self.grouped['npcs'] = list(self.npc_entries)
             CategoryRow(self, self.area.content, HierarchyCategory('npcs', 'NPC'), 0)
         if not (self.entries or self.npc_entries):
             label(self.area.content, 'Ничего не найдено', fg=MUTED).pack(padx=12, pady=15)
+        self.area._update_region()
         self.area.canvas.yview_moveto(position[0] if position else 0)
 
     def bind_category(self, row, category):

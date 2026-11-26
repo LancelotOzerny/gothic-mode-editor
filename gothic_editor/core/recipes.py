@@ -32,6 +32,8 @@ def validate_recipe(data):
     if type(data.get('schema_version')) is not int or data['schema_version'] != 1:
         raise RecipeError('id', 'Неподдерживаемая версия рецепта.')
     identifier(data.get('id'), 'id')
+    if data.get('source_info') is not None:
+        identifier(data['source_info'], 'id')
     if data.get('category', '') != '':identifier(data['category'], 'category')
     name = data.get('name')
     if not isinstance(name, str) or not name.strip() or any(c in name for c in '\r\n\x00'):

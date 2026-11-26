@@ -1199,7 +1199,10 @@ class EditorApp(tk.Tk):
         self.wait_window(dialog)
         if dialog.result is None:return
         action,value=dialog.result
-        if action=='copy':return self._action(self.repo.copy_to_project,value)
+        if action=='copy':
+            if isinstance(value,list):
+                return self.item_hierarchy_controller.import_items(value)
+            return self._action(self.repo.copy_to_project,value)
         return self._action(self.repo.create_item,key,value)
     def duplicate(self,item):
         if classify(item) in EDITABLE_CATEGORIES:self._action(self.repo.duplicate,item)

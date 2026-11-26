@@ -44,17 +44,19 @@ class NpcController:
     def add(self):
         self.refresh()
         options=self.items
-        def choose(index):
-            npc=options[index]
+        def choose(indices):
+            selected=[options[index] for index in indices]
+            if not selected:return
             selection=ProjectSelection(self.app.repo.root,'NPC')
             saved=self.app.history.capture((selection.path,))
-            selection.add(npc.instance)
+            for npc in selected:selection.add(npc.instance)
             self.app.history.record(saved)
             window.destroy()
-            self.app.events.publish('npc.changed',(npc,True))
-            self.select(npc)
+            self.app.events.publish('npc.changed',(selected[-1],True))
+            self.select(selected[-1])
         window=ValueChoiceWindow(self.app,[(value.title+' / '+value.instance,value.instance) for value in options],-1,
-                                 'Добавить NPC из Gothic',choose,lambda:window.destroy(),searchable=True)
+                                 'Добавить NPC из Gothic',choose,lambda:window.destroy(),
+                                 searchable=True,multiple=True)
         window.show()
 
     def deselect(self):
@@ -179,6 +181,31 @@ class NpcController:
             self.save()
             self.app.resources.refresh()
         except (OSError,ValueError) as exc:messagebox.showerror('NPC',str(exc),parent=self.app)
+
+    def export_model(self, kind):
+        """Export the selected original or project-owned native NPC model."""
+        if self.current is None or not self.save():return
+        if kind not in ('head','body'):raise ValueError('Неизвестная часть модели NPC.')
+        name=self.app.npc_properties.fields[kind].get().strip()
+        if not name:
+            messagebox.showerror('NPC','Сначала выберите модель.',parent=self.app)
+            return
+        extension='.mmb' if kind=='head' else '.mdm'
+        source=self.index.find(name,(extension,))
+        if source is None:
+            messagebox.showerror('NPC','Не найдена исходная модель: '+name,parent=self.app)
+            return
+        destination=filedialog.asksaveasfilename(parent=self.app,title='Экспорт модели NPC',
+                    initialfile=source.name if hasattr(source,'name') else name+extension,
+                    defaultextension=extension,filetypes=[(extension.upper(),'*'+extension)])
+        if not destination:return
+        try:
+            # Preserve the native binary including mesh/material data; no
+            # lossy conversion from the neutral-pose preview.
+            from pathlib import Path
+            Path(destination).write_bytes(source.read_bytes())
+        except (OSError,ValueError) as exc:
+            messagebox.showerror('NPC',str(exc),parent=self.app)
 
     def preview(self,camera=None):
         app=self.app

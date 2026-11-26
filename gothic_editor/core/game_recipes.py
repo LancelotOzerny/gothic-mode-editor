@@ -6,7 +6,7 @@ from .recipe_categories import STOCK
 from .recipes import validate_recipe
 
 
-def game_recipes(game):
+def game_recipes(game, *, diagnostics=False):
     if game is None:raise ValueError('Укажите папку Gothic в настройках проекта.')
     content = game / '_work/Data/Scripts/Content'
     path = next((p for p in content.rglob('*.d') if p.name.casefold()=='potion_alchemy.d'), None)
@@ -61,9 +61,11 @@ def game_recipes(game):
             existing = next((r for r in ingredients if r['instance'].casefold()==flask[1].casefold()), None)
             if existing:existing['count'] += 1
             else:ingredients.append({'instance': flask[1], 'count': 1})
-            recipe = dict(schema_version=1, id='COPY_'+code.upper(), name=title[1], category=category,
+            recipe = dict(schema_version=1, id=code.upper(), source_info=code.upper(),
+                          name=title[1], category=category,
                           result=products[0][0], result_count=int(products[0][1]), ingredients=ingredients,
                           availability={'type':'stock_talent', 'talent':talents[0]})
             results.append(validate_recipe(recipe))
-        except (ValueError, StopIteration):skipped.append(code)
+        except (ValueError, StopIteration) as exc:
+            skipped.append(f'{code}: {exc}' if diagnostics else code)
     return results, skipped

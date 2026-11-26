@@ -40,6 +40,7 @@ class ScrollableArea(Panel):
         self.window = self.canvas.create_window((0,0), window=self.content, anchor='nw')
         self.canvas.bind('<Configure>', self._resize)
         self.content.bind('<Configure>', self._update_region)
+        self._region_after = None
         self.owner = self.winfo_toplevel()
         self._bindings = [(sequence, self.owner.bind(sequence, self.wheel, add='+'))
                           for sequence in ('<MouseWheel>', '<Button-4>', '<Button-5>')]
@@ -50,8 +51,18 @@ class ScrollableArea(Panel):
         self._update_region()
 
     def _update_region(self, _event=None):
+        # Nested category rows expand asynchronously after the canvas resize.
+        # Defer measurement until Tk has calculated their actual packed height.
+        if self._region_after is None:
+            self._region_after = self.after_idle(self._sync_region)
+
+    def _sync_region(self):
+        self._region_after = None
+        if not self.canvas.winfo_exists():return
+        extent=self.canvas.bbox(self.window)
+        bottom=extent[3] if extent else 0
         self.canvas.configure(scrollregion=(0,0,max(1,self.canvas.winfo_width()),
-            max(self.canvas.winfo_height(), self.content.winfo_reqheight())))
+            max(self.canvas.winfo_height(),self.content.winfo_reqheight(),bottom)))
 
     def wheel(self, event):
         if not (self.winfo_rootx() <= event.x_root < self.winfo_rootx()+self.winfo_width()
@@ -68,6 +79,9 @@ class ScrollableArea(Panel):
 
     def _dispose(self, event):
         if event.widget is self:
+            if self._region_after is not None:
+                self.after_cancel(self._region_after)
+                self._region_after=None
             for sequence, binding in self._bindings:
                 if binding:self.owner.unbind(sequence, binding)
             self._bindings.clear()

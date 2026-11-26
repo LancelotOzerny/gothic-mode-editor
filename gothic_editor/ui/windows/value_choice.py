@@ -10,10 +10,12 @@ from .dialog import EditorDialog
 
 
 class ValueChoiceWindow(EditorDialog):
-    def __init__(self, owner, options, current, title, on_choose, on_cancel, searchable=False):
+    def __init__(self, owner, options, current, title, on_choose, on_cancel, searchable=False, multiple=False):
         super().__init__(owner, bg=PANEL)
         self.withdraw()
         self.options = options
+        self.multiple = multiple
+        self.chosen = set()
         self.current = current
         self.on_choose, self.on_cancel = on_choose, on_cancel
         self.title(title)
@@ -32,7 +34,7 @@ class ValueChoiceWindow(EditorDialog):
         self.choose_button = PropertyButton(footer, self.apply, text=tr('settings.choose'))
         self.choose_button.configure(width=110)
         self.choose_button.pack(side='right', padx=(0,8))
-        if not options:self.choose_button.config(state='disabled')
+        if not options or multiple:self.choose_button.config(state='disabled')
         table = tk.Frame(self, bg=PANEL)
         table.pack(fill='both', expand=True, padx=12, pady=(12,0))
         self.scroll_area=ScrollableArea(table,bg=OPTION_BG)
@@ -47,7 +49,7 @@ class ValueChoiceWindow(EditorDialog):
             search.pack(fill='x', pady=(0,8), before=self.scroll_area)
             self.query.trace_add('write', lambda *_:self.filter_options())
         for index,(name,_) in enumerate(options):
-            button = PropertyButton(body, lambda i=index:self.focus_option(i), text=name,
+            button = PropertyButton(body, lambda i=index:self.focus_option(i, toggle=True), text=name,
                                     background=OPTION_BG, align='left')
             button.pack(fill='x')
             self.option_buttons.append(button)
@@ -61,7 +63,7 @@ class ValueChoiceWindow(EditorDialog):
     def show(self):
         self.show_centered()
         self.lift()
-        self.focus_option(max(0,self.current))
+        self.focus_option(max(0,self.current), toggle=False)
         if self.searchable:
             self.query.set('')
             self.search_entry.focus_set()
@@ -78,19 +80,29 @@ class ValueChoiceWindow(EditorDialog):
                 button.pack_forget()
         visible=[index for index,button in enumerate(self.option_buttons) if button.winfo_manager()]
         self.choose_button.config(state='normal' if visible else 'disabled')
-        if visible:self.focus_option(visible[0])
+        if visible:self.focus_option(visible[0], toggle=False)
 
-    def focus_option(self, index):
+    def focus_option(self, index, toggle=False):
         if not self.option_buttons:return
         if not self.option_buttons[index].winfo_manager():
             index=self._first_visible()
         self.current = max(0,min(index,len(self.option_buttons)-1))
-        for i,button in enumerate(self.option_buttons):button.set_selected(i==self.current)
+        if self.multiple and toggle:
+            if self.current in self.chosen:self.chosen.remove(self.current)
+            else:self.chosen.add(self.current)
+        for i,button in enumerate(self.option_buttons):
+            button.set_selected(i in self.chosen if self.multiple else i==self.current)
+            if self.multiple:
+                button.text=('☑ ' if i in self.chosen else '☐ ') + self.options[i][0]
+                button.paint()
+        if self.multiple:self.choose_button.config(state='normal' if self.chosen else 'disabled')
         self.option_buttons[self.current].focus_set()
         self.canvas.yview_moveto(self.current/max(1,len(self.option_buttons)))
 
     def apply(self, index=None):
-        if self.options and self.option_buttons and self.option_buttons[self.current].winfo_manager():
+        if self.multiple:
+            if self.chosen:self.on_choose(tuple(sorted(self.chosen)))
+        elif self.options and self.option_buttons and self.option_buttons[self.current].winfo_manager():
             self.on_choose(self.current if index is None else index)
 
     def scroll(self, event):

@@ -39,6 +39,9 @@ class NpcPropertiesPanel(Panel):
         for kind,title in (('body','Импорт модели тела (MDM)'),('head','Импорт модели головы (MMB)')):
             button=appearance.add_button(title,lambda field=kind:self.controller.import_model(field))
             if not npc.body_args:button.config(state='disabled')
+        for kind,title in (('body','Экспорт модели тела (MDM)'),('head','Экспорт модели головы (MMB)')):
+            button=appearance.add_button(title,lambda field=kind:self.controller.export_model(field))
+            if not npc.body_args:button.config(state='disabled')
         trade=self.add_group('Торговля',parent=self.area.content)
         trade.add_button('Открыть вкладку проекта → Торговля',self.controller.configure_trading)
         self.reset_button=appearance.add_button('Отменить изменения NPC',self.controller.reset)

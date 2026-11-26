@@ -151,6 +151,36 @@ def apply_recipes(project, content, manifest):
                                for r in recipe['ingredients'])
             remove = '\n'.join(f'Npc_RemoveInvItems(self, {r["instance"]}, {r["count"]} * portions);'
                                for r in recipe['ingredients'])
+            original_info = recipe.get('source_info')
+            info_instance = ''
+            if original_info:
+                # Replace the two callbacks of the existing Gothic C_Info in
+                # staging. The stock instance keeps its name and menu position;
+                # a second COPY_* dialog is never generated.
+                location = tree.unique(original_info, 'instance')
+                if location is None:
+                    raise ValueError(f'Не найден исходный диалог Gothic: {original_info}')
+                original_path, definition = location
+                original_block = source(original_info, 'instance')
+                patched = original_block
+                for field, callback in (('condition', cond), ('information', info)):
+                    pattern = r'\b' + field + r'\s*=\s*[A-Za-z_]\w*\s*;'
+                    patched, count = re.subn(pattern, field + ' = ' + callback + ';', patched,
+                                             count=1, flags=re.I)
+                    if count != 1:
+                        raise ValueError(f'{original_info}: не найдено поле {field}')
+                edits.setdefault(original_path, []).append(
+                    (definition.start, definition.end, patched))
+            else:
+                info_instance = f"""instance {prefix}(C_Info)
+{{
+    npc = PC_Hero;
+    nr = 50;
+    condition = {cond};
+    information = {info};
+    permanent = TRUE;
+    description = {literal(recipe['name'])};
+}};"""
             bodies.append(f'''func int {craft}(var int portions)
 {{
     if (portions <= 0) {{ return FALSE; }};
@@ -174,15 +204,7 @@ func void {info}()
     else {{ Print(PRINT_ProdItemsMissing); }};
     B_ENDPRODUCTIONDIALOG();
 }};
-instance {prefix}(C_Info)
-{{
-    npc = PC_Hero;
-    nr = 50;
-    condition = {cond};
-    information = {info};
-    permanent = TRUE;
-    description = {literal(recipe['name'])};
-}};''')
+{info_instance}''')
         except ValueError as exc:
             raise ValueError(f'Рецепт {recipe["id"]}: {exc}') from exc
     # Generate a single C_Info holder for each top-level custom branch.
