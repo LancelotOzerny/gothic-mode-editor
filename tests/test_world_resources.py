@@ -225,6 +225,7 @@ class WorldUITests(WorldFixture,unittest.TestCase):
             app.withdraw()
             app.repo=self.repo
             app.show_project()
+            self.assertEqual(app.history.root,(app.repo.root/'Assets').resolve())
             app._switch_resource_browser('world')
             self.assertEqual(app._resource_browser,'world')
             self.assertEqual(len(app.world.catalog),1)

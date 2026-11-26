@@ -406,8 +406,13 @@ class EditorApp(tk.Tk):
         self.world.catalog_stamp=None
         self._show_resource_panels('items')
         self.project_label.config(text=f'{self.repo.name}   |   {self.repo.root}')
-        if reset_hierarchy:
+        # A project can be attached before show_project() without passing
+        # reset_hierarchy=True (e.g. embedded/project-restored workflows).
+        # Never retain undo snapshots belonging to a different project.
+        expected_history_root=(self.repo.root/'Assets').resolve() if self.repo.root else None
+        if reset_hierarchy or self.history.root!=expected_history_root:
             self.history.reset(self.repo.root)
+        if reset_hierarchy:
             self._media_loaded.clear()
             self._media_resources=[]
             self.media_panel.set_resources([],set())
