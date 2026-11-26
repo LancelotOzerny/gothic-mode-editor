@@ -53,7 +53,7 @@ class ChoiceList(tk.Frame):
         self.height=height
         self.value_variable=tk.StringVar(self)
         footer=tk.Frame(self,bg=PANEL)
-        footer.pack(side='bottom',fill='x',pady=5)
+        footer.pack(side='bottom',fill='x',pady=1 if height == COMPACT_FIELD_HEIGHT else 5)
         self.add_button=PropertyButton(footer,self.add_row,text='+',filename='create.png',
                                        caption=tr('item_actions.add'),height=height)
         self.add_button.pack(side='right')

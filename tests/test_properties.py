@@ -154,7 +154,7 @@ class PropertiesTests(unittest.TestCase):
         from gothic_editor.ui.widgets.theme import BORDER, ERROR, FIELD_FONT, PANEL, SAVED, UNSAVED
         form = self.app.properties
         section = form.sections['appearance']
-        self.assertEqual(section.pack_info()['pady'], (0, 25))
+        self.assertEqual(section.pack_info()['pady'], (0, 8))
         arrows = self.app.hierarchy.arrows(PANEL)
         self.assertEqual(str(section.header['image']), str(arrows[-1]))
         section.toggle()
@@ -166,14 +166,14 @@ class PropertiesTests(unittest.TestCase):
         line_height = tkfont.Font(root=form, font=FIELD_FONT).metrics('linespace')
         for button in buttons.values():
             self.assertEqual(button.background, BORDER)
-            self.assertEqual(button.winfo_reqheight(), line_height + 15)
+            self.assertEqual(button.winfo_reqheight(), line_height + 10)
         fields = [form.inputs['inv_rot' + axis] for axis in 'xyz']
-        columns = [field.surface.master for field in fields]
+        columns = [field.surface.master.master for field in fields]
         self.assertEqual([int(column.grid_info()['column']) for column in columns], [0, 1, 2])
         self.assertTrue(all(column.master is columns[0].master for column in columns))
         self.assertTrue(all(int(field.surface['height']) == field.winfo_reqheight() + 10 for field in fields))
         self.assertTrue(all(field.surface.coords(field._entry_window) == [10, field.height / 2] for field in fields))
-        self.assertTrue(all(field.surface.pack_info()['pady'] == (2, 3) for field in fields))
+        self.assertTrue(all(field.surface.master.pack_info()['pady'] == (2, 3) for field in fields))
         self.assertEqual(form.save_dot.itemcget(form.save_circle, 'fill'), SAVED)
         self.change('inv_roty', 'BASE + 30')
         self.change('inv_rotz', '30°')

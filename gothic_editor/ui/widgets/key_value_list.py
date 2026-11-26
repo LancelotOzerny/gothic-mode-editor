@@ -25,7 +25,7 @@ class KeyValueList(tk.Frame):
                             for column in field.columns]
         self.column_header.bind('<Configure>',self.layout_header)
         footer=tk.Frame(self,bg=PANEL)
-        footer.pack(side='bottom',fill='x',pady=5)
+        footer.pack(side='bottom',fill='x',pady=1 if height == COMPACT_FIELD_HEIGHT else 5)
         self.add_button = PropertyButton(footer, self.add_row, text='+',
                                          filename='create.png',caption='Добавить',height=height)
         self.add_button.pack(side='right')

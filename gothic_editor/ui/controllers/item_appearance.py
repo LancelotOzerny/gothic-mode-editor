@@ -19,7 +19,7 @@ class ItemAppearanceController:
         self.app = app
 
     def show(self, parent, item):
-        height = tkfont.Font(root=parent, font=FIELD_FONT).metrics('linespace') + 15
+        height = tkfont.Font(root=parent, font=FIELD_FONT).metrics('linespace') + 10
         buttons = []
         for key, action in [('choose_model', self.choose), ('import_model', self.import_model),
                             ('import_textures', self.import_textures), ('remove_model', self.remove)]:
@@ -30,9 +30,18 @@ class ItemAppearanceController:
             if key == 'remove_model' and not self._custom(item):button.config(state='disabled')
             buttons.append(button)
         width = max(button.winfo_reqwidth() for button in buttons)
-        for button in buttons:
-            button.configure(width=width)
-            button.pack(padx=8, pady=2)
+        def layout(event=None):
+            available = parent.winfo_width() - 16
+            columns = min(len(buttons), max(1, available // (width + 6)))
+            for column in range(len(buttons)):
+                parent.columnconfigure(column, weight=int(column < columns),
+                                       uniform='model_actions' if column < columns else '')
+            for index, button in enumerate(buttons):
+                button.configure(width=width)
+                button.grid(row=index // columns, column=index % columns,
+                            sticky='ew', padx=3, pady=2)
+        parent.bind('<Configure>', layout)
+        layout()
 
     def _custom(self, item):
         return item.visual.casefold() in ModelLibrary(self.app.repo.root).index()

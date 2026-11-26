@@ -75,21 +75,32 @@ class FunctionActionList(ChoiceList):
             values=self.arguments.setdefault(frame,{})
             for parameter in function.parameters:
                 values.setdefault(parameter.name,parameter.default)
-                FieldLabel(self.parameter_holder,f'[{function.label}] {parameter.label}').pack(fill='x',padx=8,pady=(2,0))
+                row=tk.Frame(self.parameter_holder,bg=PANEL)
+                row.pack(fill='x',padx=8,pady=COMPACT_FIELD_PADDING)
+                caption=FieldLabel(row,f'[{function.label}] {parameter.label}')
                 variable=tk.StringVar(self,value=values[parameter.name])
                 if parameter.options:
                     field=ExpressionChoiceField(
-                        self.parameter_holder, parameter.options,
+                        row, parameter.options,
                         height=None if self.height == COMPACT_FIELD_HEIGHT else self.height,
                         state='readonly' if self.editable else 'disabled',
                         caption=parameter.label)
                     field.set_expression(values[parameter.name])
                     variable=field.variable
                 else:
-                    field=PropertyEntry(self.parameter_holder,textvariable=variable,
+                    field=PropertyEntry(row,textvariable=variable,
                                         height=None if self.height == COMPACT_FIELD_HEIGHT else self.height,
                                         state='normal' if self.editable else 'readonly')
-                field.pack(fill='x',padx=8,pady=COMPACT_FIELD_PADDING if self.height == COMPACT_FIELD_HEIGHT else 0)
+                def layout(event=None,row=row,caption=caption,field=field):
+                    inline=row.winfo_width() >= max(300,caption.winfo_reqwidth()*2+40)
+                    caption.grid(row=0,column=0,columnspan=1 if inline else 2,sticky='w',padx=(0,6))
+                    field.grid(row=0 if inline else 1,column=1 if inline else 0,
+                               columnspan=1 if inline else 2,sticky='ew')
+                    row.columnconfigure(0,weight=0 if inline else 1)
+                    row.columnconfigure(1,weight=1 if inline else 0)
+                field.surface.configure(width=40)
+                row.bind('<Configure>',layout)
+                layout()
                 def change(*_,control=field,values=values,name=parameter.name):
                     values[name]=control.get()
                     self._sync()

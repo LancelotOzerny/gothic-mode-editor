@@ -37,7 +37,7 @@ class PropertiesPanel(Panel):
         self.editor=PropertyEditor(self)
         self.bind('<Destroy>',lambda event:self.editor.reset() if event.widget is self else None,add='+')
         heading = tk.Frame(self, bg=PANEL)
-        heading.pack(fill='x', padx=14, pady=(10, 5))
+        heading.pack(fill='x', padx=10, pady=(6, 6))
         self.info = label(heading, '', anchor='w', wraplength=260, justify='left', font=('Arial', 10, 'bold'))
         self.info.pack(side='left', fill='x', expand=True)
         self.save_dot = tk.Canvas(heading, bg=PANEL, width=12, height=12, bd=0, highlightthickness=0)
@@ -91,6 +91,7 @@ class PropertiesPanel(Panel):
             for section in schema.sections:
                 frame=self.add_group(section.title,self.collapsed.get(section.key,False),
                     lambda closed,key=section.key:self.collapsed.__setitem__(key,closed),parent=self.inner,compact=True)
+                frame.pack_configure(padx=8, pady=(0,8))
                 self.sections[section.key]=frame
                 rotation = None
                 if section.description:
@@ -246,7 +247,12 @@ class PropertiesPanel(Panel):
         if field.field_type in ('string','resource') and re.fullmatch(r'"(?:\\.|[^"\\])*"',value):
             value=re.sub(r'\\([\\"])',r'\1',value[1:-1])
         padding = 4 if axis else 8
-        FieldLabel(parent,axis or field.label,field.tooltip).pack(fill='x',padx=padding,pady=(2,0))
+        # Keep each field in a single row; reflow only the geometry, not the input.
+        row = tk.Frame(parent, bg=PANEL)
+        row.pack(fill='x', padx=padding, pady=COMPACT_FIELD_PADDING)
+        caption = FieldLabel(row,axis or field.label,field.tooltip)
+        self.error_anchors.setdefault(field.key,row)
+        parent = row
         variable=tk.StringVar(self,value=value)
         if field.widget=='combobox':
             options=list(field.options)
@@ -261,7 +267,25 @@ class PropertiesPanel(Panel):
             variable=entry.variable
         else:
             entry=create_field(parent,variable=variable,readonly=not self.editable,height=None)
-        entry.pack(fill='x',padx=padding,pady=COMPACT_FIELD_PADDING)
+        surface = entry.surface
+        def layout(event=None):
+            width = row.winfo_width()
+            inline = axis is not None or width >= max(300, caption.winfo_reqwidth()*2+40)
+            if inline:
+                caption.grid(row=0,column=0,sticky='w',padx=(0,6))
+                surface.grid(row=0,column=1,sticky='ew')
+                row.columnconfigure(0,weight=0)
+                row.columnconfigure(1,weight=1)
+            else:
+                caption.grid(row=0,column=0,columnspan=2,sticky='w')
+                surface.grid(row=1,column=0,columnspan=2,sticky='ew')
+                row.columnconfigure(0,weight=1)
+                row.columnconfigure(1,weight=0)
+            if inline:caption.grid_configure(columnspan=1)
+            if inline:surface.grid_configure(columnspan=1)
+        surface.configure(width=40)
+        row.bind('<Configure>',layout)
+        layout()
         entry.value_variable=variable
         add_placeholder(entry,variable,field.placeholder)
         self.inputs[field.key]=entry
