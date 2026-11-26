@@ -16,7 +16,7 @@ from gothic_editor.core.build_assets import BuildAssetService
 from gothic_editor.core.mod_archive import read_mod
 from gothic_editor.core.model_export import preview_3ds
 from gothic_editor.core.mesh import read_3ds_bytes
-from gothic_editor.core.textures import read_texture, write_ztex
+from gothic_editor.core.textures import read_texture, write_ztex, validate_gothic_ztex
 from test_model_preview import textured_3ds, tga
 from test_models import write_vdf
 
@@ -118,8 +118,12 @@ class WorldResourceTests(WorldFixture,unittest.TestCase):
         files=BuildAssetService(self.repo.root).collect()
         self.assertIn('_work/data/Textures/BOTTLE.TGA',files)
         self.assertIn('_work/data/Textures/_compiled/BOTTLE-C.TEX',files)
-        self.assertEqual(read_texture(files['_work/data/Textures/_compiled/BOTTLE-C.TEX']).pixels,
-                         read_texture(self.texture.read_bytes()).pixels)
+        compiled=files['_work/data/Textures/_compiled/BOTTLE-C.TEX']
+        self.assertTrue(validate_gothic_ztex(compiled))
+        self.assertEqual(int.from_bytes(compiled[8:12],'little'),10)  # DXT1, opaque
+        decoded=read_texture(compiled)
+        self.assertEqual((decoded.width,decoded.height),(4,4))
+        self.assertEqual(decoded.pixels,bytes((0,255,0,255))*16)
         self.assertFalse(any('overrides.json' in name for name in files))
         self.store.remove('texture','bottle.tga')
         preview=load_model_preview(self.model,self.repo.root,self.game,
@@ -202,10 +206,13 @@ class WorldResourceTests(WorldFixture,unittest.TestCase):
         pixels=bytes((1,2,3,4, 5,6,7,8, 9,10,11,12, 13,14,15,16))
         texture=Texture(2,2,pixels)
         data=write_ztex(texture)
-        self.assertEqual(struct.unpack_from('<8I',data,4),(0,0,2,2,2,2,2,0))
-        self.assertEqual(len(data),36+4+16)
-        self.assertEqual(data[-16:],bytes((3,2,1,4, 7,6,5,8, 11,10,9,12, 15,14,13,16)))
-        self.assertEqual(read_texture(data).pixels,pixels)
+        self.assertEqual(struct.unpack_from('<8I',data,4),(0,12,4,4,1,4,4,0))
+        self.assertEqual(len(data),36+16)  # One 4x4 DXT3 block
+        self.assertTrue(validate_gothic_ztex(data))
+        decoded=read_texture(data)
+        self.assertEqual((decoded.width,decoded.height),(4,4))
+        self.assertEqual(len(decoded.pixels),4*4*4)
+        self.assertTrue(any(alpha<255 for alpha in decoded.pixels[3::4]))
 
 
 class WorldUITests(WorldFixture,unittest.TestCase):

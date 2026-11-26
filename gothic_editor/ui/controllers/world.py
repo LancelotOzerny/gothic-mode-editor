@@ -91,9 +91,10 @@ class WorldController:
             def remove():
                 self.store.remove('model',resource.name)
                 selection.remove(resource.name)
+            # Stop the preview before deleting its source (Windows file locks).
+            self.app._cancel_model_load()
             self._remember(paths,remove)
             self.current=None
-            self.app._cancel_model_load()
             self.catalog_stamp=None
             self.app.events.publish('world.changed',('model',resource))
             self.app.world_properties.show(None)
