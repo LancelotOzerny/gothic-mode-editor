@@ -73,12 +73,16 @@ def apply_magic_costs(project, content):
     if not source.is_dir():
         return []
     requests = {}
-    for path in sorted(source.rglob('*.d')):
+    for path in sorted(source.rglob('*')):
+        if not path.is_file() or path.suffix.lower() != '.d':
+            continue
         for item in parse_items(path, 'project'):
             metadata = item.editor_metadata
             symbol = metadata.get('magic_cost_symbol', '')
             value = metadata.get('magic_cost', '')
             if not symbol:
+                if value:
+                    raise ValueError(f'{item.instance}: укажите константу расхода маны SPL_Cost_*')
                 continue
             if not _IDENTIFIER.fullmatch(symbol) or not symbol.lower().startswith('spl_cost_'):
                 raise ValueError(f'{item.instance}: некорректная константа стоимости маны')
@@ -97,7 +101,9 @@ def apply_magic_costs(project, content):
     if not requests:
         return []
     occurrences = {}
-    for path in sorted(content.rglob('*.d')):
+    for path in sorted(content.rglob('*')):
+        if not path.is_file() or path.suffix.lower() != '.d':
+            continue
         source_text, codec = load_text(path)
         for match in _COST.finditer(mask_comments(source_text)):
             key = match.group(1).casefold()

@@ -42,7 +42,7 @@ class MultipleTests(unittest.TestCase):
         self.assertEqual(len(self.panel.selection_keys()),2)
         menu = self.panel._context_menu
         labels = [menu.entrycget(index,'label') for index in range(menu.index('end')+1)]
-        self.assertEqual(len(labels),3)  # duplicate, delete, move; no rename/export
+        self.assertEqual(len(labels),2)  # duplicate and delete; moving uses drag-and-drop
         self.panel.toggle_selection(self.second)
         self.assertEqual(self.panel.selection_keys(),{self.panel.item_key(self.first)})
         self.assertEqual(self.app.properties.current.instance,self.first.instance)
@@ -62,6 +62,45 @@ class MultipleTests(unittest.TestCase):
         self.panel.select(self.first)
         self.panel.toggle_selection(node)
         self.assertEqual(self.panel.common_actions(),{'duplicate','delete'})
+
+    def test_context_omits_move_and_category_offers_bulk_import(self):
+        from gothic_editor.core.categories import walk_categories
+        with patch('tkinter.Menu.tk_popup'):
+            self.panel.context(SimpleNamespace(x_root=0,y_root=0),self.first)
+        menu=self.panel._context_menu
+        labels=[menu.entrycget(i,'label') for i in range(menu.index('end')+1)]
+        self.assertNotIn('Переместить в группу',labels)
+        node=next(row for row in walk_categories(self.panel.categories()) if row.key=='magic')
+        with patch('tkinter.Menu.tk_popup'):
+            self.panel.context_node(SimpleNamespace(x_root=0,y_root=0),node)
+        menu=self.panel._context_menu
+        labels=[menu.entrycget(i,'label') for i in range(menu.index('end')+1)]
+        self.assertIn('Импортировать все из готики',labels)
+
+    def test_bulk_import_category_is_idempotent_and_undoable(self):
+        from gothic_editor.core.categories import walk_categories
+        game=self.root/'game'
+        source=game/'_work/data/Scripts/Content/Items/IT_Runen.d'
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            'INSTANCE ItRu_Test(C_Item) { mainflag=ITEM_KAT_RUNE; spell=SPL_Fireball; };\n'
+            'INSTANCE ItSc_Test(C_Item) { mainflag=ITEM_KAT_RUNE; spell=SPL_Fireball; };\n',
+            encoding='utf-8')
+        self.app.repo.game=game
+        self.app.repo.refresh()
+        node=next(row for row in walk_categories(self.panel.categories()) if row.key=='magic')
+        original=source.read_bytes()
+        old_undo=len(self.app.history.undo_stack)
+        with patch('gothic_editor.ui.controllers.item_hierarchy.messagebox.askyesno',return_value=True),\
+             patch('gothic_editor.ui.controllers.item_hierarchy.messagebox.showinfo'):
+            self.controller.import_category(node)
+        imported={i.instance for i in self.app.repo.project_items}
+        self.assertTrue({'ItRu_Test','ItSc_Test'}.issubset(imported))
+        self.assertEqual(len(self.app.history.undo_stack),old_undo+1)
+        self.assertEqual(source.read_bytes(),original)
+        with patch('gothic_editor.ui.controllers.item_hierarchy.messagebox.showinfo'):
+            self.controller.import_category(node)
+        self.assertEqual(len(self.app.history.undo_stack),old_undo+1)
 
     def test_atomic_move_reopen_and_wrong_category(self):
         self.select_pair()

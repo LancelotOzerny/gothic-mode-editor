@@ -9,16 +9,19 @@
           "label": "Константа расхода (SPL_Cost_*)",
           "type": "expression",
           "source": "editor_metadata",
-          "placeholder": "SPL_Cost_Fireball"
+          "placeholder": "SPL_Cost_Fireball",
+          "tooltip": "Для обычных рун: SPL_Cost_<заклинание>. Для свитков Gothic II обычно используется общая SPL_Cost_Scroll."
         },
         {
           "key": "magic_cost",
           "label": "Расход маны",
           "type": "expression",
           "source": "editor_metadata",
-          "placeholder": "5"
+          "placeholder": "5",
+          "tooltip": "Целое число от 0 до 2147483647. Изменённая константа применяется ко всем использующим её предметам."
         }
-      ]
+      ],
+      "description": "Значение берётся из константы оригинальных скриптов и меняется только в сборочной копии. Общая константа влияет на все связанные заклинания или свитки."
     }
   ]
 }

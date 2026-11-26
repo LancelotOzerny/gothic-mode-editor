@@ -33,7 +33,10 @@ class PropertyBlocksTests(unittest.TestCase):
             self.assertEqual(set(data), {'blocks'})
             self.assertTrue(all((ASSETS / 'blocks' / name).is_file() for name in data['blocks']))
         potions, scrolls = schema_for('potions'), schema_for('scrolls')
-        self.assertEqual([s.key for s in scrolls.sections], ['general', 'parameters', 'actions', 'appearance', 'inventory'])
+        self.assertEqual([s.key for s in scrolls.sections], ['general', 'parameters', 'spell', 'spell_mana', 'actions', 'appearance', 'inventory'])
+        self.assertIn('spell_mana',[section.key for section in schema_for('runes').sections])
+        amulet_fields={field.key for section in schema_for('amulets').sections for field in section.fields}
+        self.assertIn('change_value[0]',amulet_fields)
         self.assertIn('actions', [s.key for s in potions.sections])
         self.assertEqual(next(s for s in potions.sections if s.key == 'appearance'),
                          next(s for s in scrolls.sections if s.key == 'appearance'))

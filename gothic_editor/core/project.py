@@ -316,8 +316,12 @@ class ProjectRepository:
         else:
             destination.write_bytes((ITEM_OVERRIDES_HEADER+'\n\n'+imported+';\n').encode(item.encoding))
         # Only the written script changed; rescanning the full Gothic installation is unnecessary.
+        cached_magic=self.options_cache.get('magic_cost_constants')
         self._replace_project_file(destination,parse_items(destination,'project'))
         self.options_cache.clear()
+        # The game's spell constants are unchanged by importing a project item.
+        # Reuse their catalog while importing many runes/scrolls at once.
+        if cached_magic is not None:self.options_cache['magic_cost_constants']=cached_magic
         return next(current for current in self.project_items if current.instance.casefold()==item.instance.casefold())
 
     def _destination_for(self,item:Item):
