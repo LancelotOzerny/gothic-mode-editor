@@ -277,8 +277,10 @@ class WorldUITests(WorldFixture,unittest.TestCase):
             with patch('gothic_editor.ui.controllers.world.messagebox.askyesno',return_value=False):
                 app.world.remove()
             self.assertTrue(app.world.current.overridden)
-            with patch('gothic_editor.ui.controllers.world.messagebox.askyesno',return_value=True):
+            with (patch('gothic_editor.ui.controllers.world.messagebox.askyesno',return_value=True),
+                  patch.object(app.world,'_error') as report_error):
                 app.world.remove()
+            self.assertFalse(report_error.called, f'Удаление завершилось ошибкой: {report_error.call_args}')
             self.assertIsNone(app.world.current)
             self.assertFalse(self.store.overrides('model'))
             self.assertFalse(ProjectSelection(app.repo.root,'Worlds').read())
