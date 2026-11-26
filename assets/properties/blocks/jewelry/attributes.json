@@ -1,0 +1,70 @@
+{
+  "sections": [
+    {
+      "id": "equipment_attributes",
+      "title": "Бонусы и требования предмета",
+      "fields": [
+        {
+          "key": "change_atr[0]",
+          "label": "Атрибут бонуса 1",
+          "type": "expression"
+        },
+        {
+          "key": "change_value[0]",
+          "label": "Значение бонуса 1",
+          "type": "expression"
+        },
+        {
+          "key": "cond_atr[0]",
+          "label": "Атрибут требования 1",
+          "type": "expression"
+        },
+        {
+          "key": "cond_value[0]",
+          "label": "Значение требования 1",
+          "type": "expression"
+        },
+        {
+          "key": "change_atr[1]",
+          "label": "Атрибут бонуса 2",
+          "type": "expression"
+        },
+        {
+          "key": "change_value[1]",
+          "label": "Значение бонуса 2",
+          "type": "expression"
+        },
+        {
+          "key": "cond_atr[1]",
+          "label": "Атрибут требования 2",
+          "type": "expression"
+        },
+        {
+          "key": "cond_value[1]",
+          "label": "Значение требования 2",
+          "type": "expression"
+        },
+        {
+          "key": "change_atr[2]",
+          "label": "Атрибут бонуса 3",
+          "type": "expression"
+        },
+        {
+          "key": "change_value[2]",
+          "label": "Значение бонуса 3",
+          "type": "expression"
+        },
+        {
+          "key": "cond_atr[2]",
+          "label": "Атрибут требования 3",
+          "type": "expression"
+        },
+        {
+          "key": "cond_value[2]",
+          "label": "Значение требования 3",
+          "type": "expression"
+        }
+      ]
+    }
+  ]
+}

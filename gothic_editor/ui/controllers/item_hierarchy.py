@@ -1,6 +1,6 @@
 """Editor-only hierarchy actions, sharing the existing inspector and dialogs."""
 from tkinter import messagebox
-from gothic_editor.core.categories import walk_categories
+from gothic_editor.core.categories import walk_categories, classify, get_category
 from gothic_editor.ui.windows.dialog import EditorDialog
 from gothic_editor.ui.widgets.form import FormGroup
 
@@ -81,6 +81,57 @@ class ItemHierarchyController:
                 return
             self.refresh(key)
         except (ValueError,OSError) as exc:messagebox.showerror('Иерархия',str(exc),parent=app)
+
+    def import_category(self, node):
+        """Import original items from this category (including its subcategories).
+
+        Existing project overrides are left untouched. All imported paths and
+        hierarchy membership share one undo entry.
+        """
+        app = self.app
+        if not app._save_editors() or not app.need_project():
+            return
+        store = app.repo.item_hierarchy
+        try:
+            originals = [item for item in app.repo.game_items
+                         if store.accepts(node.key, item)]
+            existing = {item.instance.casefold() for item in app.repo.project_items}
+            pending = [item for item in originals if item.instance.casefold() not in existing]
+            if not pending:
+                messagebox.showinfo('Импорт из Gothic', 'Все доступные предметы уже импортированы.',
+                                    parent=app)
+                return
+            if not messagebox.askyesno('Импорт из Gothic',
+                    f'Импортировать {len(pending)} предметов из Gothic в «{node.name}»? '
+                    'Уже импортированные предметы останутся без изменений.',
+                    parent=app):
+                return
+            # Resolve affected script paths before writes; several instances may
+            # belong to the same source .d file.
+            paths = {store.path}
+            for item in pending:
+                if classify(item) == 'potions':
+                    paths.add(app.repo.components.item_path(item.instance))
+                else:
+                    paths.add(app.repo._destination_for(item))
+            before = app.history.capture(paths)
+            imported = []
+            try:
+                for item in pending:
+                    imported.append(app.repo.copy_to_project(item))
+                # Preserve normal subcategories when importing a whole branch;
+                # an individual leaf category receives its new items directly.
+                allowed = {category.key for category in walk_categories([get_category(node.source)])}
+                if len(allowed) == 1 and imported:
+                    store.assign_many(imported, node.key)
+            finally:
+                # Even an interrupted bulk import remains one undoable action.
+                app.history.record(before)
+                app.update_hierarchy()
+            messagebox.showinfo('Импорт из Gothic',
+                                f'Импортировано предметов: {len(imported)}.', parent=app)
+        except (OSError, ValueError, UnicodeError) as exc:
+            messagebox.showerror('Импорт из Gothic', str(exc), parent=app)
 
     def refresh(self, key):
         panel = self.app.hierarchy

@@ -3,6 +3,7 @@
     "general/main.json",
     "general/parameters.json",
     "magic/spell.json",
+    "magic/mana_cost.json",
     "general/actions.json",
     "general/appearance.json",
     "general/inventory.json",

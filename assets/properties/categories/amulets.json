@@ -4,6 +4,7 @@
     "general/parameters.json",
     "armor/protection.json",
     "general/equipment.json",
+    "jewelry/attributes.json",
     "general/appearance.json",
     "general/inventory.json",
     "jewelry/amulets.json"

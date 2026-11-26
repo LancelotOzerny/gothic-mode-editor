@@ -233,6 +233,7 @@ class EditorApp(tk.Tk):
         self.item_hierarchy_controller = ItemHierarchyController(self)
         self.hierarchy.on_node = self.item_hierarchy_controller.select
         self.hierarchy.on_node_action = self.item_hierarchy_controller.action
+        self.hierarchy.on_import_category = self.item_hierarchy_controller.import_category
         self.hierarchy.on_move = self.item_hierarchy_controller.move
         self.hierarchy.before_select = self._save_editors
         self.hierarchy.on_multiple = self.item_hierarchy_controller.clear_inspector

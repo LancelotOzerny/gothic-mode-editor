@@ -1,0 +1,24 @@
+{
+  "sections": [
+    {
+      "id": "spell_mana",
+      "title": "Расход маны (скрипты Gothic)",
+      "fields": [
+        {
+          "key": "magic_cost_symbol",
+          "label": "Константа расхода (SPL_Cost_*)",
+          "type": "expression",
+          "source": "editor_metadata",
+          "placeholder": "SPL_Cost_Fireball"
+        },
+        {
+          "key": "magic_cost",
+          "label": "Расход маны",
+          "type": "expression",
+          "source": "editor_metadata",
+          "placeholder": "5"
+        }
+      ]
+    }
+  ]
+}

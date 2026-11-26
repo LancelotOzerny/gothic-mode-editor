@@ -307,12 +307,14 @@ class ProjectRepository:
             return self._import_component(item)
         destination=self._destination_for(item)
         destination.parent.mkdir(parents=True,exist_ok=True)
+        from .magic_parameters import import_mana_metadata
+        imported=import_mana_metadata(self,item)
         if destination.exists():
             from .scripts import load_text
             text,codec=load_text(destination)
-            destination.write_bytes((text.rstrip()+'\n\n'+item.text+';\n').encode(codec))
+            destination.write_bytes((text.rstrip()+'\n\n'+imported+';\n').encode(codec))
         else:
-            destination.write_bytes((ITEM_OVERRIDES_HEADER+'\n\n'+item.text+';\n').encode(item.encoding))
+            destination.write_bytes((ITEM_OVERRIDES_HEADER+'\n\n'+imported+';\n').encode(item.encoding))
         # Only the written script changed; rescanning the full Gothic installation is unnecessary.
         self._replace_project_file(destination,parse_items(destination,'project'))
         self.options_cache.clear()

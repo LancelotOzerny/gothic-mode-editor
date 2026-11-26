@@ -180,6 +180,8 @@ class ProjectTools:
             prioritize_trading(manifest)
         from .recipe_build import apply_recipes
         project_files.extend(apply_recipes(self.project, content, manifest))
+        from .magic_parameters import apply_magic_costs
+        apply_magic_costs(self.project, content)
         return content, manifest, project_files
 
     @staticmethod

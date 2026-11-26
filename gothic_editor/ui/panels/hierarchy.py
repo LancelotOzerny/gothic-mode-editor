@@ -389,6 +389,7 @@ class HierarchyPanel(HierarchyBrowser):
         self.store = None
         self.on_node = None
         self.on_node_action = None
+        self.on_import_category = None
         self.on_move = None
         self.selected_node = None
         self.items = []
@@ -589,17 +590,6 @@ class HierarchyPanel(HierarchyBrowser):
             actions.add_to_menu(menu,'delete')
         else:
             actions.add_to_menu(menu,'copy')
-        if self.store is not None and self.on_move is not None:
-            move = self.new_menu(menu)
-            move.add_command(label='В исходную категорию', command=lambda:self.on_move(item,''))
-            def targets(nodes, path=''):
-                for node in nodes:
-                    title = path + node.name
-                    if self.store.accepts(node.key,item):
-                        move.add_command(label=title, command=lambda key=node.key:self.on_move(item,key))
-                    targets(node.children,title+' / ')
-            targets(self.categories())
-            menu.add_cascade(label='Переместить в группу',menu=move)
         if self.on_export_model is not None:
             downloads=self.new_menu(menu)
             downloads.add_command(label='Модель 3DS',command=lambda:self.on_export_model(item))
@@ -648,6 +638,9 @@ class HierarchyPanel(HierarchyBrowser):
         if node.source in EDITABLE_CATEGORIES:
             menu.add_separator()
             menu.add_command(label='Добавить предмет', command=lambda:self.on_node_action('add',node))
+        if self.on_import_category is not None and node.kind == 'category':
+            menu.add_command(label='Импортировать все из готики',
+                             command=lambda:self.on_import_category(node))
         self.show_menu(menu, event)
 
     def selection_keys(self):
@@ -711,17 +704,6 @@ class HierarchyPanel(HierarchyBrowser):
         for action,title in [('duplicate','Дублировать'),('delete','Удалить'),('copy','Копировать в проект')]:
             if action in actions:
                 menu.add_command(label=title,command=lambda a=action:self.on_batch(a,values))
-        if 'move' in actions and self.store is not None:
-            move = self.new_menu(menu)
-            move.add_command(label='В исходные категории',command=lambda:self.on_batch('move',values,''))
-            def targets(nodes,path=''):
-                for node in nodes:
-                    title = path + node.name
-                    if all(self.store.accepts(node.key,item) for item in values):
-                        move.add_command(label=title,command=lambda key=node.key:self.on_batch('move',values,key))
-                    targets(node.children,title+' / ')
-            targets(self.categories())
-            menu.add_cascade(label='Переместить',menu=move)
         self.show_menu(menu, event)
         return True
 
