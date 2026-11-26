@@ -1,6 +1,7 @@
 """Recipe list and property form built from the editor's shared widgets."""
 import tkinter as tk
 from gothic_editor.core.localization import tr
+from gothic_editor.ui.actions import ActionRegistry
 from gothic_editor.ui.widgets import label, MUTED
 from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
 from gothic_editor.ui.widgets.item_binding import ItemBindingTile
@@ -14,6 +15,7 @@ class RecipeListPanel(HierarchyBrowser):
         self.owner, self.origin = self, 'project'
         self.category_rows, self.grouped = {}, {}
         self.selected_recipe_row = None
+        self.recipe_rows = {}
         self.add_header_action(lambda: controller.category_action('create'), tr('recipes.add_category'))
         self.area = ScrollableArea(self)
         self.area.pack(fill='both', expand=True)
@@ -26,6 +28,7 @@ class RecipeListPanel(HierarchyBrowser):
             child.destroy()
         self.category_rows, self.grouped = {}, {}
         self.selected_recipe_row = None
+        self.recipe_rows = {}
         query = self.search.get().strip().casefold()
         if self.controller.error:
             label(self.area.content, self.controller.error, wraplength=270).pack(fill='x', padx=12)
@@ -86,6 +89,7 @@ class RecipeListPanel(HierarchyBrowser):
 
     def row_item(self, parent, recipe, level):
         row = HierarchyRow(parent, recipe['name'], level)
+        self.recipe_rows[recipe['id']] = row
         current = self.controller.current
         if current is not None and recipe['id'] == current['id']:
             self.selected_recipe_row = row
@@ -93,20 +97,59 @@ class RecipeListPanel(HierarchyBrowser):
         self.bind_activate(row, lambda: self.controller.select(recipe))
         row.bind_row('<Button-3>', lambda event: self.recipe_context(event, recipe))
 
+    def update_recipe(self,previous,updated):
+        """Update a visible recipe without reconstructing the category tree."""
+        if previous is None or previous['id'] != updated['id'] or previous.get('category') != updated.get('category'):
+            self.populate()
+            return
+        query=self.search.get().strip().casefold()
+        matches=lambda value:not query or query in (value['id']+' '+value['name']).casefold()
+        if matches(previous)!=matches(updated):
+            self.populate()
+            return
+        group=self.grouped.get(updated.get('category',''))
+        if group is not None:
+            for index,value in enumerate(group):
+                if value['id']==updated['id']:
+                    group[index]=updated
+                    break
+        row=self.recipe_rows.get(updated['id'])
+        if row is not None and row.winfo_exists():
+            row.title_label.configure(text=updated['name'])
+
+    def _category_actions(self,code):
+        actions=ActionRegistry()
+        for key in ('edit','duplicate','delete'):
+            actions.register(key,tr('recipes.'+key),
+                lambda current=key:self.controller.category_action(current,code),
+                enabled=lambda:bool(code))
+        actions.register('subcategory','Создать подкатегорию',
+                         lambda:self.controller.category_action('create',code),
+                         enabled=lambda:bool(code))
+        actions.register('import','Импорт всех рецептов',
+                         lambda:self.controller.import_category(code),
+                         enabled=lambda:bool(code))
+        actions.register('add',tr('recipes.add_recipe'),lambda:self.controller.add(code))
+        return actions
+
+    def _recipe_actions(self):
+        actions=ActionRegistry()
+        actions.register('duplicate',tr('recipes.duplicate'),self.controller.duplicate)
+        actions.register('delete',tr('recipes.delete'),self.controller.delete)
+        return actions
+
     def category_context(self, event, code):
-        commands = [(tr('recipes.' + key), lambda action=key: self.controller.category_action(action, code))
-                    for key in ('edit', 'duplicate', 'delete')] if code else []
-        if code:
-            commands.append(('Создать подкатегорию', lambda: self.controller.category_action('create', code)))
-            commands.append(('Импорт всех рецептов',
-                             lambda: self.controller.import_category(code)))
-        commands.append((tr('recipes.add_recipe'), lambda: self.controller.add(code)))
-        self.popup(event, commands)
+        actions=self._category_actions(code)
+        keys=('edit','duplicate','delete','subcategory','import') if code else ()
+        self.popup(event,[(actions.get(key).label,lambda action=key:actions.invoke(action))
+                          for key in (*keys,'add')])
 
     def recipe_context(self, event, recipe):
         self.controller.select(recipe)
         if self.controller.current is None or self.controller.current['id']!=recipe['id']:return
-        self.popup(event, [(tr('recipes.duplicate'), self.controller.duplicate), (tr('recipes.delete'), self.controller.delete)])
+        actions=self._recipe_actions()
+        self.popup(event,[(actions.get(key).label,lambda action=key:actions.invoke(action))
+                          for key in ('duplicate','delete')])
 
 
 class RecipePropertiesPanel(Panel):

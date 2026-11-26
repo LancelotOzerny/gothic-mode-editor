@@ -55,6 +55,9 @@ class EditorApp(tk.Tk):
         self.events=EventBus()
         self.events.subscribe('resources.changed',self._on_resource_event)
         self.events.subscribe('items.changed',self._on_item_event)
+        self.events.subscribe('npc.changed',self._on_npc_event)
+        self.events.subscribe('recipes.changed',self._on_recipe_event)
+        self.events.subscribe('world.changed',self._on_world_event)
         self.settings_store=SettingsStore()
         self.settings=self.settings_store.load()
         self.recent_projects=RecentProjects(self.settings_store.path.with_name('recent_projects.json'))
@@ -628,6 +631,27 @@ class EditorApp(tk.Tk):
     def _on_item_event(self,event):
         previous,updated,inserted=event.payload
         self.update_hierarchy(previous=previous,updated=updated,inserted=inserted)
+
+    def _on_npc_event(self,event):
+        npc,structural=event.payload
+        if structural:self.npcs.show_list()
+        elif npc is not None:self.world_panel.update_npc(npc)
+
+    def _on_recipe_event(self,event):
+        previous,updated,structural=event.payload
+        if structural or updated is None:self.recipe_list.populate()
+        else:self.recipe_list.update_recipe(previous,updated)
+
+    def _on_world_event(self,event):
+        kind,resource=event.payload
+        if kind=='selection':
+            self.world.refresh()
+            return
+        # Model replacements invalidate both the repository index and the catalog.
+        self.repo.refresh()
+        self.world.catalog_stamp=None
+        self.world.refresh()
+        self.resources.refresh()
 
     def _resource_files_changed(self, source=None, result=None):
         """Avoid rescanning Gothic and rebuilding the item hierarchy for plain assets.

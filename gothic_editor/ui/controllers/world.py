@@ -61,7 +61,7 @@ class WorldController:
             selection=ProjectSelection(self.app.repo.root,'Worlds')
             self._remember((selection.path,),lambda:selection.add(resource.name))
             window.destroy()
-            self.refresh()
+            self.app.events.publish('world.changed',('selection',resource))
             self.select(resource)
         window=ValueChoiceWindow(self.app,[(value.title,value.name) for value in options],-1,
                                  'Добавить объект из Gothic',choose,lambda:window.destroy())
@@ -94,12 +94,10 @@ class WorldController:
             self._remember(paths,remove)
             self.current=None
             self.app._cancel_model_load()
-            self.app.repo.refresh()
             self.catalog_stamp=None
-            self.refresh()
+            self.app.events.publish('world.changed',('model',resource))
             self.app.world_properties.show(None)
             self.app.viewer.set_mesh(caption='Выберите объект мира')
-            self.app.resources.refresh()
         except (OSError,ValueError) as exc:self._error(exc)
 
     def loaded(self, preview):
@@ -128,9 +126,7 @@ class WorldController:
 
     def _changed(self):
         name = self.current.name
-        self.app.repo.refresh()
-        self.refresh()
-        self.app.resources.refresh()
+        self.app.events.publish('world.changed',('model',self.current))
         resource = next((value for value in self.catalog if value.name.casefold() == name.casefold()), None)
         if resource is not None:self.select(resource)
         else:

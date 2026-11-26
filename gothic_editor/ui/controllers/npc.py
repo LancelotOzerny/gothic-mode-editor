@@ -51,7 +51,7 @@ class NpcController:
             selection.add(npc.instance)
             self.app.history.record(saved)
             window.destroy()
-            self.show_list()
+            self.app.events.publish('npc.changed',(npc,True))
             self.select(npc)
         window=ValueChoiceWindow(self.app,[(value.title+' / '+value.instance,value.instance) for value in options],-1,
                                  'Добавить NPC из Gothic',choose,lambda:window.destroy(),searchable=True)
@@ -83,7 +83,7 @@ class NpcController:
             self.stamp=None
             self.app._cancel_model_load()
             self.app.npc_properties.show(None)
-            self.show_list()
+            self.app.events.publish('npc.changed',(None,True))
             self.app.viewer.set_mesh(caption='Выберите NPC')
         except (OSError,ValueError) as exc:messagebox.showerror('NPC',str(exc),parent=self.app)
 
@@ -135,7 +135,7 @@ class NpcController:
             self.current=self.store.apply(baseline,updates)
             self.items=[self.current if value.instance==self.current.instance else value for value in self.items]
             self.initial=values
-            self.app.world_panel.update_npc(self.current)
+            self.app.events.publish('npc.changed',(self.current,False))
             self.app.npc_properties.status.config(text='Сохранено')
             self.app.npc_properties.reset_button.config(state='normal' if updates else 'disabled')
             if changed_model:self.preview((self.app.viewer.angle_x,self.app.viewer.angle_y,self.app.viewer.zoom))
@@ -158,7 +158,7 @@ class NpcController:
             self.deselect()
             self.items=[self.catalog.base[npc.instance.casefold()] if value.instance==npc.instance else value for value in self.items]
             self.select(self.catalog.base[npc.instance.casefold()])
-            self.app.world_panel.update_npc(self.current)
+            self.app.events.publish('npc.changed',(self.current,False))
         except (OSError,ValueError) as exc:messagebox.showerror('NPC',str(exc),parent=self.app)
 
     def configure_trading(self):

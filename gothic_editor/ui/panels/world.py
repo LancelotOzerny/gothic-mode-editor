@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from gothic_editor.core.world_resources import WORLD_CATEGORIES
+from gothic_editor.ui.actions import ActionRegistry
 from gothic_editor.ui.widgets import MUTED, label
 from gothic_editor.ui.widgets.panel import Panel, ScrollableArea
 from .hierarchy import CategoryRow, HierarchyBrowser, HierarchyCategory, HierarchyRow
@@ -27,8 +28,11 @@ class WorldPanel(HierarchyBrowser):
         self.search.trace_add('write', lambda *_: self.rebuild())
 
     def set_resources(self, resources, npcs=()):
+        resources=list(resources)
+        npcs=list(npcs)
+        if resources==self.resources and npcs==self.npcs:return
         self.resources = resources
-        self.npcs = list(npcs)
+        self.npcs = npcs
         self.rebuild()
         if not self.search.get().strip() and self.selected not in self.entries and self.selected not in self.npc_entries:
             self.selected = None
@@ -115,13 +119,33 @@ class WorldPanel(HierarchyBrowser):
             row.set_selected(True)
         return True
 
+    def _actions(self, key=None):
+        actions=ActionRegistry()
+        actions.register('add','Добавить из Gothic',lambda:self.on_add())
+        actions.register('remove','Удалить из проекта',lambda:self.on_remove(),
+                         enabled=lambda:key is not None)
+        return actions
+
     def context(self, event, key=None):
-        commands = [('Добавить из Gothic', self.on_add)]
-        if key is not None:
-            if not self.select(key):
-                return
-            commands.append(('Удалить из проекта', self.on_remove))
-        self.popup(event, commands)
+        if key is not None and not self.select(key):return
+        actions=self._actions(key)
+        keys=('add','remove') if key is not None else ('add',)
+        self.popup(event,[(actions.get(action).label,lambda name=action:actions.invoke(name))
+                          for action in keys])
+
+    def update_resource(self, resource):
+        """Update a model caption without recreating unaffected rows."""
+        self.resources=[resource if value.name.casefold()==resource.name.casefold() else value
+                        for value in self.resources]
+        key='model:'+resource.name.casefold()
+        query=self.search.get().strip().casefold()
+        if query and (key not in self.entries or query not in resource.title.casefold()):
+            self.rebuild()
+        elif key in self.entries:
+            self.entries[key]=resource
+            row=self.rows.get(key)
+            if row is not None and row.winfo_exists():
+                row.title_label.configure(text=self.caption(resource))
 
     def update_npc(self, npc):
         self.npcs = [npc if value.instance == npc.instance else value for value in self.npcs]

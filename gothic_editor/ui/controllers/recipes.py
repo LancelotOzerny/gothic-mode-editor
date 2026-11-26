@@ -35,7 +35,7 @@ class RecipeController:
         except (OSError, ValueError) as exc:
             self.items = []
             self.error = str(exc)
-        self.app.recipe_list.populate()
+        self.app.events.publish('recipes.changed',(None,None,True))
 
     def deselect(self):
         if self.pending is not None:
@@ -105,6 +105,7 @@ class RecipeController:
             validate_recipe(data)
             if data == self.current and self.persisted:
                 return True
+            previous = deepcopy(self.current)
             old = self.current['id'] if self.persisted else None
             paths=[self.store.path(data['id'])]
             if old and old!=data['id']:paths.append(self.store.path(old))
@@ -114,7 +115,8 @@ class RecipeController:
             self.current = data
             self.persisted = True
             self.items = self.store.load()
-            self.app.recipe_list.populate()
+            structural = old is None or old != data['id'] or previous.get('category') != data.get('category')
+            self.app.events.publish('recipes.changed',(previous,data,structural))
             self.panel.status.config(text=tr('recipes.saved'))
             return True
         except (OSError, ValueError) as exc:
