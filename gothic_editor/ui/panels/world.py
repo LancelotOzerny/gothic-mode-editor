@@ -121,8 +121,8 @@ class WorldPanel(HierarchyBrowser):
 
     def _actions(self, key=None):
         actions=ActionRegistry()
-        actions.register('add','Добавить из Gothic',lambda:self.on_add())
-        actions.register('remove','Удалить из проекта',lambda:self.on_remove(),
+        actions.register('add','Добавить из Gothic',self.on_add)
+        actions.register('remove','Удалить из проекта',self.on_remove,
                          enabled=lambda:key is not None)
         return actions
 
@@ -130,7 +130,7 @@ class WorldPanel(HierarchyBrowser):
         if key is not None and not self.select(key):return
         actions=self._actions(key)
         keys=('add','remove') if key is not None else ('add',)
-        self.popup(event,[(actions.get(action).label,lambda name=action:actions.invoke(name))
+        self.popup(event,[(actions.get(action).label,actions.get(action).execute)
                           for action in keys])
 
     def update_resource(self, resource):
