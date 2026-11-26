@@ -39,9 +39,9 @@ class AssetCreationTemplateTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             self.files.create(file.parent, file.name, markdown=True)
 
-    def test_markdown_cannot_be_created_outside_texts(self):
-        with self.assertRaisesRegex(ValueError, 'Assets/Texts'):
-            self.files.create(self.project/'Assets/Scripts', 'bad.md', markdown=True)
+    def test_markdown_can_be_created_in_any_assets_folder(self):
+        path=self.files.create(self.project/'Assets/Scripts','notes.md',markdown=True)
+        self.assertEqual(path.read_text('utf-8'),'# Название\n\n')
 
 
 if __name__ == '__main__':

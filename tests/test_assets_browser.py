@@ -156,7 +156,8 @@ class AssetsBrowserTests(unittest.TestCase):
         self.assertEqual(self.panel.scroll_area.content.cget('bg'),PANEL)
         menu=self.popup()
         self.assertEqual(menu.entrycget(0,'label'),'Создать директорию')
-        self.assertEqual(menu.entrycget(1,'label'),'Скрипты')
+        self.assertEqual(menu.entrycget(1,'label'),'Создать скрипт (.d)')
+        self.assertEqual(menu.entrycget(2,'label'),'Создать Markdown-документ (.md)')
         with patch('gothic_editor.ui.panels.resources.ResourceNameDialog') as dialog, \
                 patch.object(self.panel,'wait_window'):
             dialog.return_value.result='New Folder'
@@ -168,16 +169,18 @@ class AssetsBrowserTests(unittest.TestCase):
                 patch.object(self.panel,'wait_window'):
             dialog.return_value.result='Empty'
             self.panel.create_resource(True)
-        self.assertEqual((folder/'Empty.d').read_bytes(),b'')
+        self.assertIn(b'func void Empty()', (folder/'Empty.d').read_bytes())
 
     def test_file_menu_duplicate_shortcuts_and_confirmed_delete(self):
         self.panel.open_folder(self.assets/'Models')
         source=self.assets/'Models/Mesh.3ds'
         self.panel.select_file(source)
         menu=self.popup()
-        self.assertEqual([menu.entrycget(i,'label') for i in range(4)],
-                         ['Дублировать','Открыть в папке','Удалить','Открыть'])
-        menu.invoke(0)
+        commands={menu.entrycget(i,'label'):i for i in range(menu.index('end')+1)
+                  if menu.type(i)=='command'}
+        for label in ('Дублировать','Открыть в папке','Удалить','Открыть'):
+            self.assertIn(label,commands)
+        menu.invoke(commands['Дублировать'])
         duplicate=source.with_name('Mesh_copy.3ds')
         self.assertEqual(duplicate.read_bytes(),source.read_bytes())
         self.panel.select_file(source)
@@ -198,13 +201,18 @@ class AssetsBrowserTests(unittest.TestCase):
         folder=self.assets/'Models'
         self.panel.select_file(folder)
         menu=self.popup()
-        self.assertEqual([menu.entrycget(i,'label') for i in range(4)],
-                         ['Удалить','Дублировать','Копировать путь','Открыть'])
+        commands={menu.entrycget(i,'label'):i for i in range(menu.index('end')+1)
+                  if menu.type(i)=='command'}
+        for label in ('Удалить','Дублировать','Открыть'):
+            self.assertIn(label,commands)
+        self.assertIn('Копировать путь',
+                      [menu.entrycget(i,'label') for i in range(menu.index('end')+1)
+                       if menu.type(i)=='cascade'])
         self.panel.copy_path()
         self.assertEqual(self.window.clipboard_get(),'Assets/Models')
         self.panel.copy_path(True)
         self.assertEqual(self.window.clipboard_get(),str(folder))
-        menu.invoke(3)
+        menu.invoke(commands['Открыть'])
         self.panel.tree.focus_force()
         self.window.update()
         self.panel.copy_selected()

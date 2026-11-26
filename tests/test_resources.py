@@ -104,7 +104,7 @@ class ResourceDockTests(unittest.TestCase):
 
     def test_resources_stay_in_current_folder_on_item_change(self):
         resources = self.app.resources
-        self.assertEqual({path.name for path in resources.paths.values()},{'Items','Models','Scripts'})
+        self.assertEqual({path.name for path in resources.paths.values()},{'Items','Models','Scripts','Texts'})
         resources.open_folder(self.item.path.parent)
         second = temporary_item(self.app.repo,'ItPo_Second')
         self.app.select(second)
@@ -126,8 +126,11 @@ class ResourceDockTests(unittest.TestCase):
         self.assertTrue(resources.menu.winfo_exists())
         with patch('gothic_editor.ui.panels.resources.open_in_editor') as launch, \
                 patch('gothic_editor.ui.panels.resources.open_in_folder') as reveal:
-            resources.menu.invoke(3)
-            resources.menu.invoke(1)
+            menu=resources.menu
+            labels={menu.entrycget(i,'label'):i for i in range(menu.index('end')+1)
+                    if menu.type(i)=='command'}
+            menu.invoke(labels['Открыть'])
+            menu.invoke(labels['Открыть в папке'])
         launch.assert_called_once()
         reveal.assert_called_once_with(self.item.path)
 
@@ -169,7 +172,7 @@ class ResourceDockTests(unittest.TestCase):
         self.assertEqual(self.app.bottom_dock.visible_keys(),['terminal','resources'])
         self.assertEqual(self.app.bottom_dock.selected_key(),'resources')
         self.assertIn('Compiler output',self.app.terminal.log.get('1.0','end'))
-        self.assertEqual({path.name for path in self.app.resources.paths.values()},{'Items','Models','Scripts'})
+        self.assertEqual({path.name for path in self.app.resources.paths.values()},{'Items','Models','Scripts','Texts'})
 
 
 if __name__=='__main__':

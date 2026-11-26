@@ -203,7 +203,7 @@ class RecipeUITests(unittest.TestCase):
         with patch.object(panel,'popup') as popup:
             panel.category_context(SimpleNamespace(), 'experience')
             commands = popup.call_args.args[1]
-            self.assertEqual(len(commands), 4)
+            self.assertEqual(len(commands), 6)
             with patch.object(self.app.recipes, 'add') as add:
                 commands[-1][1]()
                 add.assert_called_once_with('experience')

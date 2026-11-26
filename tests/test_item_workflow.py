@@ -150,6 +150,7 @@ class WorkflowWidgetsTests(unittest.TestCase):
             panel=ResourcesPanel(self.root,lambda:'',lambda:None)
             panel.pack(fill='both',expand=True)
             panel.set_item(root,item)
+            panel.open_folder(folder)
             self.root.update()
             self.assertEqual(len(panel.tiles),3)
             self.assertGreater(panel.columns,1)
