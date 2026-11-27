@@ -8,20 +8,26 @@ from array import array
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import struct
+from .world_streaming import WorldDiskCache, source_stamp
 
 from .texture_names import texture_candidates
 from .textures import Texture, read_texture
 
 
 class WorldTextures:
-    def __init__(self, sources, *, loose_roots=(), max_ready_bytes=256 * 1024 * 1024):
+    def __init__(self, sources, *, loose_roots=(), max_ready_bytes=512 * 1024 * 1024,
+                 workers=4, cache=None):
         self.sources = {Path(name.replace('\\', '/')).name.casefold(): source
                         for name, source in sources.items()}
-        self._executor = ThreadPoolExecutor(max_workers=2)
+        self._executor = ThreadPoolExecutor(max_workers=workers)
+        self.cache = cache
+        self._cache_hits = 0
+        self._cache_misses = 0
         self._index_future = self._executor.submit(self._index_loose, tuple(loose_roots)) if loose_roots else None
         self._pending = {}
         self._alpha = {}
-        self._max_pending = 8
+        self._max_pending = max(8, workers * 4)
         self._ready = OrderedDict()
         self._missing = set()
         self._errors = []
@@ -85,6 +91,33 @@ class WorldTextures:
         has_alpha = flipped.pixels[3::4].count(255) != flipped.width * flipped.height
         return flipped, has_alpha
 
+    def _decode_cached(self, source):
+        if self.cache is None:
+            return self._decode(source)
+        try:
+            key = self.cache.key('texture-512', source_stamp(source))
+        except (OSError, TypeError, ValueError):
+            return self._decode(source)
+        raw = self.cache.read(key)
+        if raw is not None and len(raw) >= 9:
+            width, height, alpha = struct.unpack_from('<IIB', raw)
+            if 0 < width <= 512 and 0 < height <= 512 and len(raw) == 9 + width * height * 4:
+                return Texture(width, height, raw[9:]), bool(alpha), True
+        texture, alpha = self._decode(source)
+        self.cache.write(key, struct.pack('<IIB', texture.width, texture.height, alpha) + texture.pixels)
+        return texture, alpha, False
+
+    def stats(self):
+        return len(self._pending), len(self._ready), self._bytes, self._cache_hits, self._cache_misses
+
+    def prioritize(self, names):
+        """Cancel queued (not running) obsolete requests, reserving slots for current view."""
+        self._collect_ready()
+        wanted = {candidate for name in names for candidate, _ in (self._source(name),) if candidate}
+        for candidate, future in tuple(self._pending.items()):
+            if candidate not in wanted and future.cancel():
+                del self._pending[candidate]
+
     def _collect_ready(self):
         """Collect every finished task, even for textures no longer on screen.
 
@@ -101,7 +134,11 @@ class WorldTextures:
                 self._missing.add(candidate)
                 self._errors.append(f'[ZEN] Текстура {candidate}: {exc}')
                 continue
-            if isinstance(texture, tuple):
+            if isinstance(texture, tuple) and len(texture) == 3:
+                texture, has_alpha, hit = texture
+                self._cache_hits += int(hit)
+                self._cache_misses += int(not hit)
+            elif isinstance(texture, tuple):
                 texture, has_alpha = texture
             else:
                 # Tolerate legacy/mocked decoders returning Texture directly.
@@ -128,7 +165,7 @@ class WorldTextures:
                 continue
             if len(self._pending) >= self._max_pending:
                 break
-            self._pending[candidate] = self._executor.submit(self._decode, source)
+            self._pending[candidate] = self._executor.submit(self._decode_cached, source)
 
     def request(self, name):
         """Nonblocking lookup; calling it never performs disk I/O or decoding."""
@@ -147,7 +184,7 @@ class WorldTextures:
             return self._ready[candidate]
         if (candidate not in self._missing and candidate not in self._pending
                 and len(self._pending) < self._max_pending):
-            self._pending[candidate] = self._executor.submit(self._decode, source)
+            self._pending[candidate] = self._executor.submit(self._decode_cached, source)
         return None
 
     def has_alpha(self, name):

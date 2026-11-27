@@ -119,6 +119,33 @@
           "default": 3500,
           "minimum": 100,
           "maximum": 10000
+        },
+        {
+          "code": "cpu_cache_mb",
+          "name": "settings.items.cpu_cache_mb",
+          "title": "settings.hints.cpu_cache_mb",
+          "type": "number",
+          "default": 512,
+          "minimum": 128,
+          "maximum": 4096
+        },
+        {
+          "code": "gpu_cache_mb",
+          "name": "settings.items.gpu_cache_mb",
+          "title": "settings.hints.gpu_cache_mb",
+          "type": "number",
+          "default": 512,
+          "minimum": 128,
+          "maximum": 4096
+        },
+        {
+          "code": "texture_workers",
+          "name": "settings.items.texture_workers",
+          "title": "settings.hints.texture_workers",
+          "type": "number",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 8
         }
       ]
     },

@@ -5,21 +5,28 @@ only when the optional dependencies are available. No engine/game files change.
 """
 from __future__ import annotations
 
-from math import degrees
+from math import degrees, sin, cos
+from ctypes import c_void_p
+from concurrent.futures import ThreadPoolExecutor
+from collections import deque
 from time import perf_counter
 from collections import OrderedDict
 
 from OpenGL.GL import (
-    glBegin, glClear, glClearColor, glColor3f, glDisable, glEnable, glEnd,
+    glClear, glClearColor, glDisable, glEnable,
     glLoadIdentity, glMatrixMode, glMultMatrixf, glOrtho, glPolygonMode,
-    glRotatef, glScalef, glTranslatef, glVertex3f, glViewport, glGetIntegerv,
-    glCallList, glDeleteLists, glEndList, glGenLists, glNewList,
+    glRotatef, glScalef, glTranslatef, glViewport, glGetIntegerv,
+    glGenBuffers, glBindBuffer, glBufferData, glDeleteBuffers, glDrawElements,
+    glEnableClientState, glDisableClientState, glVertexPointer, glColorPointer, glTexCoordPointer,
+    glGenVertexArrays, glBindVertexArray, glDeleteVertexArrays,
+    GL_ARRAY_BUFFER, GL_ELEMENT_ARRAY_BUFFER, GL_STATIC_DRAW, GL_FLOAT, GL_UNSIGNED_INT,
+    GL_VERTEX_ARRAY, GL_COLOR_ARRAY, GL_TEXTURE_COORD_ARRAY,
     glPushMatrix, glPopMatrix, glGetString, GL_RENDERER,
     GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT, GL_DEPTH_TEST, GL_DEPTH_BITS,
     GL_FILL, GL_FRONT_AND_BACK, GL_LEQUAL, GL_LINE, GL_MODELVIEW,
-    GL_PROJECTION, GL_TRIANGLES, glDepthFunc, GL_COMPILE,
+    GL_PROJECTION, GL_TRIANGLES, glDepthFunc,
     glBindTexture, glGenTextures, glDeleteTextures, glTexImage2D,
-    glTexParameteri, glTexCoord2f, glTexEnvi, glPixelStorei,
+    glTexParameteri, glTexEnvi, glPixelStorei,
     GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER,
     GL_TEXTURE_WRAP_S, GL_TEXTURE_WRAP_T, GL_LINEAR, GL_LINEAR_MIPMAP_LINEAR, GL_REPEAT,
     GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE, GL_RGBA,
@@ -29,7 +36,7 @@ from OpenGL.GL import (
 from OpenGL.GLU import gluPerspective
 from pyopengltk import OpenGLFrame
 
-from gothic_editor.core.world_preview import face_color
+from gothic_editor.core.world_streaming import prepare_batches
 from gothic_editor.core.fly_camera import gl_view_rotation
 
 
@@ -60,7 +67,20 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._texture_switches = 0
         self._gpu_texture_bytes = 0
         self._invalid_gpu = set()
-        self._gpu_texture_budget = 256 * 1024 * 1024
+        self._gpu_texture_budget = 512 * 1024 * 1024
+        self.cache = None
+        self.cache_stamp = None
+        self._geometry_executor = ThreadPoolExecutor(max_workers=2)
+        self._geometry_jobs = {}
+        self._geometry_uploads = {}
+        self._geometry_hits = 0
+        self._geometry_misses = 0
+        self._geometry_prepare = 0.
+        self._geometry_upload_time = 0.
+        self._geometry_upload_bytes = 0
+        self._vao_supported = False
+        self._upload_budget = 0.004
+        self._prefetch_distance = 2
         self._visible_gpu = set()
         self._visible_gpu_key = None
         self._visible_vob_names = ()
@@ -78,7 +98,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._cached_world = None
         self._lists = OrderedDict()
         self._cached_triangles = 0
-        self._gpu_triangle_budget = 450_000
+        self._gpu_triangle_budget = 900_000
         self._selected_key = None
         self._selected_chunks = ()
         self._warm_key = None
@@ -111,6 +131,7 @@ class WorldOpenGLFrame(OpenGLFrame):
             glClearColor(0.098, 0.118, 0.161, 1.0)
             if int(glGetIntegerv(GL_DEPTH_BITS)) < 16:
                 raise RuntimeError('OpenGL-контекст не поддерживает буфер глубины.')
+            self._vao_supported = bool(glGenVertexArrays and glBindVertexArray)
             glEnable(GL_DEPTH_TEST)
             glDepthFunc(GL_LEQUAL)
             # World polygons can have inconsistent winding. Double-sided.
@@ -153,7 +174,16 @@ class WorldOpenGLFrame(OpenGLFrame):
                                f'переключений/кадр: {self._profile_texture_switches/frames:.0f}, '
                                f'макс. upload: {self._profile_slowest_upload[1]*1000:.0f}мс '
                                f'({self._profile_slowest_upload[0]})')
+                    pending, ready, cpu_bytes, hits, misses = self.textures.stats() if self.textures else (0,)*5
+                    diagnostics = (f'{frames/window:.1f} FPS | кадр {self._profile_peak*1000:.0f} мс (пик) | '
+                                   f'чанки {len(self._lists)}/{len(self._selected_chunks)} | '
+                                   f'геометрия: {len(self._geometry_jobs)} в очереди, '
+                                   f'{self._geometry_prepare*1000:.0f}/{self._geometry_upload_time*1000:.0f} мс подготовка/GPU | '
+                                   f'текстуры: {pending} в очереди, {ready} готовы | '
+                                   f'RAM {cpu_bytes/1048576:.0f} МБ | GPU {(self._gpu_texture_bytes+self._geometry_upload_bytes)/1048576:.0f} МБ | '
+                                   f'диск: геометрия {self._geometry_hits}/{self._geometry_misses}, текстуры {hits}/{misses}')
                     self.after_idle(lambda msg=message: self.master._log_message(msg))
+                    self.after_idle(lambda msg=diagnostics: getattr(self.master, '_show_performance', lambda _: None)(msg))
                     self._profile_started = perf_counter()
                     self._profile_frames = 0
                     self._profile_peak = 0.
@@ -170,6 +200,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._texture_switches = 0
         self._bound_texture = None
         self._alpha_enabled = False
+        self._geometry_deadline = perf_counter() + self._upload_budget
         self._frame_start = perf_counter()
         glViewport(0, 0, width, height)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -210,8 +241,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._draw_vobs()
         self._profile_times['vobs'] += perf_counter() - timestamp
         timestamp = perf_counter()
-        # Avoid speculative GPU uploads while visible surfaces are rendering.
-        # In dense worlds these evicted needed textures and triggered stalls.
+        self._warm_gpu_textures()
         self._profile_times['warm'] += perf_counter() - timestamp
         glDisable(GL_TEXTURE_2D)
         glDisable(GL_ALPHA_TEST)
@@ -291,6 +321,7 @@ class WorldOpenGLFrame(OpenGLFrame):
                     self._visible_gpu.update(self._canonical_texture(name) for name in names)
                     vob_names.extend(names)
         self._visible_vob_names = tuple(dict.fromkeys(vob_names))
+        self.textures.prioritize(tuple(self._visible_gpu))
 
     def _prepare_visible_vobs(self):
         if self.textures is None or self.render_mode != 'textures':
@@ -316,8 +347,8 @@ class WorldOpenGLFrame(OpenGLFrame):
         if identifier in self._gpu_textures:
             self._gpu_textures.move_to_end(identifier)
             return self._gpu_textures[identifier][0]
-        if (self._uploads_this_frame >= 2 or
-                (self._uploads_this_frame and perf_counter() - self._frame_start > 0.006)):
+        if (self._uploads_this_frame >= 8 or
+                (self._uploads_this_frame and perf_counter() - self._frame_start > self._upload_budget)):
             return 0
         texture = self.textures.request(name)
         if texture is None:
@@ -402,10 +433,9 @@ class WorldOpenGLFrame(OpenGLFrame):
     def _bind_texture(self, tex_id):
         if tex_id != self._bound_texture:
             if tex_id:
-                if not self._bound_texture:
-                    glEnable(GL_TEXTURE_2D)
+                glEnable(GL_TEXTURE_2D)
                 glBindTexture(GL_TEXTURE_2D, tex_id)
-            elif self._bound_texture:
+            else:
                 glDisable(GL_TEXTURE_2D)
             self._bound_texture = tex_id
             self._texture_switches += 1
@@ -420,65 +450,138 @@ class WorldOpenGLFrame(OpenGLFrame):
 
     def _draw_group(self, name, list_id):
         self._bind_texture(self._texture_id(name))
-        glCallList(list_id)
+        self._draw_buffer(list_id)
         self._draw_calls += 1
 
     def _delete_lists(self):
         for groups, _count in self._lists.values():
             for _name, list_id in groups:
-                glDeleteLists(list_id, 1)
+                self._delete_buffer(list_id)
         self._lists.clear()
         self._cached_triangles = 0
 
+    def _upload_buffer(self, vertices, indices):
+        vbo = ebo = vao = 0
+        started = perf_counter()
+        try:
+            vbo, ebo = (int(value) for value in glGenBuffers(2))
+            if self._vao_supported:
+                vao = int(glGenVertexArrays(1))
+                glBindVertexArray(vao)
+            glBindBuffer(GL_ARRAY_BUFFER, vbo)
+            glBufferData(GL_ARRAY_BUFFER, len(vertices), vertices, GL_STATIC_DRAW)
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo)
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, len(indices), indices, GL_STATIC_DRAW)
+            if vao:
+                self._bind_arrays()
+        except Exception:
+            if vao:
+                glBindVertexArray(0)
+                glDeleteVertexArrays(1, [vao])
+            if vbo or ebo:
+                glDeleteBuffers(2, [vbo, ebo])
+            raise
+        finally:
+            if vao:
+                glBindVertexArray(0)
+            glBindBuffer(GL_ARRAY_BUFFER, 0)
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
+        size = len(vertices) + len(indices)
+        self._geometry_upload_bytes += size
+        self._geometry_upload_time += perf_counter() - started
+        return vbo, ebo, vao, len(indices)//4, size
+
+    @staticmethod
+    def _bind_arrays():
+        glEnableClientState(GL_VERTEX_ARRAY)
+        glEnableClientState(GL_COLOR_ARRAY)
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY)
+        glVertexPointer(3, GL_FLOAT, 32, c_void_p(0))
+        glColorPointer(3, GL_FLOAT, 32, c_void_p(12))
+        glTexCoordPointer(2, GL_FLOAT, 32, c_void_p(24))
+
+    def _draw_buffer(self, buffer):
+        vbo, ebo, vao, count, _size = buffer
+        if vao:
+            glBindVertexArray(vao)
+        else:
+            glBindBuffer(GL_ARRAY_BUFFER, vbo)
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo)
+            self._bind_arrays()
+        try:
+            glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, c_void_p(0))
+        finally:
+            if vao:
+                glBindVertexArray(0)
+            else:
+                for state in (GL_VERTEX_ARRAY, GL_COLOR_ARRAY, GL_TEXTURE_COORD_ARRAY):
+                    glDisableClientState(state)
+                glBindBuffer(GL_ARRAY_BUFFER, 0)
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
+
+    def _delete_buffer(self, buffer):
+        vbo, ebo, vao, _count, size = buffer
+        if vao:
+            glDeleteVertexArrays(1, [vao])
+        glDeleteBuffers(2, [vbo, ebo])
+        self._geometry_upload_bytes -= size
+
+    def _cancel_geometry(self, kind, wanted=()):
+        wanted = set(wanted)
+        for token, future in tuple(self._geometry_jobs.items()):
+            if token[0] == kind and token[1] not in wanted:
+                future.cancel()
+                del self._geometry_jobs[token]
+        for token, (pending, groups) in tuple(self._geometry_uploads.items()):
+            if token[0] == kind and token[1] not in wanted:
+                for _name, buffer in groups:
+                    self._delete_buffer(buffer)
+                del self._geometry_uploads[token]
+
+    def _prepare_geometry(self, kind, key, vertices, faces, uvs, names):
+        token = (kind, key)
+        if token not in self._geometry_jobs and token not in self._geometry_uploads:
+            if len(self._geometry_jobs) >= 12:
+                return None
+            stamp = (self.cache_stamp, kind, key) if self.cache_stamp is not None else None
+            self._geometry_jobs[token] = self._geometry_executor.submit(
+                prepare_batches, self.cache, stamp, vertices, faces, uvs, names)
+        if token in self._geometry_jobs:
+            future = self._geometry_jobs[token]
+            if not future.done():
+                return None
+            del self._geometry_jobs[token]
+            batches, elapsed, hit = future.result()
+            self._geometry_prepare += elapsed
+            self._geometry_hits += int(hit)
+            self._geometry_misses += int(not hit)
+            self._geometry_uploads[token] = (deque(batches), [])
+        pending, groups = self._geometry_uploads[token]
+        while pending and perf_counter() < self._geometry_deadline:
+            name, data, indices = pending.popleft()
+            groups.append((name, self._upload_buffer(data, indices)))
+        if pending:
+            return None
+        del self._geometry_uploads[token]
+        return tuple(groups)
+
     def _compile_chunk(self, key):
         if key in self._lists:
-            self._lists.move_to_end(key)
             return
         faces = self.world.chunks[key]
-        vertices = self.world.vertices
-        uvs = self.world.chunk_uvs.get(key, ())
-        names = self.world.chunk_textures.get(key, ())
-        batches = OrderedDict()
-        for i, face in enumerate(faces):
-            uv = uvs[i] if i < len(uvs) else None
-            name = names[i] if i < len(names) and uv else ''
-            batches.setdefault(name.casefold(), []).append((face, uv))
-        lists = []
-        try:
-            for name, entries in batches.items():
-                list_id = int(glGenLists(1))
-                if not list_id:
-                    raise RuntimeError('Не удалось создать список полигонов OpenGL.')
-                lists.append((name, list_id))
-                glNewList(list_id, GL_COMPILE)
-                try:
-                    glBegin(GL_TRIANGLES)
-                    try:
-                        for face, uv in entries:
-                            color = face_color(vertices, face)
-                            glColor3f(*(int(color[j:j+2], 16) / 255.0
-                                        for j in (1, 3, 5)))
-                            for corner, index in enumerate(face):
-                                if uv is not None:
-                                    glTexCoord2f(*uv[corner])
-                                glVertex3f(*vertices[index])
-                    finally:
-                        glEnd()
-                finally:
-                    glEndList()
-        except Exception:
-            for _name, list_id in lists:
-                glDeleteLists(list_id, 1)
-            raise
-        self._lists[key] = (tuple(lists), len(faces))
-        self._cached_triangles += len(faces)
+        groups = self._prepare_geometry('terrain', key, self.world.vertices, faces,
+            self.world.chunk_uvs.get(key, ()), self.world.chunk_textures.get(key, ()))
+        if groups is not None:
+            self._lists[key] = (groups, len(faces))
+            self._cached_triangles += len(faces)
 
     def _draw_vobs(self):
         scene = self.vobs
         if scene is not self._cached_vobs:
+            self._cancel_geometry('vob')
             for lists in self._vob_lists.values():
                 for _name, list_id in lists:
-                    glDeleteLists(list_id, 1)
+                    self._delete_buffer(list_id)
             self._vob_lists.clear()
             self._vob_batches_key = None
             self._vob_names.clear()
@@ -492,18 +595,16 @@ class WorldOpenGLFrame(OpenGLFrame):
                abs(key[1] - self.focus[1]) <= self.radius
         ]
         nearby.sort()
-        # Precompile one unique visual per frame, just like the terrain chunks.
-        for key in nearby:
-            for index in scene.chunks[key]:
-                visual = scene.objects[index].visual
-                if visual not in self._vob_lists:
-                    self._compile_vob(visual, scene.models[visual])
+        wanted = tuple(dict.fromkeys(scene.objects[index].visual
+                                      for key in nearby for index in scene.chunks[key]))
+        self._cancel_geometry('vob', wanted)
+        # Submit several visible models, then upload only within the frame deadline.
+        for visual in wanted:
+            if visual not in self._vob_lists:
+                before = len(self._vob_lists)
+                self._compile_vob(visual, scene.models[visual])
+                if len(self._vob_lists) != before:
                     self._vob_batches_key = None
-                    break
-            else:
-                continue
-            break
-
         # Build stable per-material batches only when the visible chunks or
         # available VOB display lists change; do not rebuild 4k matrices each frame.
         batch_key = (id(scene), tuple(nearby), len(self._vob_lists))
@@ -535,7 +636,7 @@ class WorldOpenGLFrame(OpenGLFrame):
                     glPushMatrix()
                     try:
                         glMultMatrixf(matrix)
-                        glCallList(list_id)
+                        self._draw_buffer(list_id)
                         self._draw_calls += 1
                     finally:
                         glPopMatrix()
@@ -543,44 +644,24 @@ class WorldOpenGLFrame(OpenGLFrame):
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
 
     def _compile_vob(self, name, mesh):
-        batches = OrderedDict()
-        for i, face in enumerate(mesh.faces):
-            uv = mesh.uvs[i] if i < len(mesh.uvs) else None
-            texture = mesh.texture_names[i] if i < len(mesh.texture_names) and uv else ''
-            batches.setdefault(texture.casefold(), []).append((face, uv))
-        lists = []
-        try:
-            for texture, entries in batches.items():
-                list_id = int(glGenLists(1))
-                if not list_id:
-                    raise RuntimeError('Не удалось выделить OpenGL-список для VOB.')
-                lists.append((texture, list_id))
-                glNewList(list_id, GL_COMPILE)
-                try:
-                    glBegin(GL_TRIANGLES)
-                    try:
-                        for face, uv in entries:
-                            color = face_color(mesh.vertices, face)
-                            glColor3f(*(int(color[j:j+2], 16)/255.0 for j in (1, 3, 5)))
-                            for corner, index in enumerate(face):
-                                if uv is not None:
-                                    glTexCoord2f(*uv[corner])
-                                glVertex3f(*mesh.vertices[index])
-                    finally:
-                        glEnd()
-                finally:
-                    glEndList()
-        except Exception:
-            for _texture, list_id in lists:
-                glDeleteLists(list_id, 1)
-            raise
-        self._vob_lists[name] = tuple(lists)
+        groups = self._prepare_geometry('vob', name, mesh.vertices, mesh.faces,
+                                        mesh.uvs, mesh.texture_names)
+        if groups is not None:
+            self._vob_lists[name] = groups
+
+    def destroy(self):
+        self.animate = False
+        self._geometry_executor.shutdown(wait=False, cancel_futures=True)
+        self._geometry_jobs.clear()
+        self._geometry_uploads.clear()
+        super().destroy()
 
     def _draw_chunks(self):
         self._can_warm_gpu = False
         if self.world is None:
             return
         if self._cached_world is not self.world:
+            self._cancel_geometry('terrain')
             self._delete_lists()
             self._chunk_names.clear()
             self._cached_world = self.world
@@ -597,8 +678,13 @@ class WorldOpenGLFrame(OpenGLFrame):
                 self.focus, self.radius, self.triangle_limit)
             self._selected_key = selection_key
         visible = self._selected_chunks
-        warm_radius = min(5, self.radius + 1)
-        warm_key = (self.focus, self.radius, self.triangle_limit)
+        warm_radius = min(5, self.radius + self._prefetch_distance)
+        direction = (0, 0)
+        if self.fly and self.camera is not None:
+            direction = (round(sin(self.camera.yaw)), round(cos(self.camera.yaw)))
+            if self.camera.speed > self.world.chunk_size:
+                warm_radius = min(5, warm_radius + 1)
+        warm_key = (self.focus, self.radius, self.triangle_limit, direction, warm_radius)
         if warm_key != self._warm_key:
             # Use an independent prefetch budget. Reusing the visible
             # 200k budget prevented dense worlds from warming any neighbor.
@@ -612,7 +698,8 @@ class WorldOpenGLFrame(OpenGLFrame):
                    abs(k[1]-self.focus[1]) <= warm_radius
             ]
             candidates.sort(key=lambda k: (
-                (k[0]-self.focus[0])**2 + (k[1]-self.focus[1])**2, k))
+                (k[0]-self.focus[0])**2 + (k[1]-self.focus[1])**2
+                - 2*((k[0]-self.focus[0])*direction[0] + (k[1]-self.focus[1])*direction[1]), k))
             for key in candidates:
                 count = len(self.world.chunks[key])
                 if count <= remaining:
@@ -645,10 +732,10 @@ class WorldOpenGLFrame(OpenGLFrame):
         missing_visible = [key for key in visible if key not in self._lists]
         missing_warm = [key for key in self._warm_chunks
                         if key not in self._lists]
-        self._can_warm_gpu = not missing_visible and not missing_warm
-        # Limit compilation to one chunk per frame; the camera never rebuilds
-        # a combined mesh when crossing a chunk boundary.
-        for key in (missing_visible or missing_warm)[:1]:
+        self._can_warm_gpu = not missing_visible and not missing_warm and (
+            self._gpu_texture_bytes < self._gpu_texture_budget * .8)
+        self._cancel_geometry('terrain', (*visible, *self._warm_chunks))
+        for key in (*missing_visible, *missing_warm):
             self._compile_chunk(key)
 
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL if self.solid else GL_LINE)
@@ -662,7 +749,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         finally:
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
 
-        pinned = set(visible)
+        pinned = set(visible) | set(self._warm_chunks)
         for key in tuple(self._lists):
             if self._cached_triangles <= self._gpu_triangle_budget:
                 break
@@ -670,5 +757,5 @@ class WorldOpenGLFrame(OpenGLFrame):
                 continue
             lists, count = self._lists.pop(key)
             for _name, list_id in lists:
-                glDeleteLists(list_id, 1)
+                self._delete_buffer(list_id)
             self._cached_triangles -= count

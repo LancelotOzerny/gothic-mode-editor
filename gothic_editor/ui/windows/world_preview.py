@@ -6,6 +6,7 @@ from pathlib import Path
 import traceback
 from math import isfinite
 from time import monotonic
+from gothic_editor.core.world_streaming import WorldDiskCache, world_stamp
 from gothic_editor.core.fly_camera import FlyCamera
 import tkinter as tk
 from tkinter import filedialog
@@ -49,6 +50,10 @@ class WorldPreviewPanel(tk.Frame):
         self._chunk_size = settings.get_value('interface.world_chunks.size') if settings else 6000
         self._chunk_radius = settings.get_value('interface.world_chunks.radius') if settings else 1
         self._triangle_limit = settings.get_value('interface.world_chunks.triangle_limit') if settings else 3500
+        self._cpu_cache_mb = settings.get_value('interface.world_chunks.cpu_cache_mb') if settings else 512
+        self._gpu_cache_mb = settings.get_value('interface.world_chunks.gpu_cache_mb') if settings else 512
+        self._texture_workers = settings.get_value('interface.world_chunks.texture_workers') if settings else 4
+        self._disk_cache = WorldDiskCache()
         self._closed = False
         self._drag = None
         self._drag_mode = None
@@ -116,10 +121,26 @@ class WorldPreviewPanel(tk.Frame):
                           bg='#232b39', fg='#94a3b8', anchor='center')
         footer.pack(fill='x', pady=0, ipady=7)
         self._footer = footer
+        self._performance = tk.Label(self, bg='#232b39', fg='#94a3b8', anchor='w', justify='left')
+        self._performance_enabled = False
+        tk.Button(header, text='FPS', command=self._toggle_performance,
+                  bg='#334155', fg='white', relief='flat').pack(side='left', padx=2)
         self._try_enable_opengl(footer)
         self.refresh_locations()
         self.queue_draw()
         self._tick_id = self.after(33, self._tick)
+
+    def _toggle_performance(self):
+        self._performance_enabled = not self._performance_enabled
+        if self._performance_enabled:
+            self._performance.configure(text='Сбор статистики OpenGL…')
+            self._performance.pack(fill='x', after=self._footer)
+        else:
+            self._performance.pack_forget()
+
+    def _show_performance(self, message):
+        if not self._closed and self._performance_enabled:
+            self._performance.configure(text=message, wraplength=max(300, self.winfo_width()-12))
 
     def _try_enable_opengl(self, footer):
         """Use hardware depth testing if installed, retaining Tk as fallback."""
@@ -127,6 +148,8 @@ class WorldPreviewPanel(tk.Frame):
         try:
             from gothic_editor.ui.panels.world_opengl import WorldOpenGLFrame
             view = WorldOpenGLFrame(self)
+            view.cache = self._disk_cache
+            view._gpu_texture_budget = self._gpu_cache_mb * 1024 * 1024
             view.configure(takefocus=True)
             view.pack(fill='both', expand=True, before=footer)
             # OpenGLFrame owns its own Tk context and refresh loop.
@@ -252,7 +275,9 @@ class WorldPreviewPanel(tk.Frame):
         if self._game is not None:
             roots.extend((self._game / '_work' / 'data' / 'Textures',
                           self._game / '_work' / 'Data' / 'Textures'))
-        self._textures = WorldTextures(sources_textures, loose_roots=roots)
+        self._textures = WorldTextures(sources_textures, loose_roots=roots,
+            max_ready_bytes=self._cpu_cache_mb * 1024 * 1024,
+            workers=self._texture_workers, cache=self._disk_cache)
         self._scene = None
         self._world = None
         self._focus = None
@@ -272,8 +297,11 @@ class WorldPreviewPanel(tk.Frame):
             # Project overrides and local source meshes take priority.
             sources.update({Path(name).name.casefold(): source
                             for name, source in repo.mesh_index.items()})
-        self._future = self._executor.submit(
-            load_world_with_vobs, path, self._chunk_size, sources)
+        def load():
+            stamp = world_stamp(path, self._chunk_size, sources)
+            world, vobs = load_world_with_vobs(path, self._chunk_size, sources)
+            return world, vobs, stamp
+        self._future = self._executor.submit(load)
         self._poll_id = self.after(50, self._poll)
 
     def _log_message(self, message, *, error=False):
@@ -300,7 +328,9 @@ class WorldPreviewPanel(tk.Frame):
             return
         future, self._future = self._future, None
         try:
-            self._world, self._vobs = future.result()
+            self._world, self._vobs, stamp = future.result()
+            if self._gl_view is not None:
+                self._gl_view.cache_stamp = stamp
             self._focus = self._world.origin
             self._scene = self._select_scene(self._focus)
             if self._scene.vertices:
