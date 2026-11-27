@@ -72,6 +72,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self.cache_stamp = None
         self._geometry_executor = ThreadPoolExecutor(max_workers=2)
         self._geometry_jobs = {}
+        self._retired_geometry = []
         self._geometry_uploads = {}
         self._geometry_hits = 0
         self._geometry_misses = 0
@@ -176,7 +177,7 @@ class WorldOpenGLFrame(OpenGLFrame):
                                f'({self._profile_slowest_upload[0]})')
                     pending, ready, cpu_bytes, hits, misses = self.textures.stats() if self.textures else (0,)*5
                     diagnostics = (f'{frames/window:.1f} FPS | кадр {self._profile_peak*1000:.0f} мс (пик) | '
-                                   f'чанки {len(self._lists)}/{len(self._selected_chunks)} | '
+                                   f'чанки {sum(key in self._lists for key in self._selected_chunks)}/{len(self._selected_chunks)} (кэш {len(self._lists)}) | '
                                    f'геометрия: {len(self._geometry_jobs)} в очереди, '
                                    f'{self._geometry_prepare*1000:.0f}/{self._geometry_upload_time*1000:.0f} мс подготовка/GPU | '
                                    f'текстуры: {pending} в очереди, {ready} готовы | '
@@ -198,9 +199,9 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._uploads_this_frame = 0
         self._draw_calls = 0
         self._texture_switches = 0
-        self._bound_texture = None
+        self._bound_texture = 0
         self._alpha_enabled = False
-        self._geometry_deadline = perf_counter() + self._upload_budget
+        self._geometry_frame_upload = 0.
         self._frame_start = perf_counter()
         glViewport(0, 0, width, height)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -488,7 +489,9 @@ class WorldOpenGLFrame(OpenGLFrame):
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
         size = len(vertices) + len(indices)
         self._geometry_upload_bytes += size
-        self._geometry_upload_time += perf_counter() - started
+        elapsed = perf_counter() - started
+        self._geometry_upload_time += elapsed
+        self._geometry_frame_upload += elapsed
         return vbo, ebo, vao, len(indices)//4, size
 
     @staticmethod
@@ -530,7 +533,10 @@ class WorldOpenGLFrame(OpenGLFrame):
         wanted = set(wanted)
         for token, future in tuple(self._geometry_jobs.items()):
             if token[0] == kind and token[1] not in wanted:
-                future.cancel()
+                # A running future cannot be cancelled. Keep its slot occupied
+                # until it completes instead of flooding the executor on movement.
+                if not future.cancel() and not future.done():
+                    self._retired_geometry.append(future)
                 del self._geometry_jobs[token]
         for token, (pending, groups) in tuple(self._geometry_uploads.items()):
             if token[0] == kind and token[1] not in wanted:
@@ -541,7 +547,8 @@ class WorldOpenGLFrame(OpenGLFrame):
     def _prepare_geometry(self, kind, key, vertices, faces, uvs, names):
         token = (kind, key)
         if token not in self._geometry_jobs and token not in self._geometry_uploads:
-            if len(self._geometry_jobs) >= 12:
+            self._retired_geometry = [future for future in self._retired_geometry if not future.done()]
+            if len(self._geometry_jobs) + len(self._retired_geometry) >= 12:
                 return None
             stamp = (self.cache_stamp, kind, key) if self.cache_stamp is not None else None
             self._geometry_jobs[token] = self._geometry_executor.submit(
@@ -557,7 +564,7 @@ class WorldOpenGLFrame(OpenGLFrame):
             self._geometry_misses += int(not hit)
             self._geometry_uploads[token] = (deque(batches), [])
         pending, groups = self._geometry_uploads[token]
-        while pending and perf_counter() < self._geometry_deadline:
+        while pending and self._geometry_frame_upload < self._upload_budget:
             name, data, indices = pending.popleft()
             groups.append((name, self._upload_buffer(data, indices)))
         if pending:
@@ -653,6 +660,7 @@ class WorldOpenGLFrame(OpenGLFrame):
         self.animate = False
         self._geometry_executor.shutdown(wait=False, cancel_futures=True)
         self._geometry_jobs.clear()
+        self._retired_geometry.clear()
         self._geometry_uploads.clear()
         super().destroy()
 
@@ -735,7 +743,11 @@ class WorldOpenGLFrame(OpenGLFrame):
         self._can_warm_gpu = not missing_visible and not missing_warm and (
             self._gpu_texture_bytes < self._gpu_texture_budget * .8)
         self._cancel_geometry('terrain', (*visible, *self._warm_chunks))
-        for key in (*missing_visible, *missing_warm):
+        for key in missing_visible:
+            self._compile_chunk(key)
+        for key in missing_warm:
+            if len(self._geometry_jobs) >= 6 and ('terrain', key) not in self._geometry_jobs:
+                break
             self._compile_chunk(key)
 
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL if self.solid else GL_LINE)

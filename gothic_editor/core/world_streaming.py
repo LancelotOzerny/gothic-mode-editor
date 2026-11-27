@@ -8,6 +8,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from time import perf_counter
 import json
+import zlib
 import os
 import struct
 import sys
@@ -176,7 +177,64 @@ def prepare_batches(cache, stamp, vertices, faces, uvs, names):
 def world_stamp(source, chunk_size, sources):
     """Cache identity covers the original ZEN and model overrides."""
     try:
-        return (source_stamp(source), chunk_size,
-                tuple(sorted((name, source_stamp(value)) for name, value in sources.items())))
+        archive_stamps = {}
+        models = []
+        for name, value in sources.items():
+            if hasattr(value, 'archive'):
+                path = value.archive
+                if path not in archive_stamps:
+                    archive_stamps[path] = source_stamp(path)
+                stamp = (archive_stamps[path], value.offset, value.size)
+            else:
+                stamp = source_stamp(value)
+            models.append((name, stamp))
+        return sha256(repr((source_stamp(source), chunk_size, sorted(models))).encode('utf-8')).hexdigest()
     except (OSError, TypeError, ValueError):
         return None
+
+def load_cached_world(cache, source, chunk_size, sources):
+    """Persist parsed terrain and VOB data as bounded compressed JSON, never pickle."""
+    from .world_preview import ChunkedWorld, load_world_with_vobs
+    from .world_vobs import StaticMesh, StaticVob, VobScene
+    stamp = world_stamp(source, chunk_size, sources)
+    key = cache.key('scene', stamp) if stamp is not None else None
+    if key:
+        raw = cache.read(key)
+        if raw is not None:
+            try:
+                decoder = zlib.decompressobj()
+                decoded = decoder.decompress(raw, 256 * 1024 * 1024)
+                if not decoder.eof or decoder.unused_data or decoder.unconsumed_tail:
+                    raise ValueError('Invalid scene cache')
+                w, v = json.loads(decoded)
+                def vectors(values):
+                    return tuple(tuple(value) for value in values)
+                def uv_rows(values):
+                    return tuple(vectors(value) if value is not None else None for value in values)
+                world = ChunkedWorld(vectors(w[0]), {tuple(k): vectors(f) for k, f in w[1]},
+                    w[2], w[3], w[4], w[5], tuple(w[6]),
+                    {tuple(k): uv_rows(rows) for k, rows in w[7]},
+                    {tuple(k): tuple(rows) for k, rows in w[8]})
+                vobs = VobScene(tuple(StaticVob(name, tuple(pos), tuple(rot), title, tuple(chunk))
+                    for name, pos, rot, title, chunk in v[0]),
+                    {name: StaticMesh(vectors(mesh[0]), vectors(mesh[1]), uv_rows(mesh[2]), tuple(mesh[3]))
+                     for name, mesh in v[1]},
+                    {tuple(k): tuple(indices) for k, indices in v[2]}, v[3], v[4])
+                return world, vobs, stamp
+            except (ValueError, TypeError, IndexError, KeyError, zlib.error):
+                pass
+    world, vobs = load_world_with_vobs(source, chunk_size, sources)
+    if key and vobs is not None:
+        try:
+            w = (world.vertices, list(world.chunks.items()), world.chunk_size, world.total_vertices,
+                 world.total_triangles, world.discarded_triangles, world.origin,
+                 list(world.chunk_uvs.items()), list(world.chunk_textures.items()))
+            v = ([(obj.visual, obj.position, obj.rotation, obj.name, obj.chunk) for obj in vobs.objects],
+                 [(name, (mesh.vertices, mesh.faces, mesh.uvs, mesh.texture_names))
+                  for name, mesh in vobs.models.items()], list(vobs.chunks.items()), vobs.status, vobs.skipped)
+            raw = json.dumps((w, v), separators=(',', ':')).encode('utf-8')
+            if len(raw) < 256 * 1024 * 1024:
+                cache.write(key, zlib.compress(raw, 1))
+        except (ValueError, TypeError, OSError):
+            pass
+    return world, vobs, stamp

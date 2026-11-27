@@ -6,7 +6,7 @@ from pathlib import Path
 import traceback
 from math import isfinite
 from time import monotonic
-from gothic_editor.core.world_streaming import WorldDiskCache, world_stamp
+from gothic_editor.core.world_streaming import WorldDiskCache, load_cached_world
 from gothic_editor.core.fly_camera import FlyCamera
 import tkinter as tk
 from tkinter import filedialog
@@ -298,9 +298,7 @@ class WorldPreviewPanel(tk.Frame):
             sources.update({Path(name).name.casefold(): source
                             for name, source in repo.mesh_index.items()})
         def load():
-            stamp = world_stamp(path, self._chunk_size, sources)
-            world, vobs = load_world_with_vobs(path, self._chunk_size, sources)
-            return world, vobs, stamp
+            return load_cached_world(self._disk_cache, path, self._chunk_size, sources)
         self._future = self._executor.submit(load)
         self._poll_id = self.after(50, self._poll)
 

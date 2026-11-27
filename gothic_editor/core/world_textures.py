@@ -9,7 +9,7 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import struct
-from .world_streaming import WorldDiskCache, source_stamp
+from .world_streaming import source_stamp
 
 from .texture_names import texture_candidates
 from .textures import Texture, read_texture
